@@ -1,8 +1,11 @@
 # AI Advantage Sports
 
-AI-powered sports betting analytics platform providing data-driven insights and predictions for smarter wagering decisions.
+[![Live Site](https://img.shields.io/badge/Live-aiadvantagesports.com-00D100?style=for-the-badge&logo=google-chrome&logoColor=white)](https://aiadvantagesports.com)
+[![React](https://img.shields.io/badge/React-20232A?style=flat&logo=react&logoColor=61DAFB)](https://reactjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=flat&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 
-**Live Site:** [aiadvantagesports.com](https://aiadvantagesports.com)
+AI-powered sports betting analytics platform providing data-driven insights and predictions for smarter wagering decisions.
 
 ![AI Advantage Sports Screenshot](https://raw.githubusercontent.com/ianalloway/ai-advantage/main/screenshot.png)
 
