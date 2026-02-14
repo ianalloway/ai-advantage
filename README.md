@@ -1,69 +1,54 @@
-# Welcome to your Lovable project
+# AI Advantage Sports
 
-## Project info
+AI-powered sports betting analytics platform providing data-driven insights and predictions for smarter wagering decisions.
 
-**URL**: https://lovable.dev/projects/d56d67db-1c50-48f2-960c-1aa41fc88736
+**Live Site:** [aiadvantagesports.com](https://aiadvantagesports.com)
 
-## How can I edit this code?
+![AI Advantage Sports Screenshot](https://raw.githubusercontent.com/ianalloway/ai-advantage/main/screenshot.png)
 
-There are several ways of editing your application.
+## Features
 
-**Use Lovable**
+- **AI-Powered Analysis** - Advanced machine learning models analyze thousands of data points in seconds
+- **Game Analyzer** - Enter any matchup for instant AI analysis and betting recommendations
+- **Real-Time Odds** - Track line movements and find value before the market adjusts
+- **High Accuracy** - Models consistently outperform traditional handicapping methods
+- **Bankroll Protection** - Smart stake sizing recommendations to protect your investment
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/d56d67db-1c50-48f2-960c-1aa41fc88736) and start prompting.
+## Tech Stack
 
-Changes made via Lovable will be committed automatically to this repo.
+- **Frontend:** React, TypeScript, Tailwind CSS
+- **UI Components:** shadcn/ui
+- **Build Tool:** Vite
+- **Styling:** Custom dark theme with green accents
 
-**Use your preferred IDE**
+## Getting Started
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+```bash
+# Clone the repository
+git clone https://github.com/ianalloway/ai-advantage.git
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+# Navigate to project directory
+cd ai-advantage
 
-Follow these steps:
+# Install dependencies
+npm install
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# Start development server
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+## Deployment
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+The site is deployed on Netlify with automatic deployments from the main branch.
 
-**Use GitHub Codespaces**
+## Author
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+**Ian Alloway** - Data Scientist & AI Specialist
 
-## What technologies are used for this project?
+- Portfolio: [ianalloway.xyz](https://ianalloway.xyz)
+- LinkedIn: [linkedin.com/in/ianit](https://www.linkedin.com/in/ianit)
+- Twitter: [@ianallowayxyz](https://x.com/ianallowayxyz)
 
-This project is built with .
+## License
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/d56d67db-1c50-48f2-960c-1aa41fc88736) and click on Share -> Publish.
-
-## I want to use a custom domain - is that possible?
-
-We don't support custom domains (yet). If you want to deploy your project under your own domain then we recommend using Netlify. Visit our docs for more details: [Custom domains](https://docs.lovable.dev/tips-tricks/custom-domain/)
+This project is proprietary. All rights reserved.
