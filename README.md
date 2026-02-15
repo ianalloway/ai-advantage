@@ -16,6 +16,9 @@ AI-powered sports betting analytics platform providing data-driven insights and 
 - **Real-Time Odds** - Track line movements and find value before the market adjusts
 - **High Accuracy** - Models consistently outperform traditional handicapping methods
 - **Bankroll Protection** - Smart stake sizing recommendations to protect your investment
+- **Kelly Criterion** - Optimal bet sizing based on edge and bankroll management
+- **Multi-Sport Support** - NBA, NFL, and MLB predictions
+- **Premium Tier** - Advanced features with Stripe subscription integration
 
 ## Tech Stack
 
