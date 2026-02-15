@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
@@ -15,20 +15,29 @@ import {
   ChevronRight,
   Trophy,
   Brain,
-  LineChart,
+  LineChart as LineChartIcon,
   DollarSign,
   Percent,
   Home,
-  Plane
+  Plane,
+  Activity,
+  Calendar
 } from "lucide-react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
 import {
   analyzeGame,
   parseGameInput,
-  getTodaysGames,
+  getDemoGames,
   formatOdds,
   formatProb,
   formatEdge,
-  type GamePrediction
+  formatMoney,
+  generateBacktestData,
+  calculateBacktestSummary,
+  SPORT_CONFIG,
+  type GamePrediction,
+  type Sport,
+  type BacktestSummary
 } from "@/lib/predictions";
 
 const Index = () => {
@@ -39,18 +48,38 @@ const Index = () => {
   const [bankroll, setBankroll] = useState(1000);
   const [minEdge, setMinEdge] = useState(3);
   const [kellyFraction, setKellyFraction] = useState(0.25);
+  const [selectedSport, setSelectedSport] = useState<Sport>('nba');
+  const [backtestSummary, setBacktestSummary] = useState<BacktestSummary | null>(null);
+  const [isBacktesting, setIsBacktesting] = useState(false);
   const { toast } = useToast();
 
-  // Load today's games on mount
+  // Load games for selected sport
   useEffect(() => {
-    const games = getTodaysGames();
+    const games = getDemoGames(selectedSport);
     const preds = games.map(game => 
-      analyzeGame(game.homeTeam, game.awayTeam, bankroll, minEdge, kellyFraction)
+      analyzeGame(game.homeTeam, game.awayTeam, selectedSport, bankroll, minEdge, kellyFraction)
     );
     setPredictions(preds);
-  }, [bankroll, minEdge, kellyFraction]);
+  }, [bankroll, minEdge, kellyFraction, selectedSport]);
+
+  // Generate backtest data when sport changes
+  const runBacktest = () => {
+    setIsBacktesting(true);
+    setTimeout(() => {
+      const results = generateBacktestData(selectedSport, 6);
+      const summary = calculateBacktestSummary(results);
+      setBacktestSummary(summary);
+      setIsBacktesting(false);
+      toast({
+        title: "Backtest Complete",
+        description: `Analyzed ${summary.totalGames} games with ${(summary.accuracy * 100).toFixed(1)}% accuracy`,
+      });
+    }, 500);
+  };
 
   const valueBets = predictions.filter(p => p.valueBet !== null);
+  
+  const sportName = useMemo(() => SPORT_CONFIG[selectedSport].name, [selectedSport]);
 
   const analyzeBetting = async () => {
     if (!gameInput.trim()) {
@@ -67,12 +96,12 @@ const Index = () => {
       await new Promise((resolve) => setTimeout(resolve, 1000));
       
       // Parse the input to find teams
-      const parsed = parseGameInput(gameInput);
+      const parsed = parseGameInput(gameInput, selectedSport);
       
       if (!parsed) {
         toast({
           title: "Could not identify teams",
-          description: "Try entering NBA team names like 'Lakers vs Warriors'",
+          description: `Try entering ${sportName} team names like 'Lakers vs Warriors'`,
           variant: "destructive",
         });
         setIsLoading(false);
@@ -80,7 +109,7 @@ const Index = () => {
       }
       
       // Run ML prediction
-      const prediction = analyzeGame(parsed.homeTeam, parsed.awayTeam, bankroll, minEdge, kellyFraction);
+      const prediction = analyzeGame(parsed.homeTeam, parsed.awayTeam, selectedSport, bankroll, minEdge, kellyFraction);
       
       let recommendation = "";
       let betDetails = "";
@@ -157,7 +186,7 @@ Always bet responsibly. Past performance does not guarantee future results.`;
       description: "Advanced machine learning models analyze thousands of data points in seconds"
     },
     {
-      icon: LineChart,
+      icon: LineChartIcon,
       title: "Real-Time Odds",
       description: "Track line movements and find value before the market adjusts"
     },
@@ -224,26 +253,49 @@ Always bet responsibly. Past performance does not guarantee future results.`;
       {/* ML Predictions Section */}
       <section className="py-16 px-6">
         <div className="max-w-6xl mx-auto">
+          {/* Sport Selector */}
+          <div className="flex items-center justify-center gap-2 mb-6">
+            {(['nba', 'nfl', 'mlb'] as Sport[]).map((sport) => (
+              <Button
+                key={sport}
+                variant={selectedSport === sport ? "default" : "outline"}
+                className={selectedSport === sport 
+                  ? "bg-brand-600 hover:bg-brand-700 text-white" 
+                  : "border-border text-muted-foreground hover:text-white"}
+                onClick={() => {
+                  setSelectedSport(sport);
+                  setBacktestSummary(null);
+                }}
+              >
+                {sport.toUpperCase()}
+              </Button>
+            ))}
+          </div>
+
           <Tabs defaultValue="games" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 mb-8 bg-card border border-border">
+            <TabsList className="grid w-full grid-cols-4 mb-8 bg-card border border-border">
               <TabsTrigger value="games" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white">
                 <BarChart3 className="w-4 h-4 mr-2" />
-                Today's Games
+                Games
               </TabsTrigger>
               <TabsTrigger value="value" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white">
                 <Target className="w-4 h-4 mr-2" />
                 Value Bets ({valueBets.length})
               </TabsTrigger>
+              <TabsTrigger value="backtest" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white">
+                <Activity className="w-4 h-4 mr-2" />
+                Backtest
+              </TabsTrigger>
               <TabsTrigger value="analyze" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white">
                 <Brain className="w-4 h-4 mr-2" />
-                Analyze Game
+                Analyze
               </TabsTrigger>
             </TabsList>
 
             {/* Today's Games Tab */}
             <TabsContent value="games" className="space-y-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-2xl font-bold text-white">NBA Games - ML Predictions</h2>
+                <h2 className="text-2xl font-bold text-white">{sportName} - ML Predictions</h2>
                 <div className="text-sm text-muted-foreground">
                   Powered by XGBoost ML Model
                 </div>
@@ -455,6 +507,193 @@ Always bet responsibly. Past performance does not guarantee future results.`;
               )}
             </TabsContent>
 
+            {/* Backtest Tab */}
+            <TabsContent value="backtest" className="space-y-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-bold text-white">{sportName} - Historical Backtest</h2>
+                <Button
+                  onClick={runBacktest}
+                  disabled={isBacktesting}
+                  className="bg-brand-600 hover:bg-brand-700"
+                >
+                  {isBacktesting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Running...
+                    </>
+                  ) : (
+                    <>
+                      <Activity className="mr-2 h-4 w-4" />
+                      Run 6-Month Backtest
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              {backtestSummary ? (
+                <div className="space-y-6">
+                  {/* Summary Stats */}
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    <div className="text-center p-4 rounded-xl bg-card border border-border">
+                      <div className="text-2xl font-bold text-white">{backtestSummary.totalGames}</div>
+                      <div className="text-xs text-muted-foreground">Total Games</div>
+                    </div>
+                    <div className="text-center p-4 rounded-xl bg-card border border-border">
+                      <div className="text-2xl font-bold text-brand-400">{(backtestSummary.accuracy * 100).toFixed(1)}%</div>
+                      <div className="text-xs text-muted-foreground">Accuracy</div>
+                    </div>
+                    <div className="text-center p-4 rounded-xl bg-card border border-border">
+                      <div className={`text-2xl font-bold ${backtestSummary.totalProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {formatMoney(backtestSummary.totalProfit)}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Total Profit</div>
+                    </div>
+                    <div className="text-center p-4 rounded-xl bg-card border border-border">
+                      <div className={`text-2xl font-bold ${backtestSummary.roi >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {backtestSummary.roi.toFixed(1)}%
+                      </div>
+                      <div className="text-xs text-muted-foreground">ROI</div>
+                    </div>
+                    <div className="text-center p-4 rounded-xl bg-card border border-border">
+                      <div className="text-2xl font-bold text-yellow-400">{backtestSummary.sharpeRatio.toFixed(2)}</div>
+                      <div className="text-xs text-muted-foreground">Sharpe Ratio</div>
+                    </div>
+                  </div>
+
+                  {/* Detailed Stats */}
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div className="rounded-xl bg-card border border-border p-6">
+                      <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                        <Target className="w-5 h-5 text-brand-400" />
+                        Betting Performance
+                      </h3>
+                      <div className="space-y-3">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Total Bets Placed</span>
+                          <span className="text-white font-medium">{backtestSummary.totalBets}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Winning Bets</span>
+                          <span className="text-green-400 font-medium">{backtestSummary.winningBets}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Bet Win Rate</span>
+                          <span className="text-white font-medium">{(backtestSummary.betWinRate * 100).toFixed(1)}%</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Max Drawdown</span>
+                          <span className="text-red-400 font-medium">{formatMoney(-backtestSummary.maxDrawdown)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl bg-card border border-border p-6">
+                      <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                        <Calendar className="w-5 h-5 text-brand-400" />
+                        Monthly Breakdown
+                      </h3>
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {backtestSummary.profitByMonth.map((month, idx) => (
+                          <div key={idx} className="flex justify-between items-center">
+                            <span className="text-muted-foreground text-sm">{month.month}</span>
+                            <div className="flex gap-4">
+                              <span className={`text-sm font-medium ${month.profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                {formatMoney(month.profit)}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                ({formatMoney(month.cumulative)})
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Cumulative Profit Chart */}
+                  <div className="rounded-xl bg-card border border-border p-6">
+                    <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                      <LineChartIcon className="w-5 h-5 text-brand-400" />
+                      Cumulative Profit Over Time
+                    </h3>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={backtestSummary.profitByMonth}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                          <XAxis dataKey="month" stroke="#888" fontSize={12} />
+                          <YAxis stroke="#888" fontSize={12} tickFormatter={(v) => `$${v}`} />
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
+                            labelStyle={{ color: '#fff' }}
+                            formatter={(value: number) => [`$${value.toFixed(0)}`, 'Cumulative']}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="cumulative" 
+                            stroke="#22c55e" 
+                            strokeWidth={2}
+                            dot={{ fill: '#22c55e', strokeWidth: 2 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Monthly Profit Bar Chart */}
+                  <div className="rounded-xl bg-card border border-border p-6">
+                    <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                      <BarChart3 className="w-5 h-5 text-brand-400" />
+                      Monthly Profit/Loss
+                    </h3>
+                    <div className="h-48">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={backtestSummary.profitByMonth}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                          <XAxis dataKey="month" stroke="#888" fontSize={12} />
+                          <YAxis stroke="#888" fontSize={12} tickFormatter={(v) => `$${v}`} />
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
+                            labelStyle={{ color: '#fff' }}
+                            formatter={(value: number) => [`$${value.toFixed(0)}`, 'Profit']}
+                          />
+                          <Bar 
+                            dataKey="profit" 
+                            fill="#3b82f6"
+                            radius={[4, 4, 0, 0]}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-16 rounded-xl bg-card border border-border">
+                  <Activity className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                  <h3 className="text-xl font-semibold text-white mb-2">Run a Backtest</h3>
+                  <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                    Simulate 6 months of historical {sportName} games to see how our ML model would have performed.
+                  </p>
+                  <Button
+                    onClick={runBacktest}
+                    disabled={isBacktesting}
+                    className="bg-brand-600 hover:bg-brand-700"
+                  >
+                    {isBacktesting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Running Backtest...
+                      </>
+                    ) : (
+                      <>
+                        <Activity className="mr-2 h-4 w-4" />
+                        Start Backtest
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
+            </TabsContent>
+
             {/* Analyze Game Tab */}
             <TabsContent value="analyze" className="space-y-6">
               <div className="rounded-2xl bg-card border border-border p-8 glow-green">
@@ -464,7 +703,7 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                   </div>
                   <div>
                     <h2 className="text-2xl font-bold text-white">Game Analyzer</h2>
-                    <p className="text-muted-foreground">Enter any NBA matchup for instant ML analysis</p>
+                    <p className="text-muted-foreground">Enter any {sportName} matchup for instant ML analysis</p>
                   </div>
                 </div>
 
