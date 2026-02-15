@@ -652,3 +652,122 @@ export function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
+
+// Performance tracking types
+export interface WeeklyPerformance {
+  week: string;
+  picks: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  profit: number;
+  roi: number;
+}
+
+export interface SportPerformance {
+  sport: Sport;
+  totalPicks: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  profit: number;
+  roi: number;
+  streak: number;
+  bestWeek: number;
+  worstWeek: number;
+}
+
+export interface PerformanceData {
+  weeklyData: WeeklyPerformance[];
+  sportBreakdown: SportPerformance[];
+  overallWinRate: number;
+  overallROI: number;
+  totalProfit: number;
+  currentStreak: number;
+  longestStreak: number;
+}
+
+// Generate simulated performance data for display
+export function generatePerformanceData(): PerformanceData {
+  const weeks: WeeklyPerformance[] = [];
+  const sports: Sport[] = ['nba', 'nfl', 'mlb'];
+  
+  // Generate 12 weeks of historical data
+  for (let i = 11; i >= 0; i--) {
+    const date = new Date();
+    date.setDate(date.getDate() - (i * 7));
+    const weekStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    
+    // Simulate picks with ~58% win rate (realistic for good model)
+    const picks = Math.floor(Math.random() * 15) + 20; // 20-35 picks per week
+    const baseWinRate = 0.55 + (Math.random() * 0.10); // 55-65% win rate
+    const wins = Math.round(picks * baseWinRate);
+    const losses = picks - wins;
+    const winRate = wins / picks;
+    
+    // Calculate profit assuming average odds of -110
+    const avgOdds = -110;
+    const winPayout = wins * (100 / 110); // Win at -110 odds
+    const lossAmount = losses * 1; // Lose 1 unit per loss
+    const profit = (winPayout - lossAmount) * 100; // In dollars assuming $100 units
+    const roi = (profit / (picks * 100)) * 100;
+    
+    weeks.push({
+      week: weekStr,
+      picks,
+      wins,
+      losses,
+      winRate,
+      profit: Math.round(profit),
+      roi: Math.round(roi * 10) / 10,
+    });
+  }
+  
+  // Generate sport breakdown
+  const sportBreakdown: SportPerformance[] = sports.map(sport => {
+    const totalPicks = Math.floor(Math.random() * 50) + 80;
+    const baseWinRate = sport === 'nba' ? 0.60 : sport === 'nfl' ? 0.58 : 0.55;
+    const winRate = baseWinRate + (Math.random() * 0.08 - 0.04);
+    const wins = Math.round(totalPicks * winRate);
+    const losses = totalPicks - wins;
+    
+    const winPayout = wins * (100 / 110);
+    const lossAmount = losses * 1;
+    const profit = (winPayout - lossAmount) * 100;
+    const roi = (profit / (totalPicks * 100)) * 100;
+    
+    return {
+      sport,
+      totalPicks,
+      wins,
+      losses,
+      winRate,
+      profit: Math.round(profit),
+      roi: Math.round(roi * 10) / 10,
+      streak: Math.floor(Math.random() * 8) - 2,
+      bestWeek: Math.floor(Math.random() * 800) + 200,
+      worstWeek: -(Math.floor(Math.random() * 400) + 100),
+    };
+  });
+  
+  // Calculate overall stats
+  const totalPicks = weeks.reduce((sum, w) => sum + w.picks, 0);
+  const totalWins = weeks.reduce((sum, w) => sum + w.wins, 0);
+  const totalProfit = weeks.reduce((sum, w) => sum + w.profit, 0);
+  const overallWinRate = totalWins / totalPicks;
+  const overallROI = (totalProfit / (totalPicks * 100)) * 100;
+  
+  // Simulate streaks
+  const currentStreak = Math.floor(Math.random() * 10) - 3;
+  const longestStreak = Math.floor(Math.random() * 8) + 5;
+  
+  return {
+    weeklyData: weeks,
+    sportBreakdown,
+    overallWinRate,
+    overallROI: Math.round(overallROI * 10) / 10,
+    totalProfit: Math.round(totalProfit),
+    currentStreak,
+    longestStreak,
+  };
+}

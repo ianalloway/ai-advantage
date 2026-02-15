@@ -40,10 +40,12 @@ import {
   formatMoney,
   generateBacktestData,
   calculateBacktestSummary,
+  generatePerformanceData,
   SPORT_CONFIG,
   type GamePrediction,
   type Sport,
-  type BacktestSummary
+  type BacktestSummary,
+  type PerformanceData
 } from "@/lib/predictions";
 import {
   isPremiumUser,
@@ -69,8 +71,9 @@ const Index = () => {
   const [email, setEmail] = useState("");
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [isPremium, setIsPremium] = useState(false);
-  const [showPricing, setShowPricing] = useState(false);
-  const { toast } = useToast();
+    const [showPricing, setShowPricing] = useState(false);
+    const [performanceData, setPerformanceData] = useState<PerformanceData | null>(null);
+    const { toast } = useToast();
 
   // Check premium status on mount
   useEffect(() => {
@@ -337,25 +340,33 @@ Always bet responsibly. Past performance does not guarantee future results.`;
             ))}
           </div>
 
-          <Tabs defaultValue="games" className="w-full">
-            <TabsList className="grid w-full grid-cols-4 mb-8 bg-card border border-border">
-              <TabsTrigger value="games" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white">
-                <BarChart3 className="w-4 h-4 mr-2" />
-                Games
-              </TabsTrigger>
-              <TabsTrigger value="value" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white">
-                <Target className="w-4 h-4 mr-2" />
-                Value Bets ({valueBets.length})
-              </TabsTrigger>
-              <TabsTrigger value="backtest" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white">
-                <Activity className="w-4 h-4 mr-2" />
-                Backtest
-              </TabsTrigger>
-              <TabsTrigger value="analyze" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white">
-                <Brain className="w-4 h-4 mr-2" />
-                Analyze
-              </TabsTrigger>
-            </TabsList>
+                    <Tabs defaultValue="games" className="w-full">
+                      <TabsList className="grid w-full grid-cols-5 mb-8 bg-card border border-border">
+                        <TabsTrigger value="games" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white">
+                          <BarChart3 className="w-4 h-4 mr-2" />
+                          Games
+                        </TabsTrigger>
+                        <TabsTrigger value="value" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white">
+                          <Target className="w-4 h-4 mr-2" />
+                          Value Bets ({valueBets.length})
+                        </TabsTrigger>
+                        <TabsTrigger value="backtest" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white">
+                          <Activity className="w-4 h-4 mr-2" />
+                          Backtest
+                        </TabsTrigger>
+                        <TabsTrigger 
+                          value="performance" 
+                          className="data-[state=active]:bg-brand-600 data-[state=active]:text-white"
+                          onClick={() => !performanceData && setPerformanceData(generatePerformanceData())}
+                        >
+                          <Trophy className="w-4 h-4 mr-2" />
+                          Performance
+                        </TabsTrigger>
+                        <TabsTrigger value="analyze" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white">
+                          <Brain className="w-4 h-4 mr-2" />
+                          Analyze
+                        </TabsTrigger>
+                      </TabsList>
 
             {/* Today's Games Tab */}
             <TabsContent value="games" className="space-y-6">
@@ -756,15 +767,179 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                     )}
                   </Button>
                 </div>
-              )}
-            </TabsContent>
+                          )}
+                        </TabsContent>
 
-            {/* Analyze Game Tab */}
-            <TabsContent value="analyze" className="space-y-6">
-              <div className="rounded-2xl bg-card border border-border p-8 glow-green">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="p-2 rounded-lg bg-brand-500/20">
-                    <Trophy className="w-6 h-6 text-brand-400" />
+                        {/* Performance Tab */}
+                        <TabsContent value="performance" className="space-y-6">
+                          <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-2xl font-bold text-white">Historical Performance</h2>
+                            <Button
+                              onClick={() => setPerformanceData(generatePerformanceData())}
+                              variant="outline"
+                              className="border-border text-muted-foreground hover:text-white"
+                            >
+                              <Activity className="mr-2 h-4 w-4" />
+                              Refresh Data
+                            </Button>
+                          </div>
+
+                          {performanceData ? (
+                            <div className="space-y-6">
+                              {/* Overall Stats */}
+                              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                                <div className="text-center p-4 rounded-xl bg-card border border-border">
+                                  <div className="text-2xl font-bold text-brand-400">{(performanceData.overallWinRate * 100).toFixed(1)}%</div>
+                                  <div className="text-xs text-muted-foreground">Win Rate</div>
+                                </div>
+                                <div className="text-center p-4 rounded-xl bg-card border border-border">
+                                  <div className={`text-2xl font-bold ${performanceData.overallROI >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {performanceData.overallROI.toFixed(1)}%
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">ROI</div>
+                                </div>
+                                <div className="text-center p-4 rounded-xl bg-card border border-border">
+                                  <div className={`text-2xl font-bold ${performanceData.totalProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {formatMoney(performanceData.totalProfit)}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">Total Profit</div>
+                                </div>
+                                <div className="text-center p-4 rounded-xl bg-card border border-border">
+                                  <div className={`text-2xl font-bold ${performanceData.currentStreak >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {performanceData.currentStreak > 0 ? `+${performanceData.currentStreak}` : performanceData.currentStreak}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">Current Streak</div>
+                                </div>
+                                <div className="text-center p-4 rounded-xl bg-card border border-border">
+                                  <div className="text-2xl font-bold text-yellow-400">{performanceData.longestStreak}</div>
+                                  <div className="text-xs text-muted-foreground">Best Streak</div>
+                                </div>
+                              </div>
+
+                              {/* Weekly Performance Chart */}
+                              <div className="rounded-xl bg-card border border-border p-6">
+                                <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                                  <LineChartIcon className="w-5 h-5 text-brand-400" />
+                                  Weekly Win Rate Trend
+                                </h3>
+                                <div className="h-64">
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={performanceData.weeklyData}>
+                                      <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                                      <XAxis dataKey="week" stroke="#888" fontSize={12} />
+                                      <YAxis stroke="#888" fontSize={12} tickFormatter={(v) => `${(v * 100).toFixed(0)}%`} domain={[0.4, 0.8]} />
+                                      <Tooltip 
+                                        contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
+                                        labelStyle={{ color: '#fff' }}
+                                        formatter={(value: number) => [`${(value * 100).toFixed(1)}%`, 'Win Rate']}
+                                      />
+                                      <Line 
+                                        type="monotone" 
+                                        dataKey="winRate" 
+                                        stroke="#22c55e" 
+                                        strokeWidth={2}
+                                        dot={{ fill: '#22c55e', strokeWidth: 2 }}
+                                      />
+                                    </LineChart>
+                                  </ResponsiveContainer>
+                                </div>
+                              </div>
+
+                              {/* Weekly Profit Bar Chart */}
+                              <div className="rounded-xl bg-card border border-border p-6">
+                                <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                                  <BarChart3 className="w-5 h-5 text-brand-400" />
+                                  Weekly Profit/Loss
+                                </h3>
+                                <div className="h-48">
+                                  <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={performanceData.weeklyData}>
+                                      <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+                                      <XAxis dataKey="week" stroke="#888" fontSize={12} />
+                                      <YAxis stroke="#888" fontSize={12} tickFormatter={(v) => `$${v}`} />
+                                      <Tooltip 
+                                        contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333' }}
+                                        labelStyle={{ color: '#fff' }}
+                                        formatter={(value: number) => [`$${value}`, 'Profit']}
+                                      />
+                                      <Bar 
+                                        dataKey="profit" 
+                                        fill="#3b82f6"
+                                        radius={[4, 4, 0, 0]}
+                                      />
+                                    </BarChart>
+                                  </ResponsiveContainer>
+                                </div>
+                              </div>
+
+                              {/* Sport Breakdown */}
+                              <div className="rounded-xl bg-card border border-border p-6">
+                                <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                                  <Trophy className="w-5 h-5 text-brand-400" />
+                                  Performance by Sport
+                                </h3>
+                                <div className="grid md:grid-cols-3 gap-4">
+                                  {performanceData.sportBreakdown.map((sport) => (
+                                    <div key={sport.sport} className="p-4 rounded-lg bg-secondary border border-border">
+                                      <div className="flex items-center justify-between mb-3">
+                                        <span className="text-lg font-bold text-white">{sport.sport.toUpperCase()}</span>
+                                        <span className={`text-sm font-medium ${sport.roi >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                          {sport.roi > 0 ? '+' : ''}{sport.roi.toFixed(1)}% ROI
+                                        </span>
+                                      </div>
+                                      <div className="space-y-2 text-sm">
+                                        <div className="flex justify-between">
+                                          <span className="text-muted-foreground">Record</span>
+                                          <span className="text-white">{sport.wins}-{sport.losses}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                          <span className="text-muted-foreground">Win Rate</span>
+                                          <span className="text-brand-400">{(sport.winRate * 100).toFixed(1)}%</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                          <span className="text-muted-foreground">Profit</span>
+                                          <span className={sport.profit >= 0 ? 'text-green-400' : 'text-red-400'}>
+                                            {formatMoney(sport.profit)}
+                                          </span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                          <span className="text-muted-foreground">Best Week</span>
+                                          <span className="text-green-400">{formatMoney(sport.bestWeek)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                          <span className="text-muted-foreground">Worst Week</span>
+                                          <span className="text-red-400">{formatMoney(sport.worstWeek)}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-center py-16 rounded-xl bg-card border border-border">
+                              <Trophy className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                              <h3 className="text-xl font-semibold text-white mb-2">View Performance History</h3>
+                              <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                                Track our ML model's historical performance across all sports with detailed metrics and charts.
+                              </p>
+                              <Button
+                                onClick={() => setPerformanceData(generatePerformanceData())}
+                                className="bg-brand-600 hover:bg-brand-700"
+                              >
+                                <Trophy className="mr-2 h-4 w-4" />
+                                Load Performance Data
+                              </Button>
+                            </div>
+                          )}
+                        </TabsContent>
+
+                        {/* Analyze Game Tab */}
+                        <TabsContent value="analyze" className="space-y-6">
+                          <div className="rounded-2xl bg-card border border-border p-8 glow-green">
+                            <div className="flex items-center gap-3 mb-6">
+                              <div className="p-2 rounded-lg bg-brand-500/20">
+                                <Trophy className="w-6 h-6 text-brand-400" />
                   </div>
                   <div>
                     <h2 className="text-2xl font-bold text-white">Game Analyzer</h2>
