@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -21,7 +22,12 @@ import {
   Home,
   Plane,
   Activity,
-  Calendar
+  Calendar,
+  Mail,
+  Crown,
+  Check,
+  Lock,
+  Heart
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
 import {
@@ -39,6 +45,15 @@ import {
   type Sport,
   type BacktestSummary
 } from "@/lib/predictions";
+import {
+  isPremiumUser,
+  redirectToCheckout,
+  subscribeEmail,
+  PREMIUM_FEATURES,
+  FREE_FEATURES,
+} from "@/lib/stripe";
+
+const ETH_DONATION_ADDRESS = "0xAc7C093B312700614C80Ba3e0509f8dEde03515b";
 
 const Index = () => {
   const [gameInput, setGameInput] = useState("");
@@ -51,7 +66,57 @@ const Index = () => {
   const [selectedSport, setSelectedSport] = useState<Sport>('nba');
   const [backtestSummary, setBacktestSummary] = useState<BacktestSummary | null>(null);
   const [isBacktesting, setIsBacktesting] = useState(false);
+  const [email, setEmail] = useState("");
+  const [isSubscribing, setIsSubscribing] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
+  const [showPricing, setShowPricing] = useState(false);
   const { toast } = useToast();
+
+  // Check premium status on mount
+  useEffect(() => {
+    setIsPremium(isPremiumUser());
+  }, []);
+
+  // Handle email subscription
+  const handleEmailSubscribe = async () => {
+    if (!email.trim()) {
+      toast({
+        title: "Please enter your email",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsSubscribing(true);
+    const result = await subscribeEmail(email);
+    setIsSubscribing(false);
+    toast({
+      title: result.success ? "Subscribed!" : "Error",
+      description: result.message,
+      variant: result.success ? "default" : "destructive",
+    });
+    if (result.success) setEmail("");
+  };
+
+  // Handle upgrade to premium
+  const handleUpgrade = async () => {
+    await redirectToCheckout();
+  };
+
+  // Copy ETH address to clipboard
+  const copyEthAddress = async () => {
+    try {
+      await navigator.clipboard.writeText(ETH_DONATION_ADDRESS);
+      toast({
+        title: "Address Copied!",
+        description: "ETH donation address copied to clipboard",
+      });
+    } catch {
+      toast({
+        title: "Failed to copy",
+        variant: "destructive",
+      });
+    }
+  };
 
   // Load games for selected sport
   useEffect(() => {
@@ -799,24 +864,141 @@ Always bet responsibly. Past performance does not guarantee future results.`;
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section className="py-20 px-6">
-        <div className="max-w-4xl mx-auto text-center">
-          <div className="p-8 rounded-2xl bg-gradient-to-br from-brand-900/50 to-brand-800/30 border border-brand-500/20">
+      {/* Pricing Section */}
+      <section className="py-20 px-6 bg-card/30">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-12">
             <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-              Ready to Start Winning?
+              Choose Your Plan
             </h2>
-            <p className="text-muted-foreground mb-8 max-w-xl mx-auto">
-              Join thousands of smart bettors who use AI Advantage to make data-driven decisions.
+            <p className="text-muted-foreground max-w-2xl mx-auto">
+              Start free or unlock premium features for serious bettors
             </p>
-            <Button 
-              size="lg"
-              className="bg-brand-600 hover:bg-brand-700 text-white font-semibold px-8"
-              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            >
-              Try It Now
-              <ChevronRight className="ml-2 h-5 w-5" />
-            </Button>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+            {/* Free Plan */}
+            <div className="p-8 rounded-2xl bg-card border border-border">
+              <div className="text-center mb-6">
+                <h3 className="text-2xl font-bold text-white mb-2">Free</h3>
+                <div className="text-4xl font-bold text-white">$0</div>
+                <p className="text-muted-foreground">Forever free</p>
+              </div>
+              <ul className="space-y-3 mb-8">
+                {FREE_FEATURES.map((feature, i) => (
+                  <li key={i} className="flex items-center gap-3 text-muted-foreground">
+                    <Check className="w-5 h-5 text-brand-400 flex-shrink-0" />
+                    {feature}
+                  </li>
+                ))}
+              </ul>
+              <Button 
+                variant="outline" 
+                className="w-full border-border text-white hover:bg-brand-500/10"
+                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+              >
+                Get Started
+              </Button>
+            </div>
+
+            {/* Premium Plan */}
+            <div className="p-8 rounded-2xl bg-gradient-to-br from-brand-900/50 to-brand-800/30 border border-brand-500/30 relative">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-brand-500 text-white text-sm font-medium">
+                Most Popular
+              </div>
+              <div className="text-center mb-6">
+                <h3 className="text-2xl font-bold text-white mb-2 flex items-center justify-center gap-2">
+                  <Crown className="w-6 h-6 text-yellow-400" />
+                  Premium
+                </h3>
+                <div className="text-4xl font-bold text-white">$15<span className="text-lg text-muted-foreground">/mo</span></div>
+                <p className="text-muted-foreground">Cancel anytime</p>
+              </div>
+              <ul className="space-y-3 mb-8">
+                {PREMIUM_FEATURES.map((feature, i) => (
+                  <li key={i} className="flex items-center gap-3 text-white">
+                    <Check className="w-5 h-5 text-brand-400 flex-shrink-0" />
+                    {feature}
+                  </li>
+                ))}
+              </ul>
+              <Button 
+                className="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold"
+                onClick={handleUpgrade}
+              >
+                {isPremium ? (
+                  <>
+                    <Check className="mr-2 h-5 w-5" />
+                    Premium Active
+                  </>
+                ) : (
+                  <>
+                    <Crown className="mr-2 h-5 w-5" />
+                    Upgrade to Premium
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Email Capture Section */}
+      <section className="py-16 px-6">
+        <div className="max-w-2xl mx-auto text-center">
+          <div className="p-8 rounded-2xl bg-card border border-border">
+            <Mail className="w-12 h-12 text-brand-400 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-white mb-2">
+              Get Free Betting Insights
+            </h2>
+            <p className="text-muted-foreground mb-6">
+              Join our newsletter for weekly picks, strategy tips, and exclusive analysis
+            </p>
+            <div className="flex gap-3 max-w-md mx-auto">
+              <Input
+                type="email"
+                placeholder="Enter your email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="bg-secondary border-border text-white placeholder:text-muted-foreground"
+                onKeyDown={(e) => e.key === 'Enter' && handleEmailSubscribe()}
+              />
+              <Button 
+                onClick={handleEmailSubscribe}
+                disabled={isSubscribing}
+                className="bg-brand-600 hover:bg-brand-700 text-white px-6"
+              >
+                {isSubscribing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Subscribe"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Donation Section */}
+      <section className="py-12 px-6">
+        <div className="max-w-2xl mx-auto text-center">
+          <div className="p-6 rounded-xl bg-card/50 border border-border">
+            <div className="flex items-center justify-center gap-2 mb-3">
+              <Heart className="w-5 h-5 text-red-400" />
+              <h3 className="text-lg font-semibold text-white">Support Development</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              If you find AI Advantage helpful, consider supporting with ETH
+            </p>
+            <div className="flex items-center justify-center gap-2">
+              <code className="px-3 py-2 rounded-lg bg-secondary text-sm text-brand-400 font-mono">
+                {ETH_DONATION_ADDRESS.slice(0, 10)}...{ETH_DONATION_ADDRESS.slice(-8)}
+              </code>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={copyEthAddress}
+                className="border-border text-muted-foreground hover:text-white"
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
       </section>
@@ -827,6 +1009,17 @@ Always bet responsibly. Past performance does not guarantee future results.`;
           <div className="flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-brand-400" />
             <span className="font-semibold text-white">AI Advantage Sports</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={copyEthAddress}
+              className="text-muted-foreground hover:text-white"
+            >
+              <Heart className="h-4 w-4 mr-2" />
+              Donate ETH
+            </Button>
           </div>
           <p className="text-sm text-muted-foreground text-center">
             For entertainment purposes only. Please gamble responsibly. Must be 21+ to participate.
