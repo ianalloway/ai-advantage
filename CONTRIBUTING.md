@@ -1,66 +1,49 @@
 # Contributing to AI Advantage Sports
 
-Thank you for your interest in contributing to AI Advantage Sports! This document provides guidelines and instructions for contributing.
+Welcome! Help us build the best AI-powered sports betting platform.
 
-## Getting Started
+## How to Contribute
 
-1. Fork the repository
-2. Clone your fork locally
-3. Install dependencies with `npm install`
-4. Create a new branch for your feature or fix
+1. **Fork** the repository  
+2. **Create** a feature branch: `git checkout -b feature/your-feature`
+3. **Make** your changes
+4. **Test** your changes
+5. **Submit** a Pull Request
 
 ## Development Setup
 
 ```bash
+# Clone your fork
+git clone https://github.com/YOUR_USERNAME/ai-advantage.git
+cd ai-advantage
+
 # Install dependencies
 npm install
 
 # Start development server
 npm run dev
-
-# Run linting
-npm run lint
-
-# Build for production
-npm run build
 ```
+
+## Tech Stack
+
+- React 18+
+- TypeScript
+- Tailwind CSS
+- Vite
 
 ## Code Style
 
-This project uses TypeScript with React. Please follow these guidelines:
+- Use ESLint + Prettier (included)
+- Follow existing component patterns
+- Type everything!
 
-- Use TypeScript for all new code
-- Follow the existing code style and patterns
-- Use meaningful variable and function names
-- Add comments for complex logic
-- Keep components small and focused
+## Good First Issues
 
-## Pull Request Process
+- UI improvements
+- New sports categories
+- Performance optimizations
+- Bug fixes
 
-1. Ensure your code follows the project's coding standards
-2. Update documentation if needed
-3. Test your changes thoroughly
-4. Create a pull request with a clear description of your changes
-5. Link any related issues
+## Questions?
 
-## Reporting Issues
-
-When reporting issues, please include:
-
-- A clear description of the problem
-- Steps to reproduce the issue
-- Expected vs actual behavior
-- Screenshots if applicable
-- Browser and OS information
-
-## Feature Requests
-
-Feature requests are welcome! Please open an issue describing:
-
-- The feature you'd like to see
-- Why it would be useful
-- Any implementation ideas you have
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the project's existing license.
+Open an issue!
