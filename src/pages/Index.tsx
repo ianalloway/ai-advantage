@@ -1,17 +1,19 @@
 import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  Loader2, 
-  Copy, 
-  TrendingUp, 
-  Zap, 
-  Target, 
-  BarChart3, 
+import LiveOddsTicker from "@/components/LiveOddsTicker";
+import {
+  Loader2,
+  Copy,
+  TrendingUp,
+  Zap,
+  Target,
+  BarChart3,
   Shield,
   ChevronRight,
   Trophy,
@@ -27,7 +29,8 @@ import {
   Crown,
   Check,
   Lock,
-  Heart
+  Heart,
+  Star
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
 import {
@@ -270,6 +273,8 @@ Always bet responsibly. Past performance does not guarantee future results.`;
     }
   ];
 
+  const navigate = useNavigate();
+
   const stats = [
     { value: "73%", label: "Win Rate" },
     { value: "2,847", label: "Picks Made" },
@@ -279,28 +284,52 @@ Always bet responsibly. Past performance does not guarantee future results.`;
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Live Odds Ticker */}
+      <LiveOddsTicker speed={45} pauseOnHover />
+
       {/* Hero Section */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-brand-900/20 via-background to-background" />
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[800px] bg-brand-500/10 rounded-full blur-3xl" />
-        
+
         <div className="relative max-w-6xl mx-auto px-6 pt-20 pb-16">
           <div className="text-center space-y-6">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-500/10 border border-brand-500/20 text-brand-400 text-sm font-medium">
               <Zap className="w-4 h-4" />
               AI-Powered Sports Betting Intelligence
             </div>
-            
+
             <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight">
               <span className="text-white">Bet Smarter with</span>
               <br />
               <span className="text-gradient">AI Advantage</span>
             </h1>
-            
+
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-              Get data-driven betting recommendations powered by advanced AI. 
+              Get data-driven betting recommendations powered by advanced AI.
               Analyze any matchup and receive instant insights to make informed decisions.
             </p>
+
+            {/* CTA buttons */}
+            <div className="flex items-center justify-center gap-4 pt-2 flex-wrap">
+              <Button
+                size="lg"
+                className="bg-brand-600 hover:bg-brand-700 text-white font-bold px-8"
+                onClick={() => navigate("/picks")}
+              >
+                <Star className="w-5 h-5 mr-2" />
+                View Today's Picks
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                className="border-gray-600 text-gray-300 hover:bg-gray-800 font-bold px-8"
+                onClick={() => navigate("/leaderboard")}
+              >
+                <Trophy className="w-5 h-5 mr-2" />
+                Leaderboard
+              </Button>
+            </div>
           </div>
 
           {/* Stats Bar */}

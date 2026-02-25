@@ -1,49 +1,58 @@
-# Contributing to AI Advantage Sports
+# Contributing to ai-advantage
 
-Welcome! Help us build the best AI-powered sports betting platform.
+Thanks for your interest in contributing! Here's how to get started.
 
-## How to Contribute
+## Getting Started
 
-1. **Fork** the repository  
-2. **Create** a feature branch: `git checkout -b feature/your-feature`
-3. **Make** your changes
-4. **Test** your changes
-5. **Submit** a Pull Request
+1. **Fork** this repo and create your branch from `main`
+2. Branch naming: `feat/your-feature`, `fix/your-bug`, or `docs/your-docs`
+3. Make your changes with clear, descriptive commits
+4. **Test** your changes locally before opening a PR
+5. Open a Pull Request — fill out the template and describe your changes
 
 ## Development Setup
 
 ```bash
-# Clone your fork
-git clone https://github.com/YOUR_USERNAME/ai-advantage.git
+git clone https://github.com/ianalloway/ai-advantage
 cd ai-advantage
-
-# Install dependencies
-npm install
-
-# Start development server
-npm run dev
+npm install      # or: pip install -r requirements.txt
+npm run dev      # or: python main.py
 ```
-
-## Tech Stack
-
-- React 18+
-- TypeScript
-- Tailwind CSS
-- Vite
 
 ## Code Style
 
-- Use ESLint + Prettier (included)
-- Follow existing component patterns
-- Type everything!
+- **TypeScript/JS**: ESLint + Prettier (config in repo). Run `npm run lint` before committing.
+- **Python**: Black + isort. Run `black . && isort .` before committing.
+- Keep functions small and focused — one job per function.
+- Write self-documenting code; add comments only where logic is non-obvious.
 
-## Good First Issues
+## Pull Request Guidelines
 
-- UI improvements
-- New sports categories
-- Performance optimizations
-- Bug fixes
+- Keep PRs focused — one feature or bug fix per PR
+- Include a clear description of **what** and **why**
+- Reference related issues with `Closes #123`
+- All CI checks must pass before merging
+- Be responsive to review feedback
 
-## Questions?
+## Reporting Bugs
 
-Open an issue!
+Use the [Bug Report template](.github/ISSUE_TEMPLATE/bug_report.md). Include:
+- Steps to reproduce
+- Expected vs actual behavior
+- Environment info (OS, Node/Python version)
+
+## Suggesting Features
+
+Use the [Feature Request template](.github/ISSUE_TEMPLATE/feature_request.md). Explain the problem it solves.
+
+## Code of Conduct
+
+Be respectful and constructive. Everyone is welcome here.
+
+## License
+
+By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE).
+
+---
+
+Questions? Open an issue or reach out: **ian@allowayllc.com**
