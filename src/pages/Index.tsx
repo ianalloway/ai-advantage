@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import LiveOddsTicker from "@/components/LiveOddsTicker";
 import {
   Loader2,
   Copy,
@@ -283,6 +284,9 @@ Always bet responsibly. Past performance does not guarantee future results.`;
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Live Odds Ticker */}
+      <LiveOddsTicker speed={45} pauseOnHover />
+
       {/* Hero Section */}
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-brand-900/20 via-background to-background" />
