@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Discord Community
+    url: https://discord.gg/sportsanalytics
+    about: Chat with the community
+  - name: 📖 Documentation
+    url: https://github.com/ianalloway/ai-advantage/wiki
+    about: Read the docs first
+  - name: 🐦 Twitter/X
+    url: https://twitter.com/ianalloway
+    about: Follow for updates
