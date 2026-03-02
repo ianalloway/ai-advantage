@@ -30,7 +30,9 @@ import {
   Check,
   Lock,
   Heart,
-  Star
+  Star,
+  Bitcoin,
+  Flame,
 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
 import {
@@ -57,6 +59,7 @@ import {
   PREMIUM_FEATURES,
   FREE_FEATURES,
 } from "@/lib/stripe";
+import CryptoPaymentModal, { type UnlockType } from "@/components/CryptoPaymentModal";
 
 const ETH_DONATION_ADDRESS = "0xAc7C093B312700614C80Ba3e0509f8dEde03515b";
 
@@ -76,6 +79,8 @@ const Index = () => {
   const [isPremium, setIsPremium] = useState(false);
     const [showPricing, setShowPricing] = useState(false);
     const [performanceData, setPerformanceData] = useState<PerformanceData | null>(null);
+    const [showCryptoModal, setShowCryptoModal] = useState(false);
+    const [cryptoUnlockType, setCryptoUnlockType] = useState<UnlockType>("big-game");
     const { toast } = useToast();
 
   // Check premium status on mount
@@ -1076,28 +1081,28 @@ Always bet responsibly. Past performance does not guarantee future results.`;
               Choose Your Plan
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
-              Start free or unlock premium features for serious bettors
+              Start free, pay once with crypto, or go all-in with a monthly subscription
             </p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+          <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
             {/* Free Plan */}
-            <div className="p-8 rounded-2xl bg-card border border-border">
+            <div className="p-8 rounded-2xl bg-card border border-border flex flex-col">
               <div className="text-center mb-6">
                 <h3 className="text-2xl font-bold text-white mb-2">Free</h3>
                 <div className="text-4xl font-bold text-white">$0</div>
-                <p className="text-muted-foreground">Forever free</p>
+                <p className="text-muted-foreground text-sm">Forever free</p>
               </div>
-              <ul className="space-y-3 mb-8">
+              <ul className="space-y-3 mb-8 flex-1">
                 {FREE_FEATURES.map((feature, i) => (
-                  <li key={i} className="flex items-center gap-3 text-muted-foreground">
-                    <Check className="w-5 h-5 text-brand-400 flex-shrink-0" />
+                  <li key={i} className="flex items-center gap-3 text-muted-foreground text-sm">
+                    <Check className="w-4 h-4 text-brand-400 flex-shrink-0" />
                     {feature}
                   </li>
                 ))}
               </ul>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="w-full border-border text-white hover:bg-brand-500/10"
                 onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
               >
@@ -1105,28 +1110,91 @@ Always bet responsibly. Past performance does not guarantee future results.`;
               </Button>
             </div>
 
-            {/* Premium Plan */}
-            <div className="p-8 rounded-2xl bg-gradient-to-br from-brand-900/50 to-brand-800/30 border border-brand-500/30 relative">
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-brand-500 text-white text-sm font-medium">
-                Most Popular
+            {/* Crypto One-Time Unlock */}
+            <div className="p-8 rounded-2xl bg-gradient-to-br from-yellow-900/30 via-orange-900/20 to-purple-900/30 border border-yellow-500/30 relative flex flex-col">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-gradient-to-r from-yellow-500 to-orange-500 text-white text-sm font-bold whitespace-nowrap">
+                🔥 Pay Once in Crypto
               </div>
-              <div className="text-center mb-6">
+              <div className="text-center mb-6 mt-2">
+                <h3 className="text-2xl font-bold text-white mb-2 flex items-center justify-center gap-2">
+                  <Bitcoin className="w-6 h-6 text-yellow-400" />
+                  Crypto Unlock
+                </h3>
+                <div className="text-4xl font-bold text-white">$10<span className="text-lg text-muted-foreground"> one-time</span></div>
+                <p className="text-muted-foreground text-sm">ETH or USDC · Never expires</p>
+              </div>
+
+              {/* Two unlock options */}
+              <div className="space-y-3 mb-8 flex-1">
+                {/* Big Game */}
+                <button
+                  className="w-full p-4 rounded-xl border border-yellow-500/40 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors text-left group"
+                  onClick={() => {
+                    setCryptoUnlockType("big-game");
+                    setShowCryptoModal(true);
+                  }}
+                >
+                  <div className="flex items-center gap-3 mb-1">
+                    <Trophy className="w-5 h-5 text-yellow-400 flex-shrink-0" />
+                    <span className="text-white font-semibold text-sm">The Big Game Pass</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground pl-8">
+                    Championship AI picks, prop models & live line alerts for every playoff game
+                  </p>
+                </button>
+
+                {/* Knowledge Vault */}
+                <button
+                  className="w-full p-4 rounded-xl border border-purple-500/40 bg-purple-500/10 hover:bg-purple-500/20 transition-colors text-left group"
+                  onClick={() => {
+                    setCryptoUnlockType("knowledge-vault");
+                    setShowCryptoModal(true);
+                  }}
+                >
+                  <div className="flex items-center gap-3 mb-1">
+                    <Brain className="w-5 h-5 text-purple-400 flex-shrink-0" />
+                    <span className="text-white font-semibold text-sm">Knowledge Vault</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground pl-8">
+                    Full AI model access, 3-year backtests, advanced metrics & unlimited analysis
+                  </p>
+                </button>
+              </div>
+
+              <Button
+                className="w-full bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 text-white font-bold h-11"
+                onClick={() => {
+                  setCryptoUnlockType("big-game");
+                  setShowCryptoModal(true);
+                }}
+              >
+                <Flame className="w-4 h-4 mr-2" />
+                {isPremium ? "Already Unlocked ✓" : "Unlock for $10 in Crypto"}
+              </Button>
+            </div>
+
+            {/* Monthly Premium Plan */}
+            <div className="p-8 rounded-2xl bg-gradient-to-br from-brand-900/50 to-brand-800/30 border border-brand-500/30 relative flex flex-col">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-brand-500 text-white text-sm font-medium whitespace-nowrap">
+                Most Complete
+              </div>
+              <div className="text-center mb-6 mt-2">
                 <h3 className="text-2xl font-bold text-white mb-2 flex items-center justify-center gap-2">
                   <Crown className="w-6 h-6 text-yellow-400" />
-                  Premium
+                  Pro Monthly
                 </h3>
                 <div className="text-4xl font-bold text-white">$15<span className="text-lg text-muted-foreground">/mo</span></div>
-                <p className="text-muted-foreground">Cancel anytime</p>
+                <p className="text-muted-foreground text-sm">Cancel anytime</p>
               </div>
-              <ul className="space-y-3 mb-8">
+              <ul className="space-y-3 mb-8 flex-1">
                 {PREMIUM_FEATURES.map((feature, i) => (
-                  <li key={i} className="flex items-center gap-3 text-white">
-                    <Check className="w-5 h-5 text-brand-400 flex-shrink-0" />
+                  <li key={i} className="flex items-center gap-3 text-white text-sm">
+                    <Check className="w-4 h-4 text-brand-400 flex-shrink-0" />
                     {feature}
                   </li>
                 ))}
               </ul>
-              <Button 
+              <Button
                 className="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold"
                 onClick={handleUpgrade}
               >
@@ -1138,7 +1206,7 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                 ) : (
                   <>
                     <Crown className="mr-2 h-5 w-5" />
-                    Upgrade to Premium
+                    Upgrade to Pro
                   </>
                 )}
               </Button>
@@ -1146,6 +1214,20 @@ Always bet responsibly. Past performance does not guarantee future results.`;
           </div>
         </div>
       </section>
+
+      {/* Crypto Payment Modal */}
+      <CryptoPaymentModal
+        open={showCryptoModal}
+        onOpenChange={setShowCryptoModal}
+        unlockType={cryptoUnlockType}
+        onSuccess={() => {
+          setIsPremium(true);
+          toast({
+            title: "🔥 Access Unlocked!",
+            description: "Your crypto payment was verified. Enjoy full access!",
+          });
+        }}
+      />
 
       {/* Email Capture Section */}
       <section className="py-16 px-6">
