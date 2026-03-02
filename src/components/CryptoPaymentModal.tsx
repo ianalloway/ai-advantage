@@ -17,7 +17,7 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { setPremiumStatus } from "@/lib/stripe";
 
-const ETH_ADDRESS = "0xAc7C093B312700614C80Ba3e0509f8dEde03515b";
+const ETH_ADDRESS = "0x6f278ce76ba5ed31fd9be646d074863e126836e9";
 const ETH_AMOUNT = "0.003";   // ≈ $10 at ~$3,300/ETH
 const USDC_AMOUNT = "10";      // 10 USDC / USDT
 

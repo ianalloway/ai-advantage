@@ -61,7 +61,7 @@ import {
 } from "@/lib/stripe";
 import CryptoPaymentModal, { type UnlockType } from "@/components/CryptoPaymentModal";
 
-const ETH_DONATION_ADDRESS = "0xAc7C093B312700614C80Ba3e0509f8dEde03515b";
+const ETH_DONATION_ADDRESS = "0x6f278ce76ba5ed31fd9be646d074863e126836e9";
 
 const Index = () => {
   const [gameInput, setGameInput] = useState("");
