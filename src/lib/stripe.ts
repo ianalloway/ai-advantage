@@ -4,7 +4,7 @@ import { loadStripe } from '@stripe/stripe-js';
 const STRIPE_PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || 'pk_test_placeholder';
 
 // Price ID for the $15/month premium subscription
-export const PREMIUM_PRICE_ID = import.meta.env.VITE_STRIPE_PRICE_ID || 'price_placeholder';
+export const PREMIUM_PRICE_ID = import.meta.env.VITE_STRIPE_PRICE_ID || 'price_1T7e9zBM2OQUL1iIWTYYirfI';
 
 // Initialize Stripe
 let stripePromise: ReturnType<typeof loadStripe> | null = null;
@@ -45,16 +45,19 @@ export const setPremiumStatus = (isPremium: boolean): void => {
 };
 
 // Redirect to Stripe Checkout
-export const redirectToCheckout = async (): Promise<void> => {
+export const redirectToCheckout = async (type: 'premium' | 'one-time' = 'premium'): Promise<void> => {
   const stripe = await getStripe();
   if (!stripe) {
     console.error('Stripe not loaded');
     return;
   }
 
-  // In production, you'd create a checkout session on your backend
-  // For now, we'll use Stripe's payment links or show a demo
-  const checkoutUrl = import.meta.env.VITE_STRIPE_CHECKOUT_URL;
+  let checkoutUrl = '';
+  if (type === 'premium') {
+    checkoutUrl = import.meta.env.VITE_STRIPE_CHECKOUT_URL || 'https://buy.stripe.com/test_5kQ6oG0Na2nI2aVash9R601';
+  } else {
+    checkoutUrl = import.meta.env.VITE_STRIPE_ONE_TIME_CHECKOUT_URL || 'https://buy.stripe.com/test_00weVc9jGd2m2aV2ZP9R602';
+  }
   
   if (checkoutUrl) {
     window.location.href = checkoutUrl;

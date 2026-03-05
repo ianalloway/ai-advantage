@@ -109,8 +109,8 @@ const Index = () => {
   };
 
   // Handle upgrade to premium
-  const handleUpgrade = async () => {
-    await redirectToCheckout();
+  const handleUpgrade = async (type: 'premium' | 'one-time' = 'premium') => {
+    await redirectToCheckout(type);
   };
 
   // Copy ETH address to clipboard
@@ -1161,16 +1161,28 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                 </button>
               </div>
 
-              <Button
-                className="w-full bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 text-white font-bold h-11"
-                onClick={() => {
-                  setCryptoUnlockType("big-game");
-                  setShowCryptoModal(true);
-                }}
-              >
-                <Flame className="w-4 h-4 mr-2" />
-                {isPremium ? "Already Unlocked ✓" : "Unlock for $10 in Crypto"}
-              </Button>
+              <div className="flex flex-col gap-2">
+                <Button
+                  className="w-full bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-500 hover:to-orange-500 text-white font-bold h-11"
+                  onClick={() => {
+                    setCryptoUnlockType("big-game");
+                    setShowCryptoModal(true);
+                  }}
+                >
+                  <Flame className="w-4 h-4 mr-2" />
+                  {isPremium ? "Already Unlocked ✓" : "Unlock for $10 in Crypto"}
+                </Button>
+                {!isPremium && (
+                  <Button
+                    variant="outline"
+                    className="w-full border-brand-500/30 text-brand-400 hover:bg-brand-500/10 font-semibold"
+                    onClick={() => handleUpgrade('one-time')}
+                  >
+                    <DollarSign className="w-4 h-4 mr-2" />
+                    Pay with Card ($10)
+                  </Button>
+                )}
+              </div>
             </div>
 
             {/* Monthly Premium Plan */}
