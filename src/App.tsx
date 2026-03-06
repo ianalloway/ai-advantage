@@ -9,6 +9,7 @@ import Leaderboard from "./pages/Leaderboard";
 import ParlayBuilder from "./pages/ParlayBuilder";
 import ApiDocs from "./pages/ApiDocs";
 import Profile from "./pages/Profile";
+import Simulator from "./pages/Simulator";
 import Navbar from "./components/Navbar";
 
 const queryClient = new QueryClient();
@@ -35,6 +36,7 @@ const App = () => (
           <Route path="/parlay" element={<Layout><ParlayBuilder /></Layout>} />
           <Route path="/api-docs" element={<Layout><ApiDocs /></Layout>} />
           <Route path="/profile" element={<Layout><Profile /></Layout>} />
+          <Route path="/simulator" element={<Layout><Simulator /></Layout>} />
         </Routes>
       </BrowserRouter>
     </TooltipProvider>

@@ -8,15 +8,15 @@ import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Moon, Sun, TrendingUp, Trophy, BarChart3, Layers, UserCircle } from "lucide-react";
+import { Moon, Sun, TrendingUp, Trophy, BarChart3, Layers, UserCircle, Zap } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
 const NAV_LINKS = [
   { path: "/",           label: "Analyze",   icon: TrendingUp },
   { path: "/picks",      label: "Picks",     icon: Trophy      },
   { path: "/parlay",     label: "Parlay",    icon: Layers      },
+  { path: "/simulator",  label: "Simulate",  icon: Zap         },
   { path: "/leaderboard",label: "Leaders",   icon: BarChart3   },
-  { path: "/profile",    label: "Profile",   icon: UserCircle  },
 ];
 
 export default function Navbar() {
