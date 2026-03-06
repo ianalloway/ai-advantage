@@ -334,6 +334,17 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                 <Trophy className="w-5 h-5 mr-2" />
                 Leaderboard
               </Button>
+              <Button
+                size="lg"
+                className="bg-gradient-to-r from-brand-500 to-purple-600 hover:from-brand-600 hover:to-purple-700 text-white font-bold px-8 border-none"
+                onClick={() => {
+                  const pricingSection = document.querySelector('.bg-card\\/30');
+                  pricingSection?.scrollIntoView({ behavior: 'smooth' });
+                }}
+              >
+                <Crown className="w-5 h-5 mr-2 text-yellow-400" />
+                Go Pro
+              </Button>
             </div>
           </div>
 
