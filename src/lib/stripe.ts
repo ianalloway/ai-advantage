@@ -4,7 +4,7 @@ import { loadStripe } from '@stripe/stripe-js';
 const STRIPE_PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || 'pk_test_placeholder';
 
 // Price ID for the $15/month premium subscription
-export const PREMIUM_PRICE_ID = import.meta.env.VITE_STRIPE_PRICE_ID || 'price_1T7e9zBM2OQUL1iIWTYYirfI';
+export const PREMIUM_PRICE_ID = import.meta.env.VITE_STRIPE_PRICE_ID || 'price_1T87iSBM2OQUL1iISrZvHHvr';
 
 // Initialize Stripe
 let stripePromise: ReturnType<typeof loadStripe> | null = null;
@@ -54,9 +54,9 @@ export const redirectToCheckout = async (type: 'premium' | 'one-time' = 'premium
 
   let checkoutUrl = '';
   if (type === 'premium') {
-    checkoutUrl = import.meta.env.VITE_STRIPE_CHECKOUT_URL || 'https://buy.stripe.com/test_5kQ6oG0Na2nI2aVash9R601';
+    checkoutUrl = import.meta.env.VITE_STRIPE_CHECKOUT_URL || 'https://buy.stripe.com/test_fZu28qbrObYi7vf6c19R604';
   } else {
-    checkoutUrl = import.meta.env.VITE_STRIPE_ONE_TIME_CHECKOUT_URL || 'https://buy.stripe.com/test_00weVc9jGd2m2aV2ZP9R602';
+    checkoutUrl = import.meta.env.VITE_STRIPE_ONE_TIME_CHECKOUT_URL || 'https://buy.stripe.com/test_eVqbJ03Zm4vQ2aV43T9R605';
   }
   
   if (checkoutUrl) {
