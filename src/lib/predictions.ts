@@ -653,6 +653,79 @@ export function formatDate(dateStr: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+// ─── Spread / Total / Form helpers ─────────────────────────────────────────
+
+/**
+ * Calculate a Vegas-style point spread.
+ * Negative = home team is favored by that many points.
+ * MLB always returns ±1.5 run line.
+ */
+export function calculateSpread(homeStats: TeamStats, awayStats: TeamStats, sport: Sport): number {
+  if (sport === 'mlb') {
+    return homeStats.win_pct >= awayStats.win_pct ? -1.5 : 1.5;
+  }
+  const homeAdv = sport === 'nba' ? 3.0 : 2.5; // natural home-court / home-field pts
+  const rawSpread = -(((homeStats.point_diff - awayStats.point_diff) * 0.75) + homeAdv);
+  // round to nearest 0.5, clamp to sane range
+  const clamped = Math.max(-21, Math.min(21, rawSpread));
+  return Math.round(clamped * 2) / 2;
+}
+
+/**
+ * Calculate an expected over/under total.
+ */
+export function calculateTotal(homeStats: TeamStats, awayStats: TeamStats, sport: Sport): number {
+  const projHome = (homeStats.avg_points_for + awayStats.avg_points_against) / 2;
+  const projAway = (awayStats.avg_points_for + homeStats.avg_points_against) / 2;
+  return Math.round((projHome + projAway) * 2) / 2;
+}
+
+/**
+ * Simulate a team's last-5 W/L form.
+ * Results are seeded by team name so they're consistent across renders.
+ */
+export function getSimulatedForm(teamName: string, sport: Sport): ('W' | 'L')[] {
+  const stats = getTeamStats(sport)[teamName] || getDefaultStats();
+  // deterministic "hash" seed
+  const seed = teamName.split('').reduce((acc, c) => (acc * 31 + c.charCodeAt(0)) & 0xffffff, 0);
+  return Array.from({ length: 5 }, (_, i) => {
+    const rand = ((seed + i * 7919) % 97) / 97;
+    return rand < stats.win_pct ? 'W' : 'L';
+  });
+}
+
+/**
+ * Generate a human-readable AI analysis snippet for a pick.
+ */
+export function generatePickAnalysis(
+  homeTeam: string,
+  awayTeam: string,
+  pred: GamePrediction,
+  sport: Sport
+): string {
+  const teamStats = getTeamStats(sport);
+  const homeStats = teamStats[homeTeam] || getDefaultStats();
+  const awayStats = teamStats[awayTeam] || getDefaultStats();
+  const isHome = pred.predictedWinner === homeTeam;
+  const winnerStats = isHome ? homeStats : awayStats;
+  const loserStats  = isHome ? awayStats  : homeStats;
+  const winnerProb  = isHome ? pred.homeProb  : pred.awayProb;
+  const impliedProb = isHome ? pred.homeImpliedProb : pred.awayImpliedProb;
+  const edge        = isHome ? pred.homeEdge  : pred.awayEdge;
+  const wpGap = ((winnerStats.win_pct - loserStats.win_pct) * 100).toFixed(0);
+  const pdGap = Math.abs(winnerStats.point_diff - loserStats.point_diff).toFixed(1);
+  const winner = pred.predictedWinner;
+
+  const lines = [
+    `${winner} carry a ${wpGap}% win-rate edge and outpace their opponent by ${pdGap} pts/game on net differential. Model pricing: ${(winnerProb * 100).toFixed(0)}% vs market-implied ${(impliedProb * 100).toFixed(0)}% — a +${edge.toFixed(1)}% value gap at current lines.`,
+    `Net scoring differential of +${pdGap} pts/game in ${winner}'s favor signals a consistent efficiency advantage the market undervalues by ${edge.toFixed(1)}%. Model confidence: ${(winnerProb * 100).toFixed(0)}%.`,
+    `${winner} win probability pegged at ${(winnerProb * 100).toFixed(0)}% — ${edge.toFixed(1)}% above book-implied odds. ${isHome ? 'Home-court edge compounds the model's lean.' : 'Strong road form supports the model's projection.'}`,
+  ];
+
+  const seed = (homeTeam.charCodeAt(0) + awayTeam.charCodeAt(0)) % lines.length;
+  return lines[seed];
+}
+
 // Performance tracking types
 export interface WeeklyPerformance {
   week: string;

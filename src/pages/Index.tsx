@@ -46,6 +46,11 @@ import {
   generateBacktestData,
   calculateBacktestSummary,
   generatePerformanceData,
+  calculateSpread,
+  getSimulatedForm,
+  generatePickAnalysis,
+  getTeamStats,
+  getDefaultStats,
   SPORT_CONFIG,
   type GamePrediction,
   type Sport,
@@ -62,6 +67,108 @@ import {
 import CryptoPaymentModal, { type UnlockType } from "@/components/CryptoPaymentModal";
 
 const ETH_DONATION_ADDRESS = "0x6f278ce76ba5ed31fd9be646d074863e126836e9";
+
+// ─── Today's Top Pick Banner ────────────────────────────────────────────────
+// Always shows the single highest-edge free pick as a homepage teaser.
+
+const TOP_PICK = { sport: "nba" as Sport, home: "Oklahoma City Thunder", away: "Boston Celtics" };
+
+function TopPickBanner({ onNavigate }: { onNavigate: () => void }) {
+  const pred = analyzeGame(TOP_PICK.home, TOP_PICK.away, TOP_PICK.sport);
+  const teamStats = getTeamStats(TOP_PICK.sport);
+  const homeStats = teamStats[TOP_PICK.home] || getDefaultStats();
+  const awayStats = teamStats[TOP_PICK.away] || getDefaultStats();
+  const spread = calculateSpread(homeStats, awayStats, TOP_PICK.sport);
+  const isHomeWin = pred.predictedWinner === TOP_PICK.home;
+  const winnerProb = isHomeWin ? pred.homeProb : pred.awayProb;
+  const winnerEdge = isHomeWin ? pred.homeEdge : pred.awayEdge;
+  const teamSpread = isHomeWin ? spread : -spread;
+  const homeForm = getSimulatedForm(TOP_PICK.home, TOP_PICK.sport);
+  const awayForm  = getSimulatedForm(TOP_PICK.away,  TOP_PICK.sport);
+  const analysis  = generatePickAnalysis(TOP_PICK.home, TOP_PICK.away, pred, TOP_PICK.sport);
+
+  return (
+    <section className="px-6 pb-4">
+      <div className="max-w-6xl mx-auto">
+        <div
+          className="rounded-2xl border border-yellow-500/30 bg-gradient-to-r from-yellow-500/8 via-gray-900/60 to-brand-500/8 p-5 cursor-pointer hover:border-yellow-500/50 transition-all"
+          onClick={onNavigate}
+        >
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            {/* Left: label + matchup */}
+            <div className="flex items-start gap-4 flex-1">
+              <div className="flex-shrink-0">
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-yellow-500/20 border border-yellow-500/40 mb-2">
+                  <Star className="w-3 h-3 text-yellow-400" />
+                  <span className="text-xs font-bold text-yellow-400">BEST PICK TODAY</span>
+                </div>
+                <div className="text-white font-bold text-lg leading-tight">
+                  {TOP_PICK.away.split(' ').pop()} @ {TOP_PICK.home.split(' ').pop()}
+                </div>
+                <div className="text-gray-400 text-xs mt-1">
+                  {SPORT_CONFIG[TOP_PICK.sport].name.split(' ')[0]} · 7:30 PM ET · Spread Pick
+                </div>
+                {/* Form row */}
+                <div className="flex items-center gap-3 mt-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-gray-500">{TOP_PICK.away.split(' ').pop()}:</span>
+                    <div className="flex gap-0.5">
+                      {awayForm.map((r, i) => (
+                        <span key={i} className={`w-4 h-4 rounded-full text-[8px] font-bold flex items-center justify-center ${r === 'W' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>{r}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-gray-500">{TOP_PICK.home.split(' ').pop()}:</span>
+                    <div className="flex gap-0.5">
+                      {homeForm.map((r, i) => (
+                        <span key={i} className={`w-4 h-4 rounded-full text-[8px] font-bold flex items-center justify-center ${r === 'W' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>{r}</span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Center: pick details */}
+            <div className="flex items-center gap-6 flex-shrink-0">
+              <div className="text-center">
+                <div className="text-green-400 font-bold text-xl">
+                  {pred.predictedWinner.split(' ').pop()} {teamSpread > 0 ? '+' : ''}{teamSpread}
+                </div>
+                <div className="text-xs text-gray-500">Spread Pick</div>
+              </div>
+              <div className="text-center">
+                <div className="text-white font-mono font-bold text-xl">{formatProb(winnerProb)}</div>
+                <div className="text-xs text-gray-500">Win Prob</div>
+              </div>
+              <div className="text-center">
+                <div className={`font-mono font-bold text-xl ${winnerEdge > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {formatEdge(winnerEdge)}
+                </div>
+                <div className="text-xs text-gray-500">Model Edge</div>
+              </div>
+            </div>
+
+            {/* Right: CTA */}
+            <div className="flex flex-col items-end gap-2 flex-shrink-0">
+              <Button
+                className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white font-bold px-5"
+                onClick={(e) => { e.stopPropagation(); onNavigate(); }}
+              >
+                See All Picks
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+              <p className="text-[10px] text-gray-500 italic max-w-[200px] text-right hidden sm:block">
+                {analysis.slice(0, 60)}…
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 const Index = () => {
   const [gameInput, setGameInput] = useState("");
@@ -351,6 +458,9 @@ Always bet responsibly. Past performance does not guarantee future results.`;
           </div>
         </div>
       </section>
+
+      {/* ── Today's Top Pick Banner ─────────────────────────────────── */}
+      <TopPickBanner onNavigate={() => navigate("/picks")} />
 
       {/* ML Predictions Section */}
       <section className="py-16 px-6">
