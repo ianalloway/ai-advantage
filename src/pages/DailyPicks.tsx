@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -55,6 +55,69 @@ const TODAY_PICKS: DailyPick[] = [
   { sport: "nba", home: "Minnesota Timberwolves",away: "Memphis Grizzlies",      time: "8:00 PM ET",  confidence: "high",   isPremium: true  },
   { sport: "nba", home: "Philadelphia 76ers",    away: "New York Knicks",        time: "7:30 PM ET",  confidence: "medium", isPremium: true  },
 ];
+
+// Animated count-up hook
+function useCountUp(target: number, duration = 1200) {
+  const [value, setValue] = useState(0);
+  const ref = useRef<HTMLDivElement>(null);
+  const started = useRef(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !started.current) {
+          started.current = true;
+          const start = performance.now();
+          const step = (now: number) => {
+            const progress = Math.min((now - start) / duration, 1);
+            // ease-out cubic
+            const eased = 1 - Math.pow(1 - progress, 3);
+            setValue(eased * target);
+            if (progress < 1) requestAnimationFrame(step);
+          };
+          requestAnimationFrame(step);
+        }
+      },
+      { threshold: 0.3 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [target, duration]);
+
+  return { value, ref };
+}
+
+function AnimatedStat({
+  label,
+  target,
+  suffix,
+  prefix,
+  decimals,
+  Icon,
+  color,
+}: {
+  label: string;
+  target: number;
+  suffix?: string;
+  prefix?: string;
+  decimals?: number;
+  Icon: React.ComponentType<{ className?: string }>;
+  color: string;
+}) {
+  const { value, ref } = useCountUp(target);
+  const display = `${prefix ?? ""}${value.toFixed(decimals ?? 0)}${suffix ?? ""}`;
+
+  return (
+    <div ref={ref} className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
+      <Icon className={`w-5 h-5 ${color} mx-auto mb-1`} />
+      <div className={`text-xl font-bold ${color} font-mono tabular-nums`}>{display}</div>
+      <div className="text-xs text-gray-500">{label}</div>
+    </div>
+  );
+}
 
 const CONF = {
   high:   { label: "HIGH",   textColor: "text-green-400",  border: "border-green-500/30",  bg: "bg-green-500/8",   Icon: Zap      },
@@ -371,19 +434,11 @@ export default function DailyPicks() {
           </div>
         </div>
 
-        {/* Stats bar */}
+        {/* Stats bar — animated counters */}
         <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: "Model Accuracy", value: "68%",    Icon: Percent,     color: "text-green-400"  },
-            { label: "Avg Edge",       value: "+4.2%",  Icon: TrendingUp,  color: "text-blue-400"   },
-            { label: "Season ROI",     value: "+12.3%", Icon: DollarSign,  color: "text-yellow-400" },
-          ].map(({ label, value, Icon, color }) => (
-            <div key={label} className="bg-gray-900 border border-gray-800 rounded-xl p-4 text-center">
-              <Icon className={`w-5 h-5 ${color} mx-auto mb-1`} />
-              <div className={`text-xl font-bold ${color}`}>{value}</div>
-              <div className="text-xs text-gray-500">{label}</div>
-            </div>
-          ))}
+          <AnimatedStat label="Model Accuracy" target={68} suffix="%" Icon={Percent} color="text-green-400" />
+          <AnimatedStat label="Avg Edge" target={4.2} suffix="%" prefix="+" decimals={1} Icon={TrendingUp} color="text-blue-400" />
+          <AnimatedStat label="Season ROI" target={12.3} suffix="%" prefix="+" decimals={1} Icon={DollarSign} color="text-yellow-400" />
         </div>
 
         {/* ── FREE PICKS ── */}

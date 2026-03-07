@@ -458,32 +458,54 @@ export function parseGameInput(input: string, sport: Sport = 'nba'): { homeTeam:
   const normalizedInput = input.toLowerCase();
   const teamStats = getTeamStats(sport);
   const teamNames = Object.keys(teamStats);
-  const foundTeams: string[] = [];
-  
+
+  // Score each team by match quality: full name > nickname > city
+  // This prevents "New York" from ambiguously matching Knicks + Nets
+  const scored: { team: string; score: number }[] = [];
+
   for (const team of teamNames) {
     const teamLower = team.toLowerCase();
     const shortName = team.split(' ').pop()?.toLowerCase() || '';
     const cityName = team.split(' ').slice(0, -1).join(' ').toLowerCase();
-    
-    if (normalizedInput.includes(teamLower) || 
-        normalizedInput.includes(shortName) ||
-        (cityName && normalizedInput.includes(cityName))) {
-      foundTeams.push(team);
+
+    if (normalizedInput.includes(teamLower)) {
+      scored.push({ team, score: 3 }); // full name match is best
+    } else if (normalizedInput.includes(shortName)) {
+      scored.push({ team, score: 2 }); // nickname match (e.g. "celtics")
+    } else if (cityName && normalizedInput.includes(cityName)) {
+      scored.push({ team, score: 1 }); // city-only match (e.g. "new york")
     }
   }
-  
+
+  // Sort by score descending so best matches come first
+  scored.sort((a, b) => b.score - a.score);
+
+  // De-duplicate: if a city matched multiple teams, keep only the highest-scored one
+  // unless both teams were matched by name/nickname (score >= 2)
+  const foundTeams: string[] = [];
+  const usedCities = new Set<string>();
+
+  for (const { team, score } of scored) {
+    const cityName = team.split(' ').slice(0, -1).join(' ').toLowerCase();
+    if (score >= 2 || !usedCities.has(cityName)) {
+      foundTeams.push(team);
+      usedCities.add(cityName);
+    }
+    if (foundTeams.length >= 2) break;
+  }
+
   if (foundTeams.length >= 2) {
     if (normalizedInput.includes('@') || normalizedInput.includes('at ')) {
       return { homeTeam: foundTeams[1], awayTeam: foundTeams[0] };
     }
     return { homeTeam: foundTeams[0], awayTeam: foundTeams[1] };
   }
-  
+
   if (foundTeams.length === 1) {
     const opponent = teamNames.find(t => t !== foundTeams[0]) || teamNames[0];
     return { homeTeam: foundTeams[0], awayTeam: opponent };
   }
-  
+
   return null;
 }
 

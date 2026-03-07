@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,6 +70,68 @@ const UNLOCK_CONFIG = {
     ],
   },
 } as const;
+
+// Lightweight canvas confetti burst
+function ConfettiBurst() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    canvas.width = canvas.offsetWidth * 2;
+    canvas.height = canvas.offsetHeight * 2;
+    ctx.scale(2, 2);
+
+    const colors = ["#22c55e", "#eab308", "#f97316", "#3b82f6", "#a855f7", "#ef4444"];
+    const pieces = Array.from({ length: 60 }, () => ({
+      x: canvas.offsetWidth / 2,
+      y: canvas.offsetHeight / 2,
+      vx: (Math.random() - 0.5) * 12,
+      vy: Math.random() * -10 - 2,
+      w: Math.random() * 6 + 3,
+      h: Math.random() * 4 + 2,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      rotation: Math.random() * 360,
+      rotSpeed: (Math.random() - 0.5) * 15,
+      opacity: 1,
+    }));
+
+    let frame: number;
+    const animate = () => {
+      ctx.clearRect(0, 0, canvas.offsetWidth, canvas.offsetHeight);
+      let alive = false;
+      for (const p of pieces) {
+        p.x += p.vx;
+        p.vy += 0.25; // gravity
+        p.y += p.vy;
+        p.rotation += p.rotSpeed;
+        p.opacity -= 0.008;
+        if (p.opacity <= 0) continue;
+        alive = true;
+        ctx.save();
+        ctx.globalAlpha = p.opacity;
+        ctx.translate(p.x, p.y);
+        ctx.rotate((p.rotation * Math.PI) / 180);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        ctx.restore();
+      }
+      if (alive) frame = requestAnimationFrame(animate);
+    };
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="absolute inset-0 w-full h-full pointer-events-none z-50"
+    />
+  );
+}
 
 type Step = "info" | "pay" | "verify" | "done";
 
@@ -296,7 +358,8 @@ export default function CryptoPaymentModal({
 
         {/* ─── STEP 4: SUCCESS ──────────────────────────────────────────── */}
         {step === "done" && (
-          <div className="text-center space-y-5 py-4">
+          <div className="text-center space-y-5 py-4 relative">
+            <ConfettiBurst />
             <div
               className={`w-20 h-20 rounded-full bg-gradient-to-br ${cfg.gradientFrom} ${cfg.gradientTo} border-2 ${cfg.border} flex items-center justify-center mx-auto shadow-xl ${cfg.glowClass}`}
             >

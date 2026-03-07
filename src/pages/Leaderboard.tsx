@@ -45,7 +45,8 @@ const LEADERBOARD: BettorEntry[] = [
 
 const WEEKLY_LEADERS: BettorEntry[] = [...LEADERBOARD]
   .sort((a, b) => b.weeklyUnits - a.weeklyUnits)
-  .slice(0, 5);
+  .slice(0, 5)
+  .map((entry, i) => ({ ...entry, rank: i + 1 }));
 
 const RANK_COLORS: Record<number, string> = {
   1: "text-yellow-400",
