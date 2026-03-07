@@ -30,7 +30,7 @@ export default function SessionTimer() {
   return (
     <>
       {/* Floating session pill — bottom-left */}
-      <div className="fixed bottom-4 left-4 z-40 flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-900/90 border border-gray-700 backdrop-blur-sm text-xs text-gray-400 shadow-lg">
+      <div className="fixed bottom-[4.5rem] md:bottom-4 left-4 z-40 flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-900/90 border border-gray-700 backdrop-blur-sm text-xs text-gray-400 shadow-lg">
         <Clock className="w-3 h-3 text-gray-500" />
         <span className="font-mono tabular-nums">{formatDuration(elapsed)}</span>
       </div>

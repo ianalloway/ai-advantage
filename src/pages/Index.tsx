@@ -288,7 +288,7 @@ Always bet responsibly. Past performance does not guarantee future results.`;
   ];
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background pb-16 md:pb-0">
       {/* Live Odds Ticker */}
       <LiveOddsTicker speed={45} pauseOnHover />
 
@@ -386,37 +386,37 @@ Always bet responsibly. Past performance does not guarantee future results.`;
           </div>
 
                     <Tabs defaultValue="games" className="w-full">
-                      <TabsList className="grid w-full grid-cols-5 mb-8 bg-card border border-border">
-                        <TabsTrigger value="games" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white">
-                          <BarChart3 className="w-4 h-4 mr-2" />
-                          Games
+                      <TabsList className="flex w-full overflow-x-auto mb-8 bg-card border border-border">
+                        <TabsTrigger value="games" className="flex-1 min-w-0 data-[state=active]:bg-brand-600 data-[state=active]:text-white">
+                          <BarChart3 className="w-4 h-4 sm:mr-2 flex-shrink-0" />
+                          <span className="hidden sm:inline">Games</span>
                         </TabsTrigger>
-                        <TabsTrigger value="value" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white">
-                          <Target className="w-4 h-4 mr-2" />
-                          Value Bets ({valueBets.length})
+                        <TabsTrigger value="value" className="flex-1 min-w-0 data-[state=active]:bg-brand-600 data-[state=active]:text-white">
+                          <Target className="w-4 h-4 sm:mr-2 flex-shrink-0" />
+                          <span className="hidden sm:inline">Value ({valueBets.length})</span>
                         </TabsTrigger>
-                        <TabsTrigger value="backtest" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white">
-                          <Activity className="w-4 h-4 mr-2" />
-                          Backtest
+                        <TabsTrigger value="backtest" className="flex-1 min-w-0 data-[state=active]:bg-brand-600 data-[state=active]:text-white">
+                          <Activity className="w-4 h-4 sm:mr-2 flex-shrink-0" />
+                          <span className="hidden sm:inline">Backtest</span>
                         </TabsTrigger>
-                        <TabsTrigger 
-                          value="performance" 
-                          className="data-[state=active]:bg-brand-600 data-[state=active]:text-white"
+                        <TabsTrigger
+                          value="performance"
+                          className="flex-1 min-w-0 data-[state=active]:bg-brand-600 data-[state=active]:text-white"
                           onClick={() => !performanceData && setPerformanceData(generatePerformanceData())}
                         >
-                          <Trophy className="w-4 h-4 mr-2" />
-                          Performance
+                          <Trophy className="w-4 h-4 sm:mr-2 flex-shrink-0" />
+                          <span className="hidden sm:inline">Stats</span>
                         </TabsTrigger>
-                        <TabsTrigger value="analyze" className="data-[state=active]:bg-brand-600 data-[state=active]:text-white">
-                          <Brain className="w-4 h-4 mr-2" />
-                          Analyze
+                        <TabsTrigger value="analyze" className="flex-1 min-w-0 data-[state=active]:bg-brand-600 data-[state=active]:text-white">
+                          <Brain className="w-4 h-4 sm:mr-2 flex-shrink-0" />
+                          <span className="hidden sm:inline">Analyze</span>
                         </TabsTrigger>
                       </TabsList>
 
             {/* Today's Games Tab */}
             <TabsContent value="games" className="space-y-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-2xl font-bold text-white">{sportName} - ML Predictions</h2>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mb-4">
+                <h2 className="text-xl sm:text-2xl font-bold text-white">{sportName} - ML Predictions</h2>
                 <div className="text-sm text-muted-foreground">
                   Powered by XGBoost ML Model
                 </div>
@@ -498,7 +498,7 @@ Always bet responsibly. Past performance does not guarantee future results.`;
 
             {/* Value Bets Tab */}
             <TabsContent value="value" className="space-y-6">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
                 <h2 className="text-2xl font-bold text-white">Value Bets</h2>
                 <div className="text-sm text-muted-foreground">
                   Min Edge: {minEdge}% | Kelly: {(kellyFraction * 100).toFixed(0)}%
@@ -596,7 +596,7 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                           <div className="text-sm text-muted-foreground">Edge</div>
                         </div>
                       </div>
-                      <div className="grid grid-cols-4 gap-4 text-center">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
                         <div>
                           <div className="text-lg font-bold text-white">{formatProb(pred.valueBet.modelProb)}</div>
                           <div className="text-xs text-muted-foreground">Model Prob</div>
@@ -630,8 +630,8 @@ Always bet responsibly. Past performance does not guarantee future results.`;
 
             {/* Backtest Tab */}
             <TabsContent value="backtest" className="space-y-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-2xl font-bold text-white">{sportName} - Historical Backtest</h2>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                <h2 className="text-xl sm:text-2xl font-bold text-white">{sportName} - Historical Backtest</h2>
                 <Button
                   onClick={runBacktest}
                   disabled={isBacktesting}

@@ -389,7 +389,7 @@ export default function DailyPicks() {
   const highConf     = TODAY_PICKS.filter((p) => p.confidence === "high").length;
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-gray-950 text-white pb-16 md:pb-0">
       {/* Nav */}
       <div className="border-b border-gray-800 px-4 py-3 flex items-center justify-between max-w-4xl mx-auto">
         <Button

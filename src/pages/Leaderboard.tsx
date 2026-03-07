@@ -72,7 +72,7 @@ export default function Leaderboard() {
   const filtered = sportFilter === "ALL" ? rows : rows.filter((r) => r.sport === sportFilter);
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-gray-950 text-white pb-16 md:pb-0">
       {/* Nav */}
       <div className="border-b border-gray-800 px-4 py-3 flex items-center justify-between max-w-5xl mx-auto">
         <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white" onClick={() => navigate("/")}>

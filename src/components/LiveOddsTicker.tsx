@@ -131,14 +131,17 @@ export default function LiveOddsTicker({ speed = 40, pauseOnHover = true }: Live
             Live Odds
           </span>
         </div>
-        <span className="text-[10px] text-gray-600 font-mono">
+        <span className="text-[10px] text-gray-600 font-mono hidden sm:inline">
           Updated {lastUpdate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           {" · "}Best available · <span className="text-green-400/70">↓ favourable move</span>{" · "}
           <span className="text-red-400/70">↑ line move against</span>
         </span>
+        <span className="text-[10px] text-gray-600 font-mono sm:hidden">
+          {lastUpdate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+        </span>
       </div>
 
-      {/* Scrolling track */}
+      {/* Scrolling track — touch + mouse to pause */}
       <div
         className="flex py-2"
         style={{
@@ -148,6 +151,8 @@ export default function LiveOddsTicker({ speed = 40, pauseOnHover = true }: Live
         }}
         onMouseEnter={() => pauseOnHover && setPaused(true)}
         onMouseLeave={() => pauseOnHover && setPaused(false)}
+        onTouchStart={() => pauseOnHover && setPaused(true)}
+        onTouchEnd={() => pauseOnHover && setPaused(false)}
         ref={trackRef}
       >
         {/* Duplicate for seamless loop */}

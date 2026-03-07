@@ -9,6 +9,7 @@ import DailyPicks from "./pages/DailyPicks";
 import Leaderboard from "./pages/Leaderboard";
 import NotFound from "./pages/NotFound";
 import SessionTimer from "@/components/SessionTimer";
+import MobileBottomNav from "@/components/MobileBottomNav";
 
 const queryClient = new QueryClient();
 
@@ -26,6 +27,7 @@ const App = () => (
             <Route path="*" element={<NotFound />} />
           </Routes>
           <SessionTimer />
+          <MobileBottomNav />
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>
