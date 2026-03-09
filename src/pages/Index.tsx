@@ -7,6 +7,7 @@ import { useToast } from "@/components/ui/use-toast";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import LiveOddsTicker from "@/components/LiveOddsTicker";
+import MatrixRain from "@/components/MatrixRain";
 import {
   Loader2,
   Copy,
@@ -288,7 +289,8 @@ Always bet responsibly. Past performance does not guarantee future results.`;
   ];
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background relative overflow-hidden">
+      <MatrixRain />
       {/* Live Odds Ticker */}
       <LiveOddsTicker speed={45} pauseOnHover />
 
