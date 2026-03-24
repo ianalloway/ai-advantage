@@ -33,9 +33,35 @@ export const FREE_FEATURES = [
   'Manual game analysis',
 ];
 
-// Check if user has premium (stored in localStorage for demo)
+/**
+ * Check if user has premium access
+ *
+ * SECURITY WARNING: This implementation uses localStorage for demo purposes only.
+ * localStorage is CLIENT-SIDE ONLY and can be tampered with by any user via the browser console:
+ *   localStorage.setItem('ai_advantage_premium', 'true')
+ *
+ * IN PRODUCTION, implement server-side verification:
+ * 1. Store premium status on secure backend database
+ * 2. Use signed JWT tokens or secure session cookies
+ * 3. Verify token signature on each API request
+ * 4. Never trust client-side storage for security-critical data
+ *
+ * This is a DEMO version. Do not use in production without server-side auth.
+ */
 export const isPremiumUser = (): boolean => {
   if (typeof window === 'undefined') return false;
+
+  // Dev warning for local development
+  if (import.meta.env.DEV) {
+    const stored = localStorage.getItem('ai_advantage_premium');
+    if (stored === 'true') {
+      console.warn(
+        '[SECURITY] Premium status from localStorage. This is CLIENT-SIDE ONLY and can be spoofed. ' +
+        'Implement server-side verification in production.'
+      );
+    }
+  }
+
   return localStorage.getItem('ai_advantage_premium') === 'true';
 };
 

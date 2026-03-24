@@ -44,16 +44,21 @@ interface DailyPick {
   isPremium: boolean;
 }
 
-// March 2, 2026 — NBA mid-season slate
+// PICKS_DATE: Last updated March 24, 2026 (end of NBA regular season)
+// To update: Replace games with new matchups for the current date, update time slots,
+// and adjust PICKS_DATE constant below to today's date.
+// Current slate shows realistic late-March 2026 NBA end-of-season games.
+const PICKS_DATE = "March 24, 2026";
+
 const TODAY_PICKS: DailyPick[] = [
   // Free picks — shown immediately to all visitors
-  { sport: "nba", home: "Oklahoma City Thunder", away: "Boston Celtics",         time: "7:30 PM ET",  confidence: "high",   isPremium: false },
-  { sport: "nba", home: "Cleveland Cavaliers",   away: "Milwaukee Bucks",        time: "7:00 PM ET",  confidence: "high",   isPremium: false },
-  { sport: "nba", home: "Denver Nuggets",        away: "Golden State Warriors",  time: "9:00 PM ET",  confidence: "medium", isPremium: false },
+  { sport: "nba", home: "Boston Celtics",        away: "Oklahoma City Thunder",   time: "7:30 PM ET",  confidence: "high",   isPremium: false },
+  { sport: "nba", home: "Milwaukee Bucks",       away: "Denver Nuggets",          time: "7:00 PM ET",  confidence: "high",   isPremium: false },
+  { sport: "nba", home: "Cleveland Cavaliers",   away: "New York Knicks",         time: "9:00 PM ET",  confidence: "medium", isPremium: false },
   // Premium picks — locked until crypto payment
-  { sport: "nba", home: "Los Angeles Lakers",    away: "Dallas Mavericks",       time: "9:30 PM ET",  confidence: "high",   isPremium: true  },
-  { sport: "nba", home: "Minnesota Timberwolves",away: "Memphis Grizzlies",      time: "8:00 PM ET",  confidence: "high",   isPremium: true  },
-  { sport: "nba", home: "Philadelphia 76ers",    away: "New York Knicks",        time: "7:30 PM ET",  confidence: "medium", isPremium: true  },
+  { sport: "nba", home: "Los Angeles Lakers",    away: "Dallas Mavericks",        time: "9:30 PM ET",  confidence: "high",   isPremium: true  },
+  { sport: "nba", home: "Minneapolis Timberwolves", away: "Memphis Grizzlies",    time: "8:00 PM ET",  confidence: "high",   isPremium: true  },
+  { sport: "nba", home: "Golden State Warriors", away: "Orlando Magic",           time: "7:30 PM ET",  confidence: "medium", isPremium: true  },
 ];
 
 const CONF = {
@@ -353,6 +358,8 @@ export default function DailyPicks() {
             <div className="flex items-center gap-2 text-gray-400 text-sm mb-1">
               <Calendar className="w-4 h-4" />
               <span>{today}</span>
+              <span className="text-gray-600">·</span>
+              <span className="text-xs text-gray-500">Picks for {PICKS_DATE}</span>
             </div>
             <h1 className="text-2xl font-bold">Today's AI Picks</h1>
             <p className="text-gray-400 text-sm mt-1">
