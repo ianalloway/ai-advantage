@@ -129,6 +129,20 @@ export function getTeamStats(sport: Sport): Record<string, TeamStats> {
 // Legacy alias for backward compatibility
 export const TEAM_STATS = NBA_TEAMS;
 
+const TEAM_NAME_ALIASES: Record<Sport, Record<string, string>> = {
+  nba: {
+    "LA Clippers": "Los Angeles Clippers",
+  },
+  nfl: {},
+  mlb: {
+    Athletics: "Oakland Athletics",
+  },
+};
+
+export function resolveTeamName(sport: Sport, teamName: string): string {
+  return TEAM_NAME_ALIASES[sport][teamName] ?? teamName;
+}
+
 export interface TeamStats {
   win_pct: number;
   avg_points_for: number;
@@ -383,8 +397,10 @@ export function analyzeGame(
   liveOdds?: { homeOdds: number; awayOdds: number; bookmaker?: string; commenceTime?: string; id?: string }
 ): GamePrediction {
   const teamStats = getTeamStats(sport);
-  const homeStats = teamStats[homeTeam] || getDefaultStats();
-  const awayStats = teamStats[awayTeam] || getDefaultStats();
+  const resolvedHomeTeam = resolveTeamName(sport, homeTeam);
+  const resolvedAwayTeam = resolveTeamName(sport, awayTeam);
+  const homeStats = teamStats[resolvedHomeTeam] || getDefaultStats();
+  const awayStats = teamStats[resolvedAwayTeam] || getDefaultStats();
   
   const [homeProb, awayProb] = predictGame(homeStats, awayStats, sport);
   

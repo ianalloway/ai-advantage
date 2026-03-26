@@ -1,164 +1,148 @@
-/**
- * LiveOddsTicker — horizontal scrolling odds strip for AI Advantage Sports
- * Shows best available ML/spread lines, highlights significant line movement
- */
-
-import { useEffect, useRef, useState } from "react";
-import { TrendingUp, TrendingDown, Minus, Zap } from "lucide-react";
-
-interface OddsEntry {
-  away: string;
-  home: string;
-  sport: "NBA" | "NFL" | "MLB" | "NHL";
-  awayML: number;
-  homeML: number;
-  spread: number;
-  spreadOdds: number;
-  openAwayML: number;
-  openHomeML: number;
-  time: string;
-}
-
-const SAMPLE_ODDS: OddsEntry[] = [
-  { sport: "NBA", away: "Bucks",    home: "Celtics",   awayML: +172, homeML: -205, spread: -5.5, spreadOdds: -110, openAwayML: +155, openHomeML: -185, time: "7:30 PM" },
-  { sport: "NBA", away: "Nuggets",  home: "Thunder",   awayML: +240, homeML: -290, spread: -7.0, spreadOdds: -108, openAwayML: +210, openHomeML: -260, time: "9:00 PM" },
-  { sport: "NBA", away: "Knicks",   home: "Cavaliers", awayML: +330, homeML: -420, spread: -9.5, spreadOdds: -112, openAwayML: +305, openHomeML: -385, time: "7:00 PM" },
-  { sport: "NBA", away: "Lakers",   home: "Warriors",  awayML: +118, homeML: -138, spread: -2.0, spreadOdds: -110, openAwayML: +130, openHomeML: -152, time: "10:00 PM" },
-  { sport: "NFL", away: "Bills",    home: "Chiefs",    awayML: +145, homeML: -168, spread: -3.5, spreadOdds: -110, openAwayML: +140, openHomeML: -162, time: "8:20 PM" },
-  { sport: "NFL", away: "Eagles",   home: "49ers",     awayML: +105, homeML: -124, spread: -2.0, spreadOdds: -108, openAwayML: +112, openHomeML: -132, time: "4:25 PM" },
-];
+import { useEffect, useMemo, useState } from "react";
+import { AlertCircle, Minus, TrendingDown, TrendingUp, Zap } from "lucide-react";
+import { fetchLiveGamesForSports, type LiveMarketGame } from "@/lib/liveSports";
 
 function formatOdds(n: number): string {
   return n > 0 ? `+${n}` : `${n}`;
 }
 
-function mlMovement(open: number, current: number): "up" | "down" | "flat" {
-  const diff = Math.abs(current) - Math.abs(open);
-  if (diff > 8) return "up";
-  if (diff < -8) return "down";
+function movement(open?: number, current?: number): "up" | "down" | "flat" {
+  if (open === undefined || current === undefined) return "flat";
+  if (current > open + 8) return "up";
+  if (current < open - 8) return "down";
   return "flat";
 }
 
 function MovementIcon({ dir }: { dir: "up" | "down" | "flat" }) {
-  if (dir === "up") return <TrendingUp className="w-3 h-3 text-red-400" />;
-  if (dir === "down") return <TrendingDown className="w-3 h-3 text-green-400" />;
-  return <Minus className="w-3 h-3 text-gray-600" />;
+  if (dir === "up") return <TrendingUp className="h-3 w-3 text-red-400" />;
+  if (dir === "down") return <TrendingDown className="h-3 w-3 text-emerald-400" />;
+  return <Minus className="h-3 w-3 text-zinc-600" />;
 }
 
-function OddsChip({ entry }: { entry: OddsEntry }) {
-  const awayDir = mlMovement(entry.openAwayML, entry.awayML);
-  const homeDir = mlMovement(entry.openHomeML, entry.homeML);
+function OddsChip({ game }: { game: LiveMarketGame }) {
+  if (!game.odds) return null;
+
+  const awayDir = movement(game.odds.awayMoneylineOpen, game.odds.awayMoneyline);
+  const homeDir = movement(game.odds.homeMoneylineOpen, game.odds.homeMoneyline);
   const bigMove = awayDir !== "flat" || homeDir !== "flat";
 
   return (
     <div
-      className={`flex-shrink-0 flex items-center gap-3 px-4 py-2 rounded-lg border mx-1 transition-colors
-        ${bigMove
-          ? "bg-yellow-400/5 border-yellow-400/30"
-          : "bg-gray-900 border-gray-800"}`}
+      className={`mx-1.5 flex shrink-0 items-center gap-3 rounded-full border px-4 py-2 transition-colors ${
+        bigMove
+          ? "border-yellow-400/30 bg-yellow-400/8"
+          : "border-white/10 bg-white/[0.04]"
+      }`}
     >
-      {/* Sport badge */}
-      <span className="text-[10px] font-mono font-bold text-gray-500 w-7">{entry.sport}</span>
-
-      {/* Away */}
-      <div className="flex items-center gap-1">
-        <span className="text-sm text-gray-300 w-14 text-right font-medium">{entry.away}</span>
-        <div className="flex flex-col items-center">
-          <MovementIcon dir={awayDir} />
-          <span className={`text-xs font-mono font-bold tabular-nums
-            ${entry.awayML > 0 ? "text-blue-400" : "text-gray-300"}`}>
-            {formatOdds(entry.awayML)}
-          </span>
-        </div>
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-brand-300/80">{game.sportLabel}</span>
+        <span className="text-[11px] text-zinc-500">{game.status.state === "in" ? game.status.shortDetail : game.displayTime}</span>
       </div>
 
-      {/* Spread */}
-      <div className="flex flex-col items-center px-2 border-x border-gray-800">
-        <span className="text-[10px] text-gray-600 font-mono">
-          {entry.spread > 0 ? `+${entry.spread}` : entry.spread}
-        </span>
-        <span className="text-[10px] text-gray-600 font-mono">{formatOdds(entry.spreadOdds)}</span>
-        <span className="text-[10px] text-gray-600">{entry.time}</span>
+      <div className="flex items-center gap-1.5 text-sm text-zinc-200">
+        <span className="font-medium text-zinc-300">{game.awayAbbr}</span>
+        <MovementIcon dir={awayDir} />
+        <span className="font-mono tabular-nums text-sky-300">{formatOdds(game.odds.awayMoneyline)}</span>
       </div>
 
-      {/* Home */}
-      <div className="flex items-center gap-1">
-        <div className="flex flex-col items-center">
-          <MovementIcon dir={homeDir} />
-          <span className={`text-xs font-mono font-bold tabular-nums
-            ${entry.homeML < 0 ? "text-gray-300" : "text-blue-400"}`}>
-            {formatOdds(entry.homeML)}
-          </span>
-        </div>
-        <span className="text-sm text-gray-300 w-14 font-medium">{entry.home}</span>
+      <div className="flex items-center gap-2 border-x border-white/10 px-3 text-[11px] text-zinc-500">
+        <span>{game.odds.spread !== undefined ? `${game.odds.spread > 0 ? "+" : ""}${game.odds.spread}` : "ML"}</span>
+        <span>{game.odds.overUnder !== undefined ? `O/U ${game.odds.overUnder}` : game.bookmaker ?? "Live"}</span>
       </div>
 
-      {bigMove && (
-        <Zap className="w-3 h-3 text-yellow-400 animate-pulse flex-shrink-0" />
-      )}
+      <div className="flex items-center gap-1.5 text-sm text-zinc-200">
+        <span className="font-mono tabular-nums text-sky-300">{formatOdds(game.odds.homeMoneyline)}</span>
+        <MovementIcon dir={homeDir} />
+        <span className="font-medium text-zinc-300">{game.homeAbbr}</span>
+      </div>
+
+      {bigMove ? <Zap className="h-3.5 w-3.5 text-yellow-300" /> : null}
     </div>
   );
 }
 
 interface LiveOddsTickerProps {
-  /** Speed in px/s — default 40 */
   speed?: number;
-  /** Pause on hover — default true */
   pauseOnHover?: boolean;
 }
 
 export default function LiveOddsTicker({ speed = 40, pauseOnHover = true }: LiveOddsTickerProps) {
-  const trackRef = useRef<HTMLDivElement>(null);
   const [paused, setPaused] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [games, setGames] = useState<LiveMarketGame[]>([]);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [hasError, setHasError] = useState(false);
 
-  // Simulate a line refresh every 60 seconds
   useEffect(() => {
-    const id = setInterval(() => setLastUpdate(new Date()), 60_000);
-    return () => clearInterval(id);
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const slate = await fetchLiveGamesForSports(["nba", "mlb", "nfl"]);
+        if (cancelled) return;
+        setGames(slate.filter((game) => game.odds));
+        setUpdatedAt(new Date());
+        setHasError(false);
+      } catch {
+        if (cancelled) return;
+        setHasError(true);
+      }
+    };
+
+    void load();
+    const intervalId = window.setInterval(load, 60_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
   }, []);
 
-  // CSS animation via inline style — duplicated track for seamless loop
-  const duration = (SAMPLE_ODDS.length * 160) / speed; // ~160px per chip
+  const tickerItems = useMemo(() => [...games, ...games], [games]);
+  const duration = Math.max((Math.max(games.length, 4) * 170) / speed, 20);
 
   return (
-    <div className="w-full overflow-hidden border-y border-gray-800 bg-gray-950">
-      {/* Header strip */}
-      <div className="flex items-center justify-between px-4 py-1 border-b border-gray-800/50">
+    <div className="w-full overflow-hidden border-y border-white/10 bg-[#050816]">
+      <div className="flex items-center justify-between gap-4 border-b border-white/5 px-4 py-2">
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-          <span className="text-[10px] font-mono font-bold text-gray-500 tracking-widest uppercase">
-            Live Odds
-          </span>
+          <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-zinc-500">Live Market Feed</span>
         </div>
-        <span className="text-[10px] text-gray-600 font-mono">
-          Updated {lastUpdate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-          {" · "}Best available · <span className="text-green-400/70">↓ favourable move</span>{" · "}
-          <span className="text-red-400/70">↑ line move against</span>
+        <span className="text-[10px] text-zinc-500">
+          {hasError
+            ? "Feed temporarily unavailable"
+            : updatedAt
+              ? `Updated ${updatedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+              : "Syncing live board"}
         </span>
       </div>
 
-      {/* Scrolling track */}
-      <div
-        className="flex py-2"
-        style={{
-          animation: `ticker-scroll ${duration}s linear infinite`,
-          animationPlayState: paused ? "paused" : "running",
-          willChange: "transform",
-        }}
-        onMouseEnter={() => pauseOnHover && setPaused(true)}
-        onMouseLeave={() => pauseOnHover && setPaused(false)}
-        ref={trackRef}
-      >
-        {/* Duplicate for seamless loop */}
-        {[...SAMPLE_ODDS, ...SAMPLE_ODDS].map((entry, i) => (
-          <OddsChip key={i} entry={entry} />
-        ))}
-      </div>
+      {hasError ? (
+        <div className="flex items-center justify-center gap-2 px-4 py-3 text-xs text-zinc-500">
+          <AlertCircle className="h-3.5 w-3.5" />
+          Live odds are having a moment. Reload soon.
+        </div>
+      ) : games.length === 0 ? (
+        <div className="px-4 py-3 text-xs text-zinc-500">No current lines available right now.</div>
+      ) : (
+        <div
+          className="flex py-2.5"
+          style={{
+            animation: `ticker-scroll ${duration}s linear infinite`,
+            animationPlayState: paused ? "paused" : "running",
+            willChange: "transform",
+          }}
+          onMouseEnter={() => pauseOnHover && setPaused(true)}
+          onMouseLeave={() => pauseOnHover && setPaused(false)}
+        >
+          {tickerItems.map((game, index) => (
+            <OddsChip key={`${game.id}-${index}`} game={game} />
+          ))}
+        </div>
+      )}
 
       <style>{`
         @keyframes ticker-scroll {
-          0%   { transform: translateX(0); }
+          0% { transform: translateX(0); }
           100% { transform: translateX(-50%); }
         }
       `}</style>

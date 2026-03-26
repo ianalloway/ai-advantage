@@ -39,7 +39,6 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import {
   analyzeGame,
   parseGameInput,
-  getDemoGames,
   formatOdds,
   formatProb,
   formatEdge,
@@ -53,6 +52,7 @@ import {
   type BacktestSummary,
   type PerformanceData
 } from "@/lib/predictions";
+import { fetchLiveGamesForSport, type LiveMarketGame } from "@/lib/liveSports";
 import {
   isPremiumUser,
   redirectToCheckout,
@@ -68,7 +68,10 @@ const Index = () => {
   const [gameInput, setGameInput] = useState("");
   const [bettingAdvice, setBettingAdvice] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [predictions, setPredictions] = useState<GamePrediction[]>([]);
+  const [liveGames, setLiveGames] = useState<LiveMarketGame[]>([]);
+  const [isSlateLoading, setIsSlateLoading] = useState(true);
+  const [liveSlateError, setLiveSlateError] = useState<string | null>(null);
+  const [liveSlateUpdatedAt, setLiveSlateUpdatedAt] = useState<Date | null>(null);
   const [bankroll, setBankroll] = useState(1000);
   const [minEdge, setMinEdge] = useState(3);
   const [kellyFraction, setKellyFraction] = useState(0.25);
@@ -129,14 +132,36 @@ const Index = () => {
     }
   };
 
-  // Load games for selected sport
+  // Load live slate for selected sport
   useEffect(() => {
-    const games = getDemoGames(selectedSport);
-    const preds = games.map(game => 
-      analyzeGame(game.homeTeam, game.awayTeam, selectedSport, bankroll, minEdge, kellyFraction)
-    );
-    setPredictions(preds);
-  }, [bankroll, minEdge, kellyFraction, selectedSport]);
+    let cancelled = false;
+
+    const loadLiveSlate = async () => {
+      try {
+        setIsSlateLoading(true);
+        const games = await fetchLiveGamesForSport(selectedSport);
+        if (cancelled) return;
+        setLiveGames(games);
+        setLiveSlateUpdatedAt(new Date());
+        setLiveSlateError(null);
+      } catch {
+        if (cancelled) return;
+        setLiveSlateError("Live market board unavailable right now.");
+      } finally {
+        if (!cancelled) {
+          setIsSlateLoading(false);
+        }
+      }
+    };
+
+    void loadLiveSlate();
+    const intervalId = window.setInterval(loadLiveSlate, 60_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [selectedSport]);
 
   // Generate backtest data when sport changes
   const runBacktest = () => {
@@ -153,7 +178,25 @@ const Index = () => {
     }, 500);
   };
 
-  const valueBets = predictions.filter(p => p.valueBet !== null);
+  const analyzedGames = useMemo<Array<{ game: LiveMarketGame; prediction: GamePrediction | null }>>(() => {
+    return liveGames.map((game) => ({
+      game,
+      prediction: game.odds
+        ? analyzeGame(game.homeTeam, game.awayTeam, selectedSport, bankroll, minEdge, kellyFraction, {
+            id: game.id,
+            bookmaker: game.bookmaker,
+            commenceTime: game.date,
+            homeOdds: game.odds.homeMoneyline,
+            awayOdds: game.odds.awayMoneyline,
+          })
+        : null,
+    }));
+  }, [bankroll, kellyFraction, liveGames, minEdge, selectedSport]);
+
+  const valueBets = useMemo(
+    () => analyzedGames.flatMap(({ prediction }) => (prediction?.valueBet ? [prediction] : [])),
+    [analyzedGames],
+  );
   
   const sportName = useMemo(() => SPORT_CONFIG[selectedSport].name, [selectedSport]);
 
@@ -541,85 +584,128 @@ Always bet responsibly. Past performance does not guarantee future results.`;
 
             {/* Today's Games Tab */}
             <TabsContent value="games" className="space-y-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-2xl font-bold text-white">{sportName} - ML Predictions</h2>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-white">{sportName} live market board</h2>
+                  <div className="text-sm text-muted-foreground">
+                    Actual ESPN slate with live scores, statuses, and current market lines.
+                  </div>
+                </div>
                 <div className="text-sm text-muted-foreground">
-                  Powered by XGBoost ML Model
+                  {liveSlateUpdatedAt
+                    ? `Updated ${liveSlateUpdatedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+                    : "Syncing live board"}
                 </div>
               </div>
-              
-              <div className="grid gap-4">
-                {predictions.map((pred, index) => (
-                  <div key={index} className="rounded-xl bg-card border border-border p-6 hover:border-brand-500/50 transition-colors">
-                    <div className="grid md:grid-cols-3 gap-6">
-                      {/* Home Team */}
-                      <div className="text-center md:text-left">
-                        <div className="flex items-center gap-2 mb-2 justify-center md:justify-start">
-                          <Home className="w-4 h-4 text-brand-400" />
-                          <span className="text-xs text-muted-foreground">HOME</span>
-                        </div>
-                        <h3 className="text-lg font-bold text-white mb-3">{pred.homeTeam}</h3>
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Win Prob:</span>
-                            <span className="text-white font-medium">{formatProb(pred.homeProb)}</span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Odds:</span>
-                            <span className="text-white font-medium">{formatOdds(pred.homeOdds)}</span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Edge:</span>
-                            <span className={pred.homeEdge > 0 ? "text-green-400 font-medium" : "text-red-400 font-medium"}>
-                              {formatEdge(pred.homeEdge)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
 
-                      {/* VS / Prediction */}
-                      <div className="flex flex-col items-center justify-center">
-                        <div className="text-2xl font-bold text-muted-foreground mb-2">VS</div>
-                        <div className="px-4 py-2 rounded-lg bg-brand-500/20 border border-brand-500/30">
-                          <div className="text-xs text-muted-foreground mb-1">ML PICK</div>
-                          <div className="text-white font-bold">{pred.predictedWinner.split(' ').pop()}</div>
-                          <div className="text-xs text-brand-400">{formatProb(pred.confidence)}</div>
-                        </div>
-                        {pred.valueBet && (
-                          <div className="mt-2 px-3 py-1 rounded-full bg-green-500/20 border border-green-500/30">
-                            <span className="text-xs text-green-400 font-medium">VALUE BET</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Away Team */}
-                      <div className="text-center md:text-right">
-                        <div className="flex items-center gap-2 mb-2 justify-center md:justify-end">
-                          <Plane className="w-4 h-4 text-brand-400" />
-                          <span className="text-xs text-muted-foreground">AWAY</span>
-                        </div>
-                        <h3 className="text-lg font-bold text-white mb-3">{pred.awayTeam}</h3>
-                        <div className="space-y-2">
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Win Prob:</span>
-                            <span className="text-white font-medium">{formatProb(pred.awayProb)}</span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Odds:</span>
-                            <span className="text-white font-medium">{formatOdds(pred.awayOdds)}</span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">Edge:</span>
-                            <span className={pred.awayEdge > 0 ? "text-green-400 font-medium" : "text-red-400 font-medium"}>
-                              {formatEdge(pred.awayEdge)}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
+              {isSlateLoading ? (
+                <div className="rounded-2xl bg-card border border-border p-8 text-center text-muted-foreground">
+                  Loading the current slate...
+                </div>
+              ) : liveSlateError ? (
+                <div className="rounded-2xl border border-red-500/20 bg-red-500/10 p-8 text-center text-red-200">
+                  {liveSlateError}
+                </div>
+              ) : analyzedGames.length === 0 ? (
+                <div className="rounded-2xl bg-card border border-border p-8 text-center text-muted-foreground">
+                  No current {selectedSport.toUpperCase()} games are on the board right now. The app is intentionally showing an empty slate instead of inventing one.
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="rounded-2xl bg-card border border-border p-4">
+                      <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Games</div>
+                      <div className="mt-2 text-3xl font-bold text-white">{analyzedGames.length}</div>
+                    </div>
+                    <div className="rounded-2xl bg-card border border-border p-4">
+                      <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Live now</div>
+                      <div className="mt-2 text-3xl font-bold text-green-400">{liveGames.filter((game) => game.status.state === "in").length}</div>
+                    </div>
+                    <div className="rounded-2xl bg-card border border-border p-4">
+                      <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Posted lines</div>
+                      <div className="mt-2 text-3xl font-bold text-brand-400">{analyzedGames.filter(({ game }) => game.odds).length}</div>
+                    </div>
+                    <div className="rounded-2xl bg-card border border-border p-4">
+                      <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Value flags</div>
+                      <div className="mt-2 text-3xl font-bold text-yellow-400">{valueBets.length}</div>
                     </div>
                   </div>
-                ))}
-              </div>
+
+                  <div className="grid gap-4">
+                    {analyzedGames.map(({ game, prediction }, index) => (
+                      <div key={`${game.id}-${index}`} className="overflow-hidden rounded-[28px] bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.12),_transparent_44%),linear-gradient(180deg,rgba(9,13,24,0.98),rgba(5,8,18,0.96))] border border-white/10 p-6">
+                        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-white/8 pb-4">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <div className={`rounded-full border px-3 py-1 text-xs font-medium ${game.status.state === "in" ? "border-green-500/30 bg-green-500/10 text-green-300" : game.status.state === "post" ? "border-zinc-500/20 bg-zinc-500/10 text-zinc-300" : "border-sky-500/30 bg-sky-500/10 text-sky-300"}`}>
+                              {game.status.shortDetail}
+                            </div>
+                            <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">{game.sportLabel}</div>
+                            {game.bookmaker ? <div className="text-xs text-muted-foreground">via {game.bookmaker}</div> : null}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            {game.displayTime}{game.broadcast ? ` · ${game.broadcast}` : ""}
+                          </div>
+                        </div>
+
+                        <div className="grid md:grid-cols-3 gap-6 items-start">
+                          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 text-center md:text-left">
+                            <div className="flex items-center gap-3 justify-center md:justify-start mb-3">
+                              {game.homeLogo ? <img src={game.homeLogo} alt={game.homeTeam} className="h-10 w-10 rounded-full bg-white/5 object-contain p-1" /> : null}
+                              <div>
+                                <div className="text-xs text-muted-foreground uppercase tracking-[0.24em]">Home</div>
+                                <h3 className="text-lg font-bold text-white">{game.homeTeam}</h3>
+                              </div>
+                            </div>
+                            <div className="space-y-2 text-sm">
+                              <div className="flex justify-between"><span className="text-muted-foreground">Score</span><span className="text-white font-medium">{game.homeScore ?? "-"}</span></div>
+                              <div className="flex justify-between"><span className="text-muted-foreground">Moneyline</span><span className="text-white font-medium">{game.odds ? formatOdds(game.odds.homeMoneyline) : "Pending"}</span></div>
+                              <div className="flex justify-between"><span className="text-muted-foreground">Edge</span><span className={prediction ? (prediction.homeEdge > 0 ? "text-green-400 font-medium" : "text-red-400 font-medium") : "text-muted-foreground"}>{prediction ? formatEdge(prediction.homeEdge) : "Waiting"}</span></div>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-white/8 bg-white/[0.03] p-4 text-center">
+                            <div className="text-xs uppercase tracking-[0.3em] text-muted-foreground">Market pulse</div>
+                            <div className="text-2xl font-bold text-white">{game.awayAbbr} @ {game.homeAbbr}</div>
+                            <div className="flex flex-wrap justify-center gap-2 text-xs text-muted-foreground">
+                              <div className="rounded-full border border-white/10 px-3 py-1">Spread {game.odds?.spread !== undefined ? `${game.odds.spread > 0 ? "+" : ""}${game.odds.spread}` : "Pending"}</div>
+                              <div className="rounded-full border border-white/10 px-3 py-1">O/U {game.odds?.overUnder ?? "Pending"}</div>
+                            </div>
+                            {prediction ? (
+                              <div className="rounded-2xl border border-brand-500/30 bg-brand-500/10 px-4 py-3 w-full">
+                                <div className="text-xs text-muted-foreground mb-1">Model pick</div>
+                                <div className="text-white font-bold">{prediction.predictedWinner}</div>
+                                <div className="text-sm text-brand-300">{formatProb(prediction.confidence)}</div>
+                              </div>
+                            ) : (
+                              <div className="text-sm text-muted-foreground max-w-xs">No posted line yet, so the model is holding its fire instead of faking a recommendation.</div>
+                            )}
+                            {prediction?.valueBet ? (
+                              <div className="rounded-full bg-green-500/10 border border-green-500/30 px-3 py-1 text-xs text-green-300 font-medium">
+                                Value bet flagged · {formatEdge(prediction.valueBet.edge)} edge
+                              </div>
+                            ) : null}
+                          </div>
+
+                          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 text-center md:text-right">
+                            <div className="flex items-center gap-3 justify-center md:justify-end mb-3">
+                              <div>
+                                <div className="text-xs text-muted-foreground uppercase tracking-[0.24em]">Away</div>
+                                <h3 className="text-lg font-bold text-white">{game.awayTeam}</h3>
+                              </div>
+                              {game.awayLogo ? <img src={game.awayLogo} alt={game.awayTeam} className="h-10 w-10 rounded-full bg-white/5 object-contain p-1" /> : null}
+                            </div>
+                            <div className="space-y-2 text-sm">
+                              <div className="flex justify-between"><span className="text-muted-foreground">Score</span><span className="text-white font-medium">{game.awayScore ?? "-"}</span></div>
+                              <div className="flex justify-between"><span className="text-muted-foreground">Moneyline</span><span className="text-white font-medium">{game.odds ? formatOdds(game.odds.awayMoneyline) : "Pending"}</span></div>
+                              <div className="flex justify-between"><span className="text-muted-foreground">Edge</span><span className={prediction ? (prediction.awayEdge > 0 ? "text-green-400 font-medium" : "text-red-400 font-medium") : "text-muted-foreground"}>{prediction ? formatEdge(prediction.awayEdge) : "Waiting"}</span></div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </TabsContent>
 
             {/* Value Bets Tab */}
