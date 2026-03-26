@@ -41,6 +41,8 @@ export interface LiveMarketGame {
     awayMoneyline: number;
     homeMoneylineOpen?: number;
     awayMoneylineOpen?: number;
+    homeMoneylineClose?: number;
+    awayMoneylineClose?: number;
     spread?: number;
     overUnder?: number;
     homeSpreadOdds?: number;
@@ -212,6 +214,8 @@ function parseOdds(summary: SummaryResponse | null) {
     awayMoneyline,
     homeMoneylineOpen: parseNumber(oddsCollection?.moneyline?.home?.open?.odds),
     awayMoneylineOpen: parseNumber(oddsCollection?.moneyline?.away?.open?.odds),
+    homeMoneylineClose: parseNumber(oddsCollection?.moneyline?.home?.close?.odds),
+    awayMoneylineClose: parseNumber(oddsCollection?.moneyline?.away?.close?.odds),
     spread: parseNumber(pickcenter?.spread),
     overUnder: parseNumber(pickcenter?.overUnder),
     homeSpreadOdds: parseNumber(pickcenter?.homeTeamOdds?.spreadOdds),
@@ -269,6 +273,8 @@ function toLiveMarketGame(event: EspnScoreboardEvent, sport: Sport, summary: Sum
           awayMoneyline: parsedOdds.awayMoneyline,
           homeMoneylineOpen: parsedOdds.homeMoneylineOpen,
           awayMoneylineOpen: parsedOdds.awayMoneylineOpen,
+          homeMoneylineClose: parsedOdds.homeMoneylineClose,
+          awayMoneylineClose: parsedOdds.awayMoneylineClose,
           spread: parsedOdds.spread,
           overUnder: parsedOdds.overUnder,
           homeSpreadOdds: parsedOdds.homeSpreadOdds,

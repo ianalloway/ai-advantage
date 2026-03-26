@@ -433,7 +433,7 @@ Always bet responsibly. Past performance does not guarantee future results.`;
           <nav className="hidden md:flex items-center gap-6 text-sm">
             <a href="#model-suite" className="text-muted-foreground hover:text-white transition-colors">Model Suite</a>
             <a href="/daily-picks" className="text-muted-foreground hover:text-white transition-colors">Daily Picks</a>
-            <a href="/leaderboard" className="text-muted-foreground hover:text-white transition-colors">Leaderboard</a>
+            <a href="/leaderboard" className="text-muted-foreground hover:text-white transition-colors">Proof Ledger</a>
             <a href="#edge-system" className="text-muted-foreground hover:text-white transition-colors">Edge</a>
             <a href="#sports-stack" className="text-muted-foreground hover:text-white transition-colors">Stack</a>
             <a href="#pricing" className="text-muted-foreground hover:text-white transition-colors">Pricing</a>
@@ -541,7 +541,7 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                   onClick={() => navigate("/leaderboard")}
                 >
                   <Trophy className="w-5 h-5 mr-2" />
-                  Leaderboard
+                  Proof Ledger
                 </Button>
                 <Button
                   variant="ghost"

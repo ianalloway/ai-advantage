@@ -1,294 +1,364 @@
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Trophy,
-  TrendingUp,
-  TrendingDown,
-  ChevronLeft,
-  Medal,
-  Zap,
-  Flame,
-  Activity,
-  Crown,
-  Star,
-} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { analyzeGame, formatEdge, formatOdds, type Sport } from "@/lib/predictions";
+import { createExecutionBoardEntry, type ExecutionBoardEntry } from "@/lib/executionBoard";
+import { fetchLiveGamesForSports, type LiveMarketGame } from "@/lib/liveSports";
+import {
+  Activity,
+  AlertCircle,
+  ChevronLeft,
+  Clock3,
+  RefreshCw,
+  ShieldCheck,
+  Target,
+  Trophy,
+} from "lucide-react";
 
-interface BettorEntry {
-  rank: number;
-  handle: string;
-  avatar: string;
-  units: number;
-  winRate: number;
-  streak: number;
-  streakDir: "W" | "L";
-  bets: number;
-  roi: number;
-  badge: string | null;
-  sport: string;
-  weeklyUnits: number;
+const SPORTS: Array<Sport> = ["nba", "nfl", "mlb"];
+const BANKROLL = 1000;
+const MIN_EDGE = 3;
+const KELLY_FRACTION = 0.25;
+
+type SportFilter = "ALL" | "NBA" | "NFL" | "MLB";
+
+function getOutcomeClasses(outcome: ExecutionBoardEntry["ledgerOutcome"]) {
+  switch (outcome) {
+    case "won":
+      return "border-emerald-400/30 bg-emerald-400/10 text-emerald-300";
+    case "lost":
+      return "border-red-400/30 bg-red-400/10 text-red-300";
+    case "push":
+      return "border-zinc-500/30 bg-zinc-500/10 text-zinc-300";
+    default:
+      return "border-sky-400/30 bg-sky-400/10 text-sky-300";
+  }
 }
 
-const LEADERBOARD: BettorEntry[] = [
-  { rank: 1,  handle: "@sharpEdgeIan",    avatar: "SI", units: +142.5, winRate: 0.584, streak: 7,  streakDir: "W", bets: 312, roi: 0.123, badge: "👑 GOAT",          sport: "NBA",    weeklyUnits: +18.4 },
-  { rank: 2,  handle: "@kellyQueen",      avatar: "KQ", units: +118.2, winRate: 0.571, streak: 4,  streakDir: "W", bets: 287, roi: 0.109, badge: "🔥 On Fire",       sport: "NFL",    weeklyUnits: +11.2 },
-  { rank: 3,  handle: "@valueHunter",     avatar: "VH", units: +97.8,  winRate: 0.563, streak: 2,  streakDir: "W", bets: 341, roi: 0.096, badge: "⚡ Sharp",         sport: "MLB",    weeklyUnits: +6.7  },
-  { rank: 4,  handle: "@clvChaser",       avatar: "CC", units: +84.1,  winRate: 0.558, streak: 1,  streakDir: "W", bets: 198, roi: 0.088, badge: null,               sport: "NBA",    weeklyUnits: +4.2  },
-  { rank: 5,  handle: "@spreadSlayer",    avatar: "SS", units: +71.3,  winRate: 0.551, streak: 3,  streakDir: "W", bets: 224, roi: 0.079, badge: "📈 Trending",      sport: "NFL",    weeklyUnits: +9.1  },
-  { rank: 6,  handle: "@contrarian99",    avatar: "C9", units: +58.6,  winRate: 0.548, streak: 2,  streakDir: "L", bets: 175, roi: 0.071, badge: null,               sport: "NBA",    weeklyUnits: -2.1  },
-  { rank: 7,  handle: "@totalKiller",     avatar: "TK", units: +44.9,  winRate: 0.544, streak: 4,  streakDir: "W", bets: 263, roi: 0.062, badge: null,               sport: "MLB",    weeklyUnits: +7.8  },
-  { rank: 8,  handle: "@moneylineOnly",   avatar: "MO", units: +38.2,  winRate: 0.541, streak: 1,  streakDir: "L", bets: 142, roi: 0.058, badge: null,               sport: "NFL",    weeklyUnits: +1.4  },
-  { rank: 9,  handle: "@propKing",        avatar: "PK", units: +27.5,  winRate: 0.537, streak: 2,  streakDir: "W", bets: 389, roi: 0.044, badge: null,               sport: "NBA",    weeklyUnits: +3.2  },
-  { rank: 10, handle: "@liveOddsLeo",     avatar: "LL", units: +18.3,  winRate: 0.533, streak: 1,  streakDir: "W", bets: 211, roi: 0.031, badge: "🆕 Rising Star",   sport: "NFL",    weeklyUnits: +5.9  },
-];
-
-const WEEKLY_LEADERS: BettorEntry[] = [...LEADERBOARD]
-  .sort((a, b) => b.weeklyUnits - a.weeklyUnits)
-  .slice(0, 5);
-
-const RANK_COLORS: Record<number, string> = {
-  1: "text-yellow-400",
-  2: "text-gray-300",
-  3: "text-orange-400",
-};
-
-function RankIcon({ rank }: { rank: number }) {
-  if (rank === 1) return <Crown className="w-5 h-5 text-yellow-400" />;
-  if (rank === 2) return <Medal className="w-5 h-5 text-gray-300" />;
-  if (rank === 3) return <Medal className="w-5 h-5 text-orange-400" />;
-  return <span className={`text-sm font-mono font-bold text-gray-500`}>#{rank}</span>;
+function formatClv(value?: number) {
+  if (value === undefined) return "Pending";
+  return `${value > 0 ? "+" : ""}${value.toFixed(2)} pts`;
 }
 
-type Tab = "alltime" | "weekly";
+function formatStake(value: number) {
+  return `$${value.toFixed(0)}`;
+}
 
 export default function Leaderboard() {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>("alltime");
-  const [sportFilter, setSportFilter] = useState<string>("ALL");
+  const [games, setGames] = useState<LiveMarketGame[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [sportFilter, setSportFilter] = useState<SportFilter>("ALL");
 
-  const rows = tab === "alltime" ? LEADERBOARD : WEEKLY_LEADERS;
-  const filtered = sportFilter === "ALL" ? rows : rows.filter((r) => r.sport === sportFilter);
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        const slate = await fetchLiveGamesForSports(SPORTS);
+        if (cancelled) return;
+        setGames(slate);
+        setUpdatedAt(new Date());
+        setHasError(false);
+      } catch {
+        if (cancelled) return;
+        setHasError(true);
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void load();
+    const intervalId = window.setInterval(load, 60_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  const entries = useMemo(() => {
+    return games
+      .filter((game) => game.odds)
+      .map((game) => {
+        const prediction = analyzeGame(
+          game.homeTeam,
+          game.awayTeam,
+          game.sport,
+          BANKROLL,
+          MIN_EDGE,
+          KELLY_FRACTION,
+          {
+            id: game.id,
+            bookmaker: game.bookmaker,
+            commenceTime: game.date,
+            homeOdds: game.odds!.homeMoneyline,
+            awayOdds: game.odds!.awayMoneyline,
+            homeOpenOdds: game.odds!.homeMoneylineOpen,
+            awayOpenOdds: game.odds!.awayMoneylineOpen,
+            isLive: game.status.state === "in",
+          },
+        );
+
+        return createExecutionBoardEntry(game, prediction);
+      })
+      .filter((entry): entry is ExecutionBoardEntry => Boolean(entry))
+      .sort((a, b) => b.score - a.score);
+  }, [games]);
+
+  const filteredEntries = useMemo(() => {
+    if (sportFilter === "ALL") return entries;
+    return entries.filter((entry) => entry.sportLabel === sportFilter);
+  }, [entries, sportFilter]);
+
+  const stats = useMemo(() => {
+    const settled = filteredEntries.filter((entry) => entry.ledgerOutcome !== "pending");
+    const clvEntries = filteredEntries.filter((entry) => entry.closeLineValue !== undefined);
+    const avgExecEdge = filteredEntries.length
+      ? filteredEntries.reduce((sum, entry) => sum + entry.executionAdjustedEdge, 0) / filteredEntries.length
+      : 0;
+    const avgScore = filteredEntries.length
+      ? filteredEntries.reduce((sum, entry) => sum + entry.score, 0) / filteredEntries.length
+      : 0;
+    const avgClv = clvEntries.length
+      ? clvEntries.reduce((sum, entry) => sum + (entry.closeLineValue ?? 0), 0) / clvEntries.length
+      : undefined;
+    const totalSuggestedStake = filteredEntries.reduce((sum, entry) => sum + entry.suggestedStake, 0);
+    const wins = settled.filter((entry) => entry.ledgerOutcome === "won").length;
+
+    return {
+      tracked: filteredEntries.length,
+      settled: settled.length,
+      wins,
+      avgExecEdge,
+      avgScore,
+      avgClv,
+      totalSuggestedStake,
+    };
+  }, [filteredEntries]);
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      {/* Nav */}
-      <div className="border-b border-gray-800 px-4 py-3 flex items-center justify-between max-w-5xl mx-auto">
-        <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white" onClick={() => navigate("/")}>
-          <ChevronLeft className="w-4 h-4 mr-1" /> Back
-        </Button>
-        <div className="flex items-center gap-2">
-          <Trophy className="w-5 h-5 text-yellow-400" />
-          <span className="font-bold text-lg">Leaderboard</span>
-        </div>
-        <div />
-      </div>
-
-      <div className="max-w-5xl mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-extrabold mb-2">Top Bettors</h1>
-          <p className="text-gray-400 text-sm">Season standings — ranked by total units won</p>
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_30%),linear-gradient(180deg,#030611,#070d1a_45%,#030611)] text-white">
+      <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6">
+        <div className="flex items-center justify-between border-b border-white/10 pb-4">
+          <Button variant="ghost" size="sm" className="text-zinc-400 hover:text-white" onClick={() => navigate("/") }>
+            <ChevronLeft className="mr-1 h-4 w-4" />
+            Back
+          </Button>
+          <div className="flex items-center gap-2 text-sm font-semibold text-white">
+            <ShieldCheck className="h-5 w-5 text-brand-300" />
+            Proof Ledger
+          </div>
+          <div className="w-16" />
         </div>
 
-        {/* Podium (top 3) */}
-        <div className="flex items-end justify-center gap-4 mb-10">
-          {/* 2nd */}
-          <div className="flex flex-col items-center gap-2">
-            <div className="w-12 h-12 rounded-full bg-gray-400/20 border-2 border-gray-300 flex items-center justify-center text-gray-300 font-bold text-lg">
-              {LEADERBOARD[1].avatar}
+        <div className="grid gap-8 py-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
+          <div>
+            <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+              <span className="inline-flex items-center gap-2 rounded-full border border-brand-400/20 bg-brand-400/10 px-3 py-1 text-brand-300">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Execution Board ledger
+              </span>
+              {updatedAt ? (
+                <span className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1">
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Updated {updatedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
+                </span>
+              ) : null}
+              <span className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1">
+                <Clock3 className="h-3.5 w-3.5" />
+                Only tracked entries with real prices
+              </span>
             </div>
-            <div className="bg-gray-700 rounded-t-lg w-24 h-20 flex flex-col items-center justify-center">
-              <Medal className="w-5 h-5 text-gray-300 mb-1" />
-              <span className="text-xs text-gray-400">{LEADERBOARD[1].handle.replace("@", "")}</span>
-              <span className="text-white font-bold text-sm">+{LEADERBOARD[1].units}u</span>
-            </div>
+
+            <h1 className="max-w-4xl text-4xl font-black tracking-tight sm:text-5xl">
+              The fake leaderboard is gone. This is the real execution ledger.
+            </h1>
+            <p className="mt-4 max-w-3xl text-base leading-7 text-zinc-400 sm:text-lg">
+              Every row here cleared the execution-adjusted threshold, carries a real market price, and shows what the model saw, what the market offered, and whether the number held up.
+            </p>
           </div>
-          {/* 1st */}
-          <div className="flex flex-col items-center gap-2">
-            <Star className="w-5 h-5 text-yellow-400" />
-            <div className="w-16 h-16 rounded-full bg-yellow-400/20 border-2 border-yellow-400 flex items-center justify-center text-yellow-400 font-bold text-xl">
-              {LEADERBOARD[0].avatar}
+
+          <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
+            <div className="flex items-center gap-2 text-sm font-semibold text-white">
+              <Target className="h-4 w-4 text-yellow-300" />
+              Board scoring logic
             </div>
-            <div className="bg-gray-700 rounded-t-lg w-28 h-28 flex flex-col items-center justify-center">
-              <Crown className="w-6 h-6 text-yellow-400 mb-1" />
-              <span className="text-xs text-gray-300">{LEADERBOARD[0].handle.replace("@", "")}</span>
-              <span className="text-yellow-400 font-bold">+{LEADERBOARD[0].units}u</span>
-              <span className="text-xs text-gray-400">{(LEADERBOARD[0].roi * 100).toFixed(1)}% ROI</span>
+            <p className="mt-3 text-sm leading-6 text-zinc-400">
+              Score ranks opportunities by execution-adjusted edge first, then confidence, Kelly stake, market movement, timing, and close-line proof.
+            </p>
+            <div className="mt-4 rounded-2xl border border-white/8 bg-black/20 p-4 font-mono text-xs text-zinc-300">
+              score = exec edge x 4.8 + raw edge x 1.7 + confidence + Kelly + timing + market move + CLV - penalties
             </div>
-          </div>
-          {/* 3rd */}
-          <div className="flex flex-col items-center gap-2">
-            <div className="w-12 h-12 rounded-full bg-orange-400/20 border-2 border-orange-400 flex items-center justify-center text-orange-400 font-bold text-lg">
-              {LEADERBOARD[2].avatar}
-            </div>
-            <div className="bg-gray-700 rounded-t-lg w-24 h-16 flex flex-col items-center justify-center">
-              <Medal className="w-5 h-5 text-orange-400 mb-1" />
-              <span className="text-xs text-gray-400">{LEADERBOARD[2].handle.replace("@", "")}</span>
-              <span className="text-white font-bold text-sm">+{LEADERBOARD[2].units}u</span>
-            </div>
+            <p className="mt-3 text-xs leading-5 text-zinc-500">
+              Positive CLV means the tracked number beat the close. No invented lifetime units. No anonymous avatars pretending to print money.
+            </p>
           </div>
         </div>
 
-        {/* Tabs + Filter */}
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-          <div className="flex gap-2">
-            {(["alltime", "weekly"] as Tab[]).map((t) => (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
+            <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Tracked entries</div>
+            <div className="mt-2 text-3xl font-black text-white">{stats.tracked}</div>
+            <div className="mt-1 text-sm text-zinc-400">Current board rows with real prices and model support.</div>
+          </div>
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
+            <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Average exec edge</div>
+            <div className="mt-2 text-3xl font-black text-brand-300">{formatEdge(stats.avgExecEdge)}</div>
+            <div className="mt-1 text-sm text-zinc-400">Adjusted for timing, price movement, and execution quality.</div>
+          </div>
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
+            <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Average board score</div>
+            <div className="mt-2 text-3xl font-black text-yellow-300">{stats.avgScore.toFixed(1)}</div>
+            <div className="mt-1 text-sm text-zinc-400">A higher score means stronger execution context, not louder marketing.</div>
+          </div>
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
+            <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Close-line proof</div>
+            <div className="mt-2 text-3xl font-black text-emerald-300">{stats.avgClv !== undefined ? formatClv(stats.avgClv) : "Pending"}</div>
+            <div className="mt-1 text-sm text-zinc-400">Settled rows: {stats.settled}. Wins: {stats.wins}. Tracked stake: {formatStake(stats.totalSuggestedStake)}.</div>
+          </div>
+        </div>
+
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            {(["ALL", "NBA", "NFL", "MLB"] as SportFilter[]).map((sport) => (
               <Button
-                key={t}
+                key={sport}
                 size="sm"
-                variant={tab === t ? "default" : "outline"}
-                className={tab === t ? "bg-brand-600 text-white" : "border-gray-700 text-gray-400"}
-                onClick={() => setTab(t)}
+                variant={sportFilter === sport ? "default" : "outline"}
+                className={sportFilter === sport ? "bg-brand-600 text-white" : "border-white/10 text-zinc-400"}
+                onClick={() => setSportFilter(sport)}
               >
-                {t === "alltime" ? "All Time" : "This Week"}
+                {sport}
               </Button>
             ))}
           </div>
-          <div className="flex gap-2">
-            {["ALL", "NBA", "NFL", "MLB"].map((s) => (
-              <Button
-                key={s}
-                size="sm"
-                variant={sportFilter === s ? "default" : "outline"}
-                className={sportFilter === s ? "bg-gray-700 text-white" : "border-gray-800 text-gray-500 text-xs"}
-                onClick={() => setSportFilter(s)}
-              >
-                {s}
-              </Button>
-            ))}
+          <div className="rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-500">
+            Ledger only lists entries that clear the current execution threshold.
           </div>
         </div>
 
-        {/* Table */}
-        <div className="rounded-xl border border-gray-800 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-900 border-b border-gray-800 text-gray-400 text-xs uppercase tracking-wider">
-                <th className="px-4 py-3 text-left">Rank</th>
-                <th className="px-4 py-3 text-left">Bettor</th>
-                <th className="px-4 py-3 text-right">Units</th>
-                <th className="px-4 py-3 text-right hidden sm:table-cell">Win%</th>
-                <th className="px-4 py-3 text-right hidden md:table-cell">ROI</th>
-                <th className="px-4 py-3 text-center hidden md:table-cell">Streak</th>
-                <th className="px-4 py-3 text-right hidden lg:table-cell">Bets</th>
-                <th className="px-4 py-3 text-left hidden lg:table-cell">Badge</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((entry, i) => (
-                <tr
-                  key={entry.handle}
-                  className={`border-b border-gray-800/50 hover:bg-gray-900/50 transition-colors ${
-                    i === 0 && tab === "alltime" ? "bg-yellow-400/5" : ""
-                  }`}
-                >
-                  <td className="px-4 py-4">
-                    <div className="flex items-center justify-center w-8">
-                      <RankIcon rank={entry.rank} />
-                    </div>
-                  </td>
-                  <td className="px-4 py-4">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                          entry.rank === 1
-                            ? "bg-yellow-400/20 text-yellow-400"
-                            : "bg-gray-700 text-gray-300"
-                        }`}
-                      >
-                        {entry.avatar}
-                      </div>
-                      <div>
-                        <div className={`font-semibold ${RANK_COLORS[entry.rank] ?? "text-white"}`}>
-                          {entry.handle}
+        <div className="mt-6 overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))]">
+          {isLoading ? (
+            <div className="flex min-h-[18rem] items-center justify-center text-sm text-zinc-400">
+              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+              Loading live execution ledger...
+            </div>
+          ) : hasError ? (
+            <div className="flex min-h-[18rem] flex-col items-center justify-center gap-3 px-6 text-center">
+              <AlertCircle className="h-8 w-8 text-red-300" />
+              <p className="max-w-lg text-sm leading-6 text-zinc-400">
+                The live market feed is unavailable right now, so the ledger is staying honest and showing nothing instead of inventing a board.
+              </p>
+            </div>
+          ) : filteredEntries.length === 0 ? (
+            <div className="flex min-h-[18rem] flex-col items-center justify-center gap-3 px-6 text-center">
+              <Activity className="h-8 w-8 text-brand-300" />
+              <p className="max-w-lg text-sm leading-6 text-zinc-400">
+                No games currently clear the execution-adjusted threshold for this filter. That is a pass signal, not a content problem.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-white/10 bg-black/20 text-left text-[11px] uppercase tracking-[0.24em] text-zinc-500">
+                    <th className="px-4 py-4">Game</th>
+                    <th className="px-4 py-4">Side</th>
+                    <th className="px-4 py-4">Entry</th>
+                    <th className="px-4 py-4">Model</th>
+                    <th className="px-4 py-4">Raw</th>
+                    <th className="px-4 py-4">Exec</th>
+                    <th className="px-4 py-4">Score</th>
+                    <th className="px-4 py-4">Window</th>
+                    <th className="px-4 py-4">Proof</th>
+                    <th className="px-4 py-4">Outcome</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredEntries.map((entry) => (
+                    <tr key={entry.id} className="border-b border-white/8 align-top transition-colors hover:bg-white/[0.03]">
+                      <td className="px-4 py-4">
+                        <div className="font-semibold text-white">{entry.eventLabel}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                          <span>{entry.displayTime}</span>
+                          <span>·</span>
+                          <span>{entry.sportLabel}</span>
+                          {entry.bookmaker ? (
+                            <>
+                              <span>·</span>
+                              <span>{entry.bookmaker}</span>
+                            </>
+                          ) : null}
                         </div>
-                        <div className="text-xs text-gray-500">{entry.sport}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4 text-right">
-                    <span className={`font-mono font-bold ${entry.units > 0 ? "text-green-400" : "text-red-400"}`}>
-                      {entry.units > 0 ? "+" : ""}{entry.units}u
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-right hidden sm:table-cell">
-                    <span className="font-mono text-gray-300">{(entry.winRate * 100).toFixed(1)}%</span>
-                  </td>
-                  <td className="px-4 py-4 text-right hidden md:table-cell">
-                    <span className={`font-mono font-semibold ${entry.roi > 0 ? "text-green-400" : "text-red-400"}`}>
-                      {entry.roi > 0 ? "+" : ""}{(entry.roi * 100).toFixed(1)}%
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-center hidden md:table-cell">
-                    <div className="flex items-center justify-center gap-1">
-                      {entry.streakDir === "W" ? (
-                        <Flame className="w-3 h-3 text-orange-400" />
-                      ) : (
-                        <TrendingDown className="w-3 h-3 text-blue-400" />
-                      )}
-                      <span className={`text-xs font-mono ${entry.streakDir === "W" ? "text-orange-400" : "text-blue-400"}`}>
-                        {entry.streak}{entry.streakDir}
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-4 text-right font-mono text-gray-500 hidden lg:table-cell">
-                    {entry.bets}
-                  </td>
-                  <td className="px-4 py-4 hidden lg:table-cell">
-                    {entry.badge ? (
-                      <Badge variant="outline" className="text-xs border-gray-600 text-gray-300 whitespace-nowrap">
-                        {entry.badge}
-                      </Badge>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="font-semibold text-brand-300">{entry.recommendedSide}</div>
+                        <div className="mt-1 text-xs text-zinc-500">{entry.sideLocation} side vs {entry.opposingSide}</div>
+                      </td>
+                      <td className="px-4 py-4 font-mono text-sm text-white">
+                        <div>{formatOdds(entry.entryOdds)}</div>
+                        <div className="mt-1 text-xs text-zinc-500">Open {entry.openOdds !== undefined ? formatOdds(entry.openOdds) : "Pending"}</div>
+                        <div className="text-xs text-zinc-500">Close {entry.closeOdds !== undefined ? formatOdds(entry.closeOdds) : "Pending"}</div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="font-mono text-white">{(entry.modelProb * 100).toFixed(1)}%</div>
+                        <div className="mt-1 text-xs text-zinc-500">Implied {(entry.impliedProb * 100).toFixed(1)}%</div>
+                      </td>
+                      <td className="px-4 py-4 font-semibold text-emerald-300">{formatEdge(entry.rawEdge)}</td>
+                      <td className="px-4 py-4">
+                        <div className="font-semibold text-brand-300">{formatEdge(entry.executionAdjustedEdge)}</div>
+                        <div className="mt-1 text-xs text-zinc-500">Stake {formatStake(entry.suggestedStake)}</div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="font-mono text-yellow-300">{entry.score.toFixed(1)}</div>
+                        <div className="mt-1 text-xs text-zinc-500">Kelly {(entry.kellyPct * 100).toFixed(1)}%</div>
+                      </td>
+                      <td className="px-4 py-4 text-zinc-300">{entry.executionWindow}</td>
+                      <td className="px-4 py-4">
+                        <div className={`font-mono ${entry.closeLineValue !== undefined && entry.closeLineValue > 0 ? "text-emerald-300" : "text-zinc-300"}`}>
+                          {formatClv(entry.closeLineValue)}
+                        </div>
+                        <div className="mt-1 text-xs text-zinc-500">Open move {entry.openToCurrentDelta > 0 ? "+" : ""}{entry.openToCurrentDelta.toFixed(3)}</div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <Badge variant="outline" className={getOutcomeClasses(entry.ledgerOutcome)}>
+                          {entry.ledgerOutcome}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
 
-        {/* Weekly movers */}
-        <div className="mt-8 grid sm:grid-cols-2 gap-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <TrendingUp className="w-4 h-4 text-green-400" />
-              <span className="font-semibold text-sm">Biggest Movers This Week</span>
+        <div className="mt-8 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
+            <div className="flex items-center gap-2 text-sm font-semibold text-white">
+              <Trophy className="h-4 w-4 text-yellow-300" />
+              What counts as proof here
             </div>
-            {[...LEADERBOARD]
-              .sort((a, b) => b.weeklyUnits - a.weeklyUnits)
-              .slice(0, 3)
-              .map((e) => (
-                <div key={e.handle} className="flex justify-between items-center py-2 border-b border-gray-800 last:border-0">
-                  <span className="text-gray-300 text-sm">{e.handle}</span>
-                  <span className="text-green-400 font-mono text-sm font-bold">+{e.weeklyUnits}u</span>
-                </div>
-              ))}
+            <p className="mt-3 text-sm leading-6 text-zinc-400">
+              A ledger row exists only when a live game has a real market price, the model clears the execution threshold, and the entry can be tied to an explicit side, line, and timing window. That is the standard. Everything else stays off the board.
+            </p>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Zap className="w-4 h-4 text-yellow-400" />
-              <span className="font-semibold text-sm">Hottest Streaks</span>
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
+            <div className="flex items-center gap-2 text-sm font-semibold text-white">
+              <Activity className="h-4 w-4 text-brand-300" />
+              Next proof layer
             </div>
-            {[...LEADERBOARD]
-              .filter((e) => e.streakDir === "W")
-              .sort((a, b) => b.streak - a.streak)
-              .slice(0, 3)
-              .map((e) => (
-                <div key={e.handle} className="flex justify-between items-center py-2 border-b border-gray-800 last:border-0">
-                  <span className="text-gray-300 text-sm">{e.handle}</span>
-                  <div className="flex items-center gap-1">
-                    <Flame className="w-3 h-3 text-orange-400" />
-                    <span className="text-orange-400 font-mono text-sm font-bold">{e.streak}W</span>
-                  </div>
-                </div>
-              ))}
+            <p className="mt-3 text-sm leading-6 text-zinc-400">
+              The next step is persisting alert time, entry time, and final close for every surfaced bet so this ledger can grow from an honest live board into a full historical audit trail.
+            </p>
           </div>
         </div>
-
-        <p className="text-gray-600 text-xs text-center mt-8">
-          Leaderboard is for entertainment purposes only. Past performance does not guarantee future results.
-        </p>
       </div>
     </div>
   );
