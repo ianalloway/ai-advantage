@@ -188,6 +188,9 @@ const Index = () => {
             commenceTime: game.date,
             homeOdds: game.odds.homeMoneyline,
             awayOdds: game.odds.awayMoneyline,
+            homeOpenOdds: game.odds.homeMoneylineOpen,
+            awayOpenOdds: game.odds.awayMoneylineOpen,
+            isLive: game.status.state === "in",
           })
         : null,
     }));
@@ -681,7 +684,7 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                             <div className="space-y-2 text-sm">
                               <div className="flex justify-between"><span className="text-muted-foreground">Score</span><span className="text-white font-medium">{game.homeScore ?? "-"}</span></div>
                               <div className="flex justify-between"><span className="text-muted-foreground">Moneyline</span><span className="text-white font-medium">{game.odds ? formatOdds(game.odds.homeMoneyline) : "Pending"}</span></div>
-                              <div className="flex justify-between"><span className="text-muted-foreground">Edge</span><span className={prediction ? (prediction.homeEdge > 0 ? "text-green-400 font-medium" : "text-red-400 font-medium") : "text-muted-foreground"}>{prediction ? formatEdge(prediction.homeEdge) : "Waiting"}</span></div>
+                              <div className="flex justify-between"><span className="text-muted-foreground">Raw edge</span><span className={prediction ? (prediction.homeEdge > 0 ? "text-green-400 font-medium" : "text-red-400 font-medium") : "text-muted-foreground"}>{prediction ? formatEdge(prediction.homeEdge) : "Waiting"}</span></div>
                             </div>
                           </div>
 
@@ -696,14 +699,24 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                               <div className="rounded-2xl border border-brand-500/30 bg-brand-500/10 px-4 py-3 w-full">
                                 <div className="text-xs text-muted-foreground mb-1">Model pick</div>
                                 <div className="text-white font-bold">{prediction.predictedWinner}</div>
-                                <div className="text-sm text-brand-300">{formatProb(prediction.confidence)}</div>
+                                <div className="text-sm text-brand-300">{formatProb(prediction.confidence)} confidence</div>
+                                <div className="mt-2 flex items-center justify-between gap-3 text-sm">
+                                  <span className="text-muted-foreground">Exec edge</span>
+                                  <span className={prediction.executionAdjustedEdge >= 0 ? "font-semibold text-brand-300" : "font-semibold text-red-300"}>
+                                    {formatEdge(prediction.executionAdjustedEdge)}
+                                  </span>
+                                </div>
+                                <div className="mt-1 flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                                  <span>Window</span>
+                                  <span>{prediction.executionFactors.executionWindow}</span>
+                                </div>
                               </div>
                             ) : (
                               <div className="text-sm text-muted-foreground max-w-xs">No posted line yet, so the model is holding its fire instead of faking a recommendation.</div>
                             )}
                             {prediction?.valueBet ? (
                               <div className="rounded-full bg-green-500/10 border border-green-500/30 px-3 py-1 text-xs text-green-300 font-medium">
-                                Value bet flagged · {formatEdge(prediction.valueBet.edge)} edge
+                                Value bet flagged · {formatEdge(prediction.valueBet.executionAdjustedEdge)} adj. edge
                               </div>
                             ) : null}
                           </div>
@@ -719,7 +732,7 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                             <div className="space-y-2 text-sm">
                               <div className="flex justify-between"><span className="text-muted-foreground">Score</span><span className="text-white font-medium">{game.awayScore ?? "-"}</span></div>
                               <div className="flex justify-between"><span className="text-muted-foreground">Moneyline</span><span className="text-white font-medium">{game.odds ? formatOdds(game.odds.awayMoneyline) : "Pending"}</span></div>
-                              <div className="flex justify-between"><span className="text-muted-foreground">Edge</span><span className={prediction ? (prediction.awayEdge > 0 ? "text-green-400 font-medium" : "text-red-400 font-medium") : "text-muted-foreground"}>{prediction ? formatEdge(prediction.awayEdge) : "Waiting"}</span></div>
+                              <div className="flex justify-between"><span className="text-muted-foreground">Raw edge</span><span className={prediction ? (prediction.awayEdge > 0 ? "text-green-400 font-medium" : "text-red-400 font-medium") : "text-muted-foreground"}>{prediction ? formatEdge(prediction.awayEdge) : "Waiting"}</span></div>
                             </div>
                           </div>
                         </div>

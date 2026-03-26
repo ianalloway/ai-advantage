@@ -47,6 +47,7 @@ function PickCard({
   const winnerIsHome = prediction.predictedWinner === game.homeTeam;
   const winnerOdds = winnerIsHome ? prediction.homeOdds : prediction.awayOdds;
   const winnerEdge = winnerIsHome ? prediction.homeEdge : prediction.awayEdge;
+  const winnerExecutionEdge = winnerIsHome ? prediction.homeExecutionEdge : prediction.awayExecutionEdge;
   const winnerProb = winnerIsHome ? prediction.homeProb : prediction.awayProb;
 
   return (
@@ -133,7 +134,7 @@ function PickCard({
             <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-[linear-gradient(180deg,rgba(5,8,18,0.55),rgba(5,8,18,0.92))] backdrop-blur-sm">
               <Lock className="h-7 w-7 text-yellow-300" />
               <p className="max-w-[16rem] text-center text-sm text-zinc-300">
-                Live edge, Kelly sizing, and full recommendation are locked behind the premium board.
+                Execution-adjusted edge, Kelly sizing, and full recommendation are locked behind the premium board.
               </p>
               <Button
                 onClick={onUnlock}
@@ -154,20 +155,26 @@ function PickCard({
               </div>
               {prediction.valueBet ? (
                 <div className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-300">
-                  Value bet
+                  Value bet · {formatEdge(prediction.valueBet.executionAdjustedEdge)} adj.
                 </div>
               ) : null}
             </div>
 
-            <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="mt-5 grid grid-cols-3 gap-3">
               <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-3">
                 <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Win probability</div>
                 <div className="mt-1 text-xl font-semibold text-white">{formatProb(winnerProb)}</div>
               </div>
               <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-3">
-                <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Market edge</div>
+                <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Raw edge</div>
                 <div className={`mt-1 text-xl font-semibold ${winnerEdge >= 0 ? "text-emerald-300" : "text-red-300"}`}>
                   {formatEdge(winnerEdge)}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-brand-500/20 bg-brand-500/10 p-3">
+                <div className="text-[11px] uppercase tracking-[0.24em] text-brand-200/80">Exec edge</div>
+                <div className={`mt-1 text-xl font-semibold ${winnerExecutionEdge >= 0 ? "text-brand-300" : "text-red-300"}`}>
+                  {formatEdge(winnerExecutionEdge)}
                 </div>
               </div>
             </div>
@@ -178,6 +185,7 @@ function PickCard({
                   <div>
                     <div className="text-[11px] uppercase tracking-[0.24em] text-brand-200/80">Kelly sizing</div>
                     <div className="mt-1 text-base font-semibold text-white">${prediction.valueBet.suggestedBet.toFixed(0)} suggested stake</div>
+                    <div className="mt-1 text-xs text-zinc-400">Execution window: {prediction.executionFactors.executionWindow}</div>
                   </div>
                   <div className="text-right">
                     <div className="text-lg font-bold text-brand-300">{(prediction.valueBet.kellyPct * 100).toFixed(1)}%</div>
@@ -187,7 +195,7 @@ function PickCard({
               </div>
             ) : (
               <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.03] p-4 text-sm text-zinc-400">
-                Model lean is posted, but the current moneyline does not clear the edge threshold for a value bet.
+                Model lean is posted, but the execution-adjusted edge does not clear the threshold for a value bet.
               </div>
             )}
           </div>
@@ -252,13 +260,16 @@ export default function DailyPicks() {
             commenceTime: game.date,
             homeOdds: game.odds!.homeMoneyline,
             awayOdds: game.odds!.awayMoneyline,
+            homeOpenOdds: game.odds!.homeMoneylineOpen,
+            awayOpenOdds: game.odds!.awayMoneylineOpen,
+            isLive: game.status.state === "in",
           },
         );
 
         return {
           game,
           prediction,
-          score: (prediction.valueBet?.edge ?? 0) + prediction.confidence * 10,
+          score: prediction.executionAdjustedEdge + prediction.confidence * 10,
         };
       })
       .sort((a, b) => b.score - a.score);

@@ -163,8 +163,12 @@ export interface GamePrediction {
   awayImpliedProb: number;
   homeEdge: number;
   awayEdge: number;
+  homeExecutionEdge: number;
+  awayExecutionEdge: number;
   predictedWinner: string;
   confidence: number;
+  executionAdjustedEdge: number;
+  executionFactors: ExecutionFactors;
   valueBet: ValueBet | null;
   commenceTime?: string;
   bookmaker?: string;
@@ -212,6 +216,18 @@ export interface BacktestSummary {
   profitByMonth: Array<{ month: string; profit: number; cumulative: number }>;
 }
 
+export interface ExecutionFactors {
+  calibrationFactor: number;
+  clvFactor: number;
+  timingFactor: number;
+  marketDislocationFactor: number;
+  liquidityFactor: number;
+  correlationPenalty: number;
+  newsVolatilityPenalty: number;
+  executionWindow: string;
+  openToCurrentDelta: number;
+}
+
 export interface ValueBet {
   team: string;
   location: 'Home' | 'Away';
@@ -219,6 +235,8 @@ export interface ValueBet {
   impliedProb: number;
   odds: number;
   edge: number;
+  executionAdjustedEdge: number;
+  rawEdge: number;
   kellyPct: number;
   suggestedBet: number;
 }
@@ -250,6 +268,96 @@ export function kellyCriterion(winProb: number, decimalOdds: number, fraction: n
 
 export function calculateEdge(modelProb: number, impliedProb: number): number {
   return (modelProb - impliedProb) * 100;
+}
+
+function clampValue(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(value, max));
+}
+
+function calculateOddsDelta(currentOdds: number, openOdds?: number): number {
+  if (openOdds === undefined) return 0;
+  return americanToDecimal(currentOdds) - americanToDecimal(openOdds);
+}
+
+function getTimingContext(commenceTime?: string, isLive?: boolean) {
+  if (isLive) {
+    return { factor: 0.88, penalty: 0.6, window: 'Live' };
+  }
+
+  if (!commenceTime) {
+    return { factor: 0.98, penalty: 0.05, window: 'Unknown' };
+  }
+
+  const minutesToStart = (new Date(commenceTime).getTime() - Date.now()) / 60000;
+
+  if (minutesToStart <= 0) {
+    return { factor: 0.9, penalty: 0.45, window: 'Near close' };
+  }
+  if (minutesToStart <= 15) {
+    return { factor: 0.9, penalty: 0.35, window: 'Final 15m' };
+  }
+  if (minutesToStart <= 60) {
+    return { factor: 0.96, penalty: 0.18, window: 'Final hour' };
+  }
+  if (minutesToStart <= 240) {
+    return { factor: 1.02, penalty: 0.08, window: 'Same window' };
+  }
+  if (minutesToStart <= 1440) {
+    return { factor: 1.0, penalty: 0.05, window: 'Today' };
+  }
+
+  return { factor: 0.97, penalty: 0.04, window: 'Early look' };
+}
+
+function calculateExecutionAdjustedEdge({
+  sport,
+  modelProb,
+  rawEdge,
+  currentOdds,
+  openOdds,
+  commenceTime,
+  isLive,
+}: {
+  sport: Sport;
+  modelProb: number;
+  rawEdge: number;
+  currentOdds: number;
+  openOdds?: number;
+  commenceTime?: string;
+  isLive?: boolean;
+}): { adjustedEdge: number; factors: ExecutionFactors } {
+  const confidenceLift = clampValue((modelProb - 0.5) * 0.7, 0, 0.13);
+  const sportCalibrationBase = sport === 'nfl' ? 1.01 : sport === 'nba' ? 0.99 : 0.97;
+  const calibrationFactor = clampValue(sportCalibrationBase + confidenceLift, 0.82, 1.1);
+
+  const openToCurrentDelta = calculateOddsDelta(currentOdds, openOdds);
+  const clvFactor = clampValue(1 + Math.max(-openToCurrentDelta, 0) * 0.35 - Math.max(openToCurrentDelta, 0) * 0.2, 0.92, 1.08);
+  const timingContext = getTimingContext(commenceTime, isLive);
+  const marketDislocationFactor = clampValue(0.96 + Math.min(Math.max(rawEdge, 0), 10) * 0.012 + (openOdds !== undefined ? 0.02 : 0), 0.94, 1.12);
+  const liquidityFactor = clampValue((sport === 'nfl' ? 1.02 : sport === 'nba' ? 1 : 0.98) * (isLive ? 0.97 : 1), 0.92, 1.05);
+  const correlationPenalty = rawEdge >= 8 ? 0.18 : 0;
+  const newsVolatilityPenalty = timingContext.penalty;
+
+  const adjustedEdge = clampValue(
+    rawEdge * calibrationFactor * clvFactor * timingContext.factor * marketDislocationFactor * liquidityFactor - correlationPenalty - newsVolatilityPenalty,
+    -25,
+    25,
+  );
+
+  return {
+    adjustedEdge,
+    factors: {
+      calibrationFactor,
+      clvFactor,
+      timingFactor: timingContext.factor,
+      marketDislocationFactor,
+      liquidityFactor,
+      correlationPenalty,
+      newsVolatilityPenalty,
+      executionWindow: timingContext.window,
+      openToCurrentDelta,
+    },
+  };
 }
 
 // Prediction function (heuristic-based, mimics XGBoost model)
@@ -394,7 +502,16 @@ export function analyzeGame(
   bankroll: number = 1000,
   minEdge: number = 3,
   kellyFraction: number = 0.25,
-  liveOdds?: { homeOdds: number; awayOdds: number; bookmaker?: string; commenceTime?: string; id?: string }
+  liveOdds?: {
+    homeOdds: number;
+    awayOdds: number;
+    homeOpenOdds?: number;
+    awayOpenOdds?: number;
+    bookmaker?: string;
+    commenceTime?: string;
+    id?: string;
+    isLive?: boolean;
+  }
 ): GamePrediction {
   const teamStats = getTeamStats(sport);
   const resolvedHomeTeam = resolveTeamName(sport, homeTeam);
@@ -413,13 +530,33 @@ export function analyzeGame(
   
   const homeEdge = calculateEdge(homeProb, homeImpliedProb);
   const awayEdge = calculateEdge(awayProb, awayImpliedProb);
+  const homeExecution = calculateExecutionAdjustedEdge({
+    sport,
+    modelProb: homeProb,
+    rawEdge: homeEdge,
+    currentOdds: homeOdds,
+    openOdds: liveOdds?.homeOpenOdds,
+    commenceTime: liveOdds?.commenceTime,
+    isLive: liveOdds?.isLive,
+  });
+  const awayExecution = calculateExecutionAdjustedEdge({
+    sport,
+    modelProb: awayProb,
+    rawEdge: awayEdge,
+    currentOdds: awayOdds,
+    openOdds: liveOdds?.awayOpenOdds,
+    commenceTime: liveOdds?.commenceTime,
+    isLive: liveOdds?.isLive,
+  });
   
   const predictedWinner = homeProb > 0.5 ? homeTeam : awayTeam;
   const confidence = Math.max(homeProb, awayProb);
+  const executionAdjustedEdge = homeProb > 0.5 ? homeExecution.adjustedEdge : awayExecution.adjustedEdge;
+  const executionFactors = homeProb > 0.5 ? homeExecution.factors : awayExecution.factors;
   
   let valueBet: ValueBet | null = null;
   
-  if (homeEdge >= minEdge) {
+  if (homeExecution.adjustedEdge >= minEdge) {
     const decimalOdds = americanToDecimal(homeOdds);
     const kellyPct = kellyCriterion(homeProb, decimalOdds, kellyFraction);
     valueBet = {
@@ -429,10 +566,12 @@ export function analyzeGame(
       impliedProb: homeImpliedProb,
       odds: homeOdds,
       edge: homeEdge,
+      executionAdjustedEdge: homeExecution.adjustedEdge,
+      rawEdge: homeEdge,
       kellyPct,
       suggestedBet: kellyPct * bankroll
     };
-  } else if (awayEdge >= minEdge) {
+  } else if (awayExecution.adjustedEdge >= minEdge) {
     const decimalOdds = americanToDecimal(awayOdds);
     const kellyPct = kellyCriterion(awayProb, decimalOdds, kellyFraction);
     valueBet = {
@@ -442,6 +581,8 @@ export function analyzeGame(
       impliedProb: awayImpliedProb,
       odds: awayOdds,
       edge: awayEdge,
+      executionAdjustedEdge: awayExecution.adjustedEdge,
+      rawEdge: awayEdge,
       kellyPct,
       suggestedBet: kellyPct * bankroll
     };
@@ -460,8 +601,12 @@ export function analyzeGame(
     awayImpliedProb,
     homeEdge,
     awayEdge,
+    homeExecutionEdge: homeExecution.adjustedEdge,
+    awayExecutionEdge: awayExecution.adjustedEdge,
     predictedWinner,
     confidence,
+    executionAdjustedEdge,
+    executionFactors,
     valueBet,
     commenceTime: liveOdds?.commenceTime,
     bookmaker: liveOdds?.bookmaker,
