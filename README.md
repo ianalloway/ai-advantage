@@ -5,7 +5,16 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=flat&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 
-AI-powered sports betting analytics platform providing data-driven insights and predictions for smarter wagering decisions.
+Sports analytics product for ML-driven picks, bankroll sizing, and live betting workflows.
+
+## Why This Repo Matters
+
+This project shows product-oriented ML work rather than notebook-only experimentation:
+
+- prediction workflows tied to a user-facing app
+- live odds and betting-oriented UX
+- Kelly-based stake sizing and decision support
+- production-style frontend architecture with a real deployed surface
 
 ![AI Advantage Sports Screenshot](https://raw.githubusercontent.com/ianalloway/ai-advantage/main/screenshot.png)
 
@@ -20,6 +29,13 @@ AI-powered sports betting analytics platform providing data-driven insights and 
 - **Multi-Sport Support** - NBA, NFL, and MLB predictions
 - **Premium Tier** - Advanced features with Stripe subscription integration
 
+## Highlights
+
+- Live product experience at [aiadvantagesports.com](https://aiadvantagesports.com)
+- Supports NBA, NFL, and MLB workflows
+- Includes odds, picks, leaderboard, and premium/paywall paths
+- Useful as a portfolio example of turning modeling ideas into an actual product
+
 ## Tech Stack
 
 - **Frontend:** React, TypeScript, Tailwind CSS
@@ -27,33 +43,42 @@ AI-powered sports betting analytics platform providing data-driven insights and 
 - **Build Tool:** Vite
 - **Styling:** Custom dark theme with green accents
 
+## Project Structure
+
+```text
+src/
+  components/        UI and product features
+  lib/               predictions, rosters, Stripe helpers
+  pages/             landing page, picks, leaderboard
+```
+
 ## Getting Started
 
 ```bash
-# Clone the repository
 git clone https://github.com/ianalloway/ai-advantage.git
-
-# Navigate to project directory
 cd ai-advantage
-
-# Install dependencies
 npm install
-
-# Start development server
 npm run dev
 ```
+
+Then open `http://localhost:5173`.
 
 ## Deployment
 
 The site is deployed on Netlify with automatic deployments from the main branch.
 
+## Notes
+
+- This repository is best read as a shipped product and frontend/application example.
+- Modeling details live in adjacent public projects such as `sports-betting-ml`, `nba-ratings`, and `nba-clv-dashboard`.
+
 ## Author
 
-**Ian Alloway** - Data Scientist & AI Specialist
+**Ian Alloway**
 
 - Portfolio: [ianalloway.xyz](https://ianalloway.xyz)
 - LinkedIn: [linkedin.com/in/ianit](https://www.linkedin.com/in/ianit)
-- Twitter: [@ianallowayxyz](https://x.com/ianallowayxyz)
+- GitHub: [github.com/ianalloway](https://github.com/ianalloway)
 
 ## License
 
