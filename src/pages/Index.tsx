@@ -78,11 +78,10 @@ const Index = () => {
   const [email, setEmail] = useState("");
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [isPremium, setIsPremium] = useState(false);
-    const [showPricing, setShowPricing] = useState(false);
-    const [performanceData, setPerformanceData] = useState<PerformanceData | null>(null);
-    const [showCryptoModal, setShowCryptoModal] = useState(false);
-    const [cryptoUnlockType, setCryptoUnlockType] = useState<UnlockType>("big-game");
-    const { toast } = useToast();
+  const [performanceData, setPerformanceData] = useState<PerformanceData | null>(null);
+  const [showCryptoModal, setShowCryptoModal] = useState(false);
+  const [cryptoUnlockType, setCryptoUnlockType] = useState<UnlockType>("big-game");
+  const { toast } = useToast();
 
   // Check premium status on mount
   useEffect(() => {
@@ -288,85 +287,167 @@ Always bet responsibly. Past performance does not guarantee future results.`;
     { value: "4.2", label: "Avg Odds" }
   ];
 
+  const heroSignals = [
+    "Live model predictions across NBA, NFL, and MLB",
+    "Kelly-sized value bets instead of random pick spam",
+    "Backtests and performance views that make the edge inspectable",
+  ];
+
+  const workflowSteps = [
+    "Pick a sport and review today's model board",
+    "Filter for value based on your edge threshold and bankroll",
+    "Upgrade only if you want full picks, premium views, or one-time unlocks",
+  ];
+
+  const scrollToPricing = () => {
+    document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
       <MatrixRain />
       {/* Live Odds Ticker */}
       <LiveOddsTicker speed={45} pauseOnHover />
 
-      {/* Hero Section */}
-      <section className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-brand-900/20 via-background to-background" />
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[800px] bg-brand-500/10 rounded-full blur-3xl" />
-
-        <div className="relative max-w-6xl mx-auto px-6 pt-20 pb-16">
-          <div className="text-center space-y-6">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brand-500/10 border border-brand-500/20 text-brand-400 text-sm font-medium">
-              <Zap className="w-4 h-4" />
-              AI-Powered Sports Betting Intelligence
+      <header className="relative z-20 border-b border-border/70 bg-black/70 backdrop-blur-md">
+        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-brand-500/30 bg-brand-500/10">
+              <TrendingUp className="h-5 w-5 text-brand-400" />
             </div>
-
-            <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight">
-              <span className="text-white">Bet Smarter with</span>
-              <br />
-              <span className="text-gradient">AI Advantage</span>
-            </h1>
-
-            <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-              Get data-driven betting recommendations powered by advanced AI.
-              Analyze any matchup and receive instant insights to make informed decisions.
-            </p>
-
-            {/* CTA buttons */}
-            <div className="flex items-center justify-center gap-4 pt-2 flex-wrap">
-              <Button
-                size="lg"
-                className="bg-brand-600 hover:bg-brand-700 text-white font-bold px-8"
-                onClick={() => navigate("/picks")}
-              >
-                <Star className="w-5 h-5 mr-2" />
-                View Today's Picks
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                className="border-gray-600 text-gray-300 hover:bg-gray-800 font-bold px-8"
-                onClick={() => navigate("/leaderboard")}
-              >
-                <Trophy className="w-5 h-5 mr-2" />
-                Leaderboard
-              </Button>
-              <Button
-                size="lg"
-                className="bg-gradient-to-r from-brand-500 to-purple-600 hover:from-brand-600 hover:to-purple-700 text-white font-bold px-8 border-none"
-                onClick={() => {
-                  const pricingSection = document.querySelector('.bg-card\\/30');
-                  pricingSection?.scrollIntoView({ behavior: 'smooth' });
-                }}
-              >
-                <Crown className="w-5 h-5 mr-2 text-yellow-400" />
-                Go Pro
-              </Button>
+            <div>
+              <p className="text-white font-semibold tracking-tight">AI Advantage Sports</p>
+              <p className="text-xs text-muted-foreground">Evaluation-first betting intelligence</p>
             </div>
           </div>
 
-          {/* Stats Bar */}
-          <div className="mt-12 grid grid-cols-2 md:grid-cols-4 gap-4">
-            {stats.map((stat, index) => (
-              <div 
-                key={index}
-                className="text-center p-4 rounded-xl bg-card/50 border border-border backdrop-blur-sm"
-              >
-                <div className="text-3xl font-bold text-brand-400">{stat.value}</div>
-                <div className="text-sm text-muted-foreground">{stat.label}</div>
+          <nav className="hidden md:flex items-center gap-6 text-sm">
+            <a href="#model-suite" className="text-muted-foreground hover:text-white transition-colors">Model Suite</a>
+            <a href="/daily-picks" className="text-muted-foreground hover:text-white transition-colors">Daily Picks</a>
+            <a href="/leaderboard" className="text-muted-foreground hover:text-white transition-colors">Leaderboard</a>
+            <a href="#pricing" className="text-muted-foreground hover:text-white transition-colors">Pricing</a>
+          </nav>
+        </div>
+      </header>
+
+      {/* Hero Section */}
+      <section className="relative overflow-hidden border-b border-border/60">
+        <div className="absolute inset-0 bg-gradient-to-br from-brand-900/20 via-background to-background" />
+        <div className="absolute right-0 top-0 h-[520px] w-[520px] rounded-full bg-brand-500/10 blur-3xl" />
+
+        <div className="relative max-w-6xl mx-auto px-6 py-16 md:py-20">
+          <div className="grid gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-end">
+            <div className="space-y-6">
+              <div className="inline-flex items-center gap-2 rounded-full border border-brand-500/20 bg-brand-500/10 px-4 py-2 text-sm font-medium text-brand-400">
+                <Zap className="w-4 h-4" />
+                AI-Powered Sports Betting Intelligence
               </div>
-            ))}
+
+              <div className="space-y-4">
+                <h1 className="max-w-4xl text-5xl font-extrabold tracking-tight text-white md:text-7xl">
+                  Sports betting models people can actually inspect.
+                </h1>
+                <p className="max-w-2xl text-lg text-muted-foreground md:text-xl">
+                  AI Advantage turns model output into usable betting workflow: live boards, value detection, Kelly sizing, and proof views that make the edge easier to trust.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-3 pt-2">
+                <Button
+                  size="lg"
+                  className="bg-brand-600 px-8 font-bold text-white hover:bg-brand-700"
+                  onClick={() => navigate("/daily-picks")}
+                >
+                  <Star className="mr-2 h-5 w-5" />
+                  View Today's Picks
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="border-gray-600 px-8 font-bold text-gray-300 hover:bg-gray-800"
+                  onClick={() => {
+                    document.getElementById("model-suite")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
+                >
+                  <Brain className="mr-2 h-5 w-5" />
+                  Run the Model Demo
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="border-brand-500/40 px-8 font-bold text-brand-300 hover:bg-brand-500/10"
+                  onClick={scrollToPricing}
+                >
+                  <Crown className="mr-2 h-5 w-5 text-yellow-400" />
+                  See Pricing
+                </Button>
+              </div>
+
+              <div className="grid gap-3 pt-2 sm:grid-cols-3">
+                {heroSignals.map((item) => (
+                  <div key={item} className="rounded-2xl border border-border bg-card/40 px-4 py-4 backdrop-blur-sm">
+                    <p className="text-sm leading-relaxed text-muted-foreground">{item}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-brand-500/20 bg-card/55 p-6 backdrop-blur-xl">
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <p className="mb-2 text-xs uppercase tracking-[0.2em] text-brand-400/70">What You Get</p>
+                  <h2 className="text-2xl font-bold text-white">A cleaner betting workflow</h2>
+                </div>
+                <div className="rounded-2xl border border-brand-500/20 bg-brand-500/10 p-3">
+                  <Target className="h-5 w-5 text-brand-400" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                {stats.map((stat) => (
+                  <div key={stat.label} className="rounded-2xl border border-border bg-black/30 p-4">
+                    <div className="text-3xl font-bold text-brand-400">{stat.value}</div>
+                    <div className="mt-1 text-sm text-muted-foreground">{stat.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-6 space-y-3">
+                {workflowSteps.map((step, index) => (
+                  <div key={step} className="flex gap-3 rounded-2xl border border-border bg-black/25 px-4 py-4">
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-brand-500/30 bg-brand-500/10 text-xs font-semibold text-brand-300">
+                      {index + 1}
+                    </div>
+                    <p className="text-sm leading-relaxed text-muted-foreground">{step}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Button
+                  variant="outline"
+                  className="border-border text-gray-300 hover:bg-gray-800 font-bold px-5"
+                  onClick={() => navigate("/leaderboard")}
+                >
+                  <Trophy className="w-5 h-5 mr-2" />
+                  Leaderboard
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="px-5 text-muted-foreground hover:text-white"
+                  onClick={scrollToPricing}
+                >
+                  Compare Plans
+                  <ChevronRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
       {/* ML Predictions Section */}
-      <section className="py-16 px-6">
+      <section id="model-suite" className="py-16 px-6">
         <div className="max-w-6xl mx-auto">
           {/* Sport Selector */}
           <div className="flex items-center justify-center gap-2 mb-6">
@@ -1062,10 +1143,10 @@ Always bet responsibly. Past performance does not guarantee future results.`;
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-12">
             <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
-              Why Choose AI Advantage?
+              What the product actually gives you
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
-              Our cutting-edge AI technology gives you the edge you need to make smarter betting decisions.
+              Model output is only useful if it helps you decide faster, size better, and see where the edge comes from.
             </p>
           </div>
 
@@ -1087,14 +1168,14 @@ Always bet responsibly. Past performance does not guarantee future results.`;
       </section>
 
       {/* Pricing Section */}
-      <section className="py-20 px-6 bg-card/30">
+      <section id="pricing" className="py-20 px-6 bg-card/30">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-12">
             <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
               Choose Your Plan
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
-              Start free, pay once with crypto, or go all-in with a monthly subscription
+              Start with the free workflow, unlock one-off premium access, or subscribe if you want the full operating system.
             </p>
           </div>
 
