@@ -388,6 +388,27 @@ Always bet responsibly. Past performance does not guarantee future results.`;
     },
   ];
 
+  const executionFormulaTerms = [
+    { label: "Raw edge", value: "Model win probability minus implied market probability", accent: "text-white" },
+    { label: "Calibration factor", value: "Discount stale models using rolling Brier, log-loss, and calibration buckets", accent: "text-brand-300" },
+    { label: "CLV factor", value: "Reward signals that consistently beat the closing number", accent: "text-green-300" },
+    { label: "Timing factor", value: "Reward alerts caught before steam fully lands", accent: "text-sky-300" },
+    { label: "Risk penalties", value: "Subtract correlation risk and news volatility before sizing", accent: "text-yellow-300" },
+  ];
+
+  const executionSystemSteps = [
+    "Model the game better than the market on a narrow slice of spots",
+    "Capture a better number than the market eventually closes at",
+    "Alert before the edge decays and size with quarter-Kelly discipline",
+    "Grade every alert against CLV, calibration, and bankroll outcome",
+  ];
+
+  const growthRoadmap = [
+    { phase: "Phase 1", title: "Prove the signal", detail: "Track open, current, and closing line on every surfaced bet. Gate the model on CLV and calibration, not just short-run ROI." },
+    { phase: "Phase 2", title: "Improve execution", detail: "Add stale-number detection, alert windows, and book disagreement scoring so timing becomes part of the product." },
+    { phase: "Phase 3", title: "Productize trust", detail: "Ship an execution board, CLV console, and public proof page that show why the edge deserves payment." },
+  ];
+
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
       <MatrixRain />
@@ -410,6 +431,7 @@ Always bet responsibly. Past performance does not guarantee future results.`;
             <a href="#model-suite" className="text-muted-foreground hover:text-white transition-colors">Model Suite</a>
             <a href="/daily-picks" className="text-muted-foreground hover:text-white transition-colors">Daily Picks</a>
             <a href="/leaderboard" className="text-muted-foreground hover:text-white transition-colors">Leaderboard</a>
+            <a href="#edge-system" className="text-muted-foreground hover:text-white transition-colors">Edge</a>
             <a href="#sports-stack" className="text-muted-foreground hover:text-white transition-colors">Stack</a>
             <a href="#pricing" className="text-muted-foreground hover:text-white transition-colors">Pricing</a>
           </nav>
@@ -1292,6 +1314,80 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                 <p className="text-sm text-muted-foreground">{feature.description}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="edge-system" className="py-18 px-6 border-t border-border/60 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.10),_transparent_48%),linear-gradient(180deg,rgba(5,8,18,0.98),rgba(9,13,24,0.98))]">
+        <div className="max-w-6xl mx-auto">
+          <div className="grid gap-10 lg:grid-cols-[1.15fr_0.85fr] lg:items-start">
+            <div>
+              <p className="mb-3 text-xs uppercase tracking-[0.24em] text-brand-300/80">Advantage thesis</p>
+              <h2 className="mb-4 text-3xl font-bold text-white md:text-4xl">The next-level edge is execution, not louder picks.</h2>
+              <p className="mb-6 max-w-2xl leading-relaxed text-muted-foreground">
+                There is no magic single formula. The real edge is an operating system that combines model signal, better prices, faster timing, disciplined sizing, and ruthless CLV-based evaluation.
+              </p>
+
+              <div className="mb-6 rounded-3xl border border-brand-500/20 bg-brand-500/10 p-6">
+                <p className="mb-3 text-xs uppercase tracking-[0.24em] text-brand-300/80">Execution-adjusted edge</p>
+                <div className="text-lg font-semibold leading-relaxed text-white md:text-xl">
+                  Raw Edge x Calibration x CLV x Timing x Market Dislocation x Liquidity - Risk Penalties
+                </div>
+                <p className="mt-3 text-sm text-muted-foreground">
+                  Then size with quarter-Kelly, cap exposure, and only trust the score when the market and the close history support it.
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                {executionFormulaTerms.map((term) => (
+                  <div key={term.label} className="rounded-2xl border border-border bg-card/45 p-4">
+                    <p className={`mb-2 text-sm font-semibold ${term.accent}`}>{term.label}</p>
+                    <p className="text-sm leading-relaxed text-muted-foreground">{term.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-5">
+              <div className="rounded-3xl border border-border bg-card/45 p-6">
+                <p className="mb-3 text-xs uppercase tracking-[0.24em] text-brand-300/80">How AI Advantage wins</p>
+                <div className="space-y-3">
+                  {executionSystemSteps.map((step, index) => (
+                    <div key={step} className="flex items-start gap-3 rounded-2xl border border-white/8 bg-black/20 p-4">
+                      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand-500/15 text-sm font-semibold text-brand-300">{index + 1}</div>
+                      <p className="text-sm leading-relaxed text-muted-foreground">{step}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-border bg-card/45 p-6">
+                <div className="mb-4 flex items-center justify-between gap-4">
+                  <div>
+                    <p className="mb-2 text-xs uppercase tracking-[0.24em] text-brand-300/80">Build sequence</p>
+                    <h3 className="text-2xl font-semibold text-white">Three phases to go next level</h3>
+                  </div>
+                  <a
+                    href="https://github.com/ianalloway/ai-advantage/blob/main/docs/advantage_operating_system.md"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-sm text-brand-300 transition-colors hover:text-white"
+                  >
+                    Read full playbook
+                    <ChevronRight className="h-4 w-4" />
+                  </a>
+                </div>
+                <div className="space-y-3">
+                  {growthRoadmap.map((item) => (
+                    <div key={item.phase} className="rounded-2xl border border-white/8 bg-black/20 p-4">
+                      <p className="mb-2 text-xs uppercase tracking-[0.24em] text-brand-300/80">{item.phase}</p>
+                      <h4 className="mb-1 font-semibold text-white">{item.title}</h4>
+                      <p className="text-sm leading-relaxed text-muted-foreground">{item.detail}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
