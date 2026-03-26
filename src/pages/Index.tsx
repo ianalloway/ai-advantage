@@ -303,6 +303,48 @@ Always bet responsibly. Past performance does not guarantee future results.`;
     document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  const sportsRepoGroups = [
+    {
+      title: "Product Surface",
+      summary: "The public-facing experience, subscriptions, and model-backed picks.",
+      repos: [
+        { name: "ai-advantage", role: "Main product", desc: "The live app for picks, model demos, pricing, and upgrade flow.", url: "https://github.com/ianalloway/ai-advantage" },
+        { name: "sports-betting-ml", role: "Model pipeline", desc: "End-to-end ML workflow for sports prediction, feature engineering, serving, and demo packaging.", url: "https://github.com/ianalloway/sports-betting-ml" },
+      ],
+    },
+    {
+      title: "Ratings And Evaluation",
+      summary: "The libraries and dashboards that turn picks into inspectable systems.",
+      repos: [
+        { name: "nba-ratings", role: "Ratings core", desc: "Elo, logistic win probability, and Kelly helpers for NBA-style models.", url: "https://github.com/ianalloway/nba-ratings" },
+        { name: "nba-edge", role: "Edge finder", desc: "Power ratings, spread edge detection, and half-Kelly portfolio sizing with backtests.", url: "https://github.com/ianalloway/nba-edge" },
+        { name: "nba-clv-dashboard", role: "Evaluation dashboard", desc: "Calibration, rolling accuracy, and CLV-style reporting to see whether the model is actually working.", url: "https://github.com/ianalloway/nba-clv-dashboard" },
+        { name: "backtest-report-gen", role: "Report generator", desc: "Static HTML reports for calibration, Brier score, CLV, and bet ledgers.", url: "https://github.com/ianalloway/backtest-report-gen" },
+        { name: "metric-regression-gate", role: "CI quality gate", desc: "Stops metrics regressions from slipping through by comparing new results to baseline performance.", url: "https://github.com/ianalloway/metric-regression-gate" },
+      ],
+    },
+    {
+      title: "Odds And Execution",
+      summary: "The tooling layer for prices, movement, bankroll sizing, and close tracking.",
+      repos: [
+        { name: "odds-cli", role: "Terminal odds tool", desc: "Check live odds, compare books, find value, and calculate Kelly sizing from the command line.", url: "https://github.com/ianalloway/odds-cli" },
+        { name: "odds-drift-watch", role: "Line-move alerts", desc: "Webhook-based alerts for odds drift with FastAPI, SQLite, and line shock logic.", url: "https://github.com/ianalloway/odds-drift-watch" },
+        { name: "closing-line-archive", role: "Snapshot archive", desc: "SQLite CLI for sportsbook odds snapshots and beat-close analysis.", url: "https://github.com/ianalloway/closing-line-archive" },
+        { name: "kelly-js", role: "Sizing library", desc: "TypeScript Kelly Criterion utilities for bankroll sizing, CLV tracking, and odds conversion.", url: "https://github.com/ianalloway/kelly-js" },
+      ],
+    },
+    {
+      title: "Research And Ecosystem",
+      summary: "Supporting resources, reusable packages, and the broader sports-analytics toolkit around the app.",
+      repos: [
+        { name: "awesome-sports-betting", role: "Resource map", desc: "A curated list of APIs, tools, datasets, books, and models across the sports betting space.", url: "https://github.com/ianalloway/awesome-sports-betting" },
+        { name: "allowayai", role: "R toolkit", desc: "R utilities for AI and sports analytics workflows.", url: "https://github.com/ianalloway/allowayai" },
+        { name: "allowayai-demo", role: "Live demo", desc: "Interactive demo for the R package, including Kelly helpers and sports model utilities.", url: "https://github.com/ianalloway/allowayai-demo" },
+        { name: "openclaw-skills", role: "Agent workflows", desc: "Sports-odds and Kelly-related skills that support agent-driven research and automation workflows.", url: "https://github.com/ianalloway/openclaw-skills" },
+      ],
+    },
+  ];
+
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
       <MatrixRain />
@@ -325,6 +367,7 @@ Always bet responsibly. Past performance does not guarantee future results.`;
             <a href="#model-suite" className="text-muted-foreground hover:text-white transition-colors">Model Suite</a>
             <a href="/daily-picks" className="text-muted-foreground hover:text-white transition-colors">Daily Picks</a>
             <a href="/leaderboard" className="text-muted-foreground hover:text-white transition-colors">Leaderboard</a>
+            <a href="#sports-stack" className="text-muted-foreground hover:text-white transition-colors">Stack</a>
             <a href="#pricing" className="text-muted-foreground hover:text-white transition-colors">Pricing</a>
           </nav>
         </div>
@@ -1161,6 +1204,51 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                 </div>
                 <h3 className="text-lg font-semibold text-white mb-2">{feature.title}</h3>
                 <p className="text-sm text-muted-foreground">{feature.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Sports Stack */}
+      <section id="sports-stack" className="py-18 px-6 border-t border-border/60 bg-gradient-to-b from-black/20 to-card/20">
+        <div className="max-w-6xl mx-auto">
+          <div className="max-w-3xl mb-12">
+            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">The sports analytics stack behind the site</h2>
+            <p className="text-muted-foreground text-base leading-relaxed">
+              AI Advantage is the front door, but the actual sports system is a full repo ecosystem: model training, ratings, CLV evaluation, odds tooling, bankroll sizing, and research utilities.
+            </p>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            {sportsRepoGroups.map((group) => (
+              <div key={group.title} className="rounded-3xl border border-border bg-card/45 p-6 backdrop-blur-sm">
+                <div className="mb-5">
+                  <p className="text-xs uppercase tracking-[0.2em] text-brand-400/70 mb-2">Sports Stack</p>
+                  <h3 className="text-2xl font-semibold text-white mb-2">{group.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{group.summary}</p>
+                </div>
+
+                <div className="space-y-3">
+                  {group.repos.map((repo) => (
+                    <a
+                      key={repo.name}
+                      href={repo.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group block rounded-2xl border border-border bg-black/25 p-4 transition-colors hover:border-brand-500/40 hover:bg-black/40"
+                    >
+                      <div className="flex items-start justify-between gap-4 mb-2">
+                        <div>
+                          <p className="text-white font-semibold group-hover:text-brand-300 transition-colors">{repo.name}</p>
+                          <p className="text-xs uppercase tracking-[0.18em] text-brand-400/70 mt-1">{repo.role}</p>
+                        </div>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-brand-300 transition-colors shrink-0 mt-1" />
+                      </div>
+                      <p className="text-sm text-muted-foreground leading-relaxed">{repo.desc}</p>
+                    </a>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
