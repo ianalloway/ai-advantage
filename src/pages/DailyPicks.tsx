@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,7 +18,7 @@ import {
   Zap,
 } from "lucide-react";
 import CryptoPaymentModal, { type UnlockType } from "@/components/CryptoPaymentModal";
-import { isPremiumUser } from "@/lib/stripe";
+import { getAccessState, hasFeatureAccess, redirectToCheckout } from "@/lib/stripe";
 import { analyzeGame, formatEdge, formatOdds, formatProb, type GamePrediction } from "@/lib/predictions";
 import { fetchLiveGamesForSports, type LiveMarketGame } from "@/lib/liveSports";
 
@@ -206,8 +206,7 @@ function PickCard({
 }
 
 export default function DailyPicks() {
-  const navigate = useNavigate();
-  const [premium, setPremium] = useState(isPremiumUser());
+  const [access, setAccess] = useState(getAccessState());
   const [showCryptoModal, setShowCryptoModal] = useState(false);
   const [cryptoUnlockType] = useState<UnlockType>("big-game");
   const [games, setGames] = useState<LiveMarketGame[]>([]);
@@ -277,6 +276,7 @@ export default function DailyPicks() {
 
   const freePicks = analyzedGames.slice(0, 3);
   const premiumPicks = analyzedGames.slice(3);
+  const hasPremiumBoard = hasFeatureAccess("premium_board", access);
   const liveGames = games.filter((game) => game.status.state === "in").length;
   const valueBets = analyzedGames.filter((entry) => entry.prediction.valueBet).length;
   const sportsShown = Array.from(new Set(games.map((game) => game.sportLabel)));
@@ -285,9 +285,11 @@ export default function DailyPicks() {
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_30%),linear-gradient(180deg,#030611,#070d1a_45%,#030611)] text-white">
       <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6">
         <div className="flex items-center justify-between border-b border-white/10 pb-4">
-          <Button variant="ghost" size="sm" className="text-zinc-400 hover:text-white" onClick={() => navigate("/") }>
-            <ChevronLeft className="mr-1 h-4 w-4" />
-            Back
+          <Button variant="ghost" size="sm" className="text-zinc-400 hover:text-white" asChild>
+            <Link to="/">
+              <ChevronLeft className="mr-1 h-4 w-4" />
+              Back
+            </Link>
           </Button>
           <div className="flex items-center gap-2 text-sm font-semibold text-white">
             <Trophy className="h-5 w-5 text-yellow-300" />
@@ -343,16 +345,31 @@ export default function DailyPicks() {
               {sport}
             </span>
           ))}
-          {!premium ? (
-            <Button
-              size="sm"
-              className="ml-auto bg-gradient-to-r from-yellow-400 to-orange-400 font-semibold text-black hover:from-yellow-300 hover:to-orange-300"
-              onClick={() => setShowCryptoModal(true)}
-            >
-              <Flame className="mr-1.5 h-3.5 w-3.5" />
-              Unlock the full board
-            </Button>
-          ) : null}
+          {!hasPremiumBoard ? (
+            <div className="ml-auto flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                className="bg-gradient-to-r from-yellow-400 to-orange-400 font-semibold text-black hover:from-yellow-300 hover:to-orange-300"
+                onClick={() => void redirectToCheckout("one-time")}
+              >
+                <Flame className="mr-1.5 h-3.5 w-3.5" />
+                Unlock event pass
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-white/10 text-zinc-300 hover:bg-white/[0.06]"
+                onClick={() => void redirectToCheckout("premium")}
+              >
+                <Crown className="mr-1.5 h-3.5 w-3.5 text-yellow-300" />
+                Go Pro monthly
+              </Button>
+            </div>
+          ) : (
+            <Badge variant="outline" className="ml-auto border-emerald-400/30 bg-emerald-400/10 text-emerald-300">
+              {access.label}
+            </Badge>
+          )}
         </div>
 
         {isLoading ? (
@@ -391,16 +408,21 @@ export default function DailyPicks() {
                     <Crown className="h-4 w-4 text-yellow-300" />
                     <h2 className="text-xl font-bold">Premium board</h2>
                     <Badge variant="outline" className="border-yellow-400/30 bg-yellow-400/10 text-yellow-300">
-                      {premium ? `${premiumPicks.length} unlocked` : `${premiumPicks.length} locked`}
+                      {hasPremiumBoard ? `${premiumPicks.length} unlocked` : `${premiumPicks.length} locked`}
                     </Badge>
                   </div>
-                  {!premium ? (
-                    <div className="text-sm text-zinc-500">Edge sizing, stronger spots, and the rest of the slate</div>
+                  {!hasPremiumBoard ? (
+                    <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-500">
+                      <span>Execution sizing, stronger spots, and the rest of the slate</span>
+                      <Button size="sm" variant="outline" className="border-white/10 text-zinc-300 hover:bg-white/[0.06]" onClick={() => void redirectToCheckout("premium")}>
+                        Pro monthly
+                      </Button>
+                    </div>
                   ) : null}
                 </div>
                 <div className="space-y-5">
                   {premiumPicks.map((entry) => (
-                    <PickCard key={entry.game.id} entry={entry} locked={!premium} onUnlock={() => setShowCryptoModal(true)} />
+                    <PickCard key={entry.game.id} entry={entry} locked={!hasPremiumBoard} onUnlock={() => void redirectToCheckout("one-time")} />
                   ))}
                 </div>
               </section>
@@ -413,7 +435,7 @@ export default function DailyPicks() {
         open={showCryptoModal}
         onOpenChange={setShowCryptoModal}
         unlockType={cryptoUnlockType}
-        onSuccess={() => setPremium(true)}
+        onSuccess={() => setAccess(getAccessState())}
       />
     </div>
   );

@@ -1,15 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { analyzeGame, formatEdge, formatOdds, type Sport } from "@/lib/predictions";
 import { createExecutionBoardEntry, type ExecutionBoardEntry } from "@/lib/executionBoard";
 import { fetchLiveGamesForSports, type LiveMarketGame } from "@/lib/liveSports";
 import {
+  listExecutionLedgerArchive,
+  listExecutionLedgerEntries,
+  syncExecutionLedgerEntries,
+  upsertExecutionLedgerEntries,
+  type HistoricalExecutionLedgerEntry,
+} from "@/lib/executionLedgerStore";
+import { getAccessState, hasFeatureAccess, redirectToCheckout } from "@/lib/stripe";
+import {
   Activity,
   AlertCircle,
   ChevronLeft,
   Clock3,
+  Crown,
+  Database,
   RefreshCw,
   ShieldCheck,
   Target,
@@ -45,13 +55,62 @@ function formatStake(value: number) {
   return `$${value.toFixed(0)}`;
 }
 
+function formatSeenAt(value: string) {
+  return new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function HistoryTable({ rows }: { rows: HistoricalExecutionLedgerEntry[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full text-sm">
+        <thead>
+          <tr className="border-b border-white/10 bg-black/20 text-left text-[11px] uppercase tracking-[0.24em] text-zinc-500">
+            <th className="px-4 py-4">Seen</th>
+            <th className="px-4 py-4">Game</th>
+            <th className="px-4 py-4">Side</th>
+            <th className="px-4 py-4">Entry</th>
+            <th className="px-4 py-4">Exec</th>
+            <th className="px-4 py-4">Outcome</th>
+            <th className="px-4 py-4">Snapshots</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((entry) => (
+            <tr key={`${entry.id}-${entry.lastSeenAt}`} className="border-b border-white/8 align-top transition-colors hover:bg-white/[0.03]">
+              <td className="px-4 py-4 text-zinc-400">{formatSeenAt(entry.lastSeenAt)}</td>
+              <td className="px-4 py-4">
+                <div className="font-semibold text-white">{entry.eventLabel}</div>
+                <div className="mt-1 text-xs text-zinc-500">{entry.sportLabel} · {entry.bookmaker ?? "Market feed"}</div>
+              </td>
+              <td className="px-4 py-4">
+                <div className="font-semibold text-brand-300">{entry.recommendedSide}</div>
+                <div className="mt-1 text-xs text-zinc-500">{entry.executionWindow}</div>
+              </td>
+              <td className="px-4 py-4 font-mono text-white">{formatOdds(entry.entryOdds)}</td>
+              <td className="px-4 py-4 font-semibold text-brand-300">{formatEdge(entry.executionAdjustedEdge)}</td>
+              <td className="px-4 py-4">
+                <Badge variant="outline" className={getOutcomeClasses(entry.ledgerOutcome)}>
+                  {entry.ledgerOutcome}
+                </Badge>
+              </td>
+              <td className="px-4 py-4 text-zinc-400">{entry.snapshotCount}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function Leaderboard() {
-  const navigate = useNavigate();
+  const [access] = useState(getAccessState());
   const [games, setGames] = useState<LiveMarketGame[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [sportFilter, setSportFilter] = useState<SportFilter>("ALL");
+  const [historicalEntries, setHistoricalEntries] = useState<HistoricalExecutionLedgerEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,6 +138,28 @@ export default function Leaderboard() {
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadHistory = async () => {
+      try {
+        const rows = await listExecutionLedgerArchive(250);
+        if (!cancelled) {
+          setHistoricalEntries(rows);
+        }
+      } finally {
+        if (!cancelled) {
+          setHistoryLoading(false);
+        }
+      }
+    };
+
+    void loadHistory();
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -111,10 +192,43 @@ export default function Leaderboard() {
       .sort((a, b) => b.score - a.score);
   }, [games]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const persist = async () => {
+      if (entries.length === 0) return;
+      await upsertExecutionLedgerEntries(entries, access.tier);
+      try {
+        const remoteRows = await syncExecutionLedgerEntries(entries, access.tier);
+        if (!cancelled && remoteRows.length > 0) {
+          setHistoricalEntries(remoteRows);
+          return;
+        }
+      } catch {
+        // Shared storage is optional in local and unconfigured preview environments.
+      }
+
+      const rows = await listExecutionLedgerEntries(250);
+      if (!cancelled) {
+        setHistoricalEntries(rows);
+      }
+    };
+
+    void persist();
+    return () => {
+      cancelled = true;
+    };
+  }, [access.tier, entries]);
+
   const filteredEntries = useMemo(() => {
     if (sportFilter === "ALL") return entries;
     return entries.filter((entry) => entry.sportLabel === sportFilter);
   }, [entries, sportFilter]);
+
+  const historicalPreview = useMemo(() => {
+    const rows = sportFilter === "ALL" ? historicalEntries : historicalEntries.filter((entry) => entry.sportLabel === sportFilter);
+    return hasFeatureAccess("historical_ledger", access) ? rows.slice(0, 40) : rows.slice(0, 5);
+  }, [access, historicalEntries, sportFilter]);
 
   const stats = useMemo(() => {
     const settled = filteredEntries.filter((entry) => entry.ledgerOutcome !== "pending");
@@ -142,13 +256,27 @@ export default function Leaderboard() {
     };
   }, [filteredEntries]);
 
+  const historicalStats = useMemo(() => {
+    const settled = historicalEntries.filter((entry) => entry.ledgerOutcome !== "pending");
+    const wins = settled.filter((entry) => entry.ledgerOutcome === "won").length;
+    return {
+      rows: historicalEntries.length,
+      settled: settled.length,
+      wins,
+    };
+  }, [historicalEntries]);
+
+  const hasHistoricalLedger = hasFeatureAccess("historical_ledger", access);
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_30%),linear-gradient(180deg,#030611,#070d1a_45%,#030611)] text-white">
       <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6">
         <div className="flex items-center justify-between border-b border-white/10 pb-4">
-          <Button variant="ghost" size="sm" className="text-zinc-400 hover:text-white" onClick={() => navigate("/") }>
-            <ChevronLeft className="mr-1 h-4 w-4" />
-            Back
+          <Button variant="ghost" size="sm" className="text-zinc-400 hover:text-white" asChild>
+            <Link to="/">
+              <ChevronLeft className="mr-1 h-4 w-4" />
+              Back
+            </Link>
           </Button>
           <div className="flex items-center gap-2 text-sm font-semibold text-white">
             <ShieldCheck className="h-5 w-5 text-brand-300" />
@@ -172,7 +300,7 @@ export default function Leaderboard() {
               ) : null}
               <span className="inline-flex items-center gap-2 rounded-full border border-white/10 px-3 py-1">
                 <Clock3 className="h-3.5 w-3.5" />
-                Only tracked entries with real prices
+                Current board plus browser-side historical archive
               </span>
             </div>
 
@@ -180,7 +308,7 @@ export default function Leaderboard() {
               The fake leaderboard is gone. This is the real execution ledger.
             </h1>
             <p className="mt-4 max-w-3xl text-base leading-7 text-zinc-400 sm:text-lg">
-              Every row here cleared the execution-adjusted threshold, carries a real market price, and shows what the model saw, what the market offered, and whether the number held up.
+              Every row here cleared the execution-adjusted threshold, carries a real market price, and now gets persisted in a local browser database so the desk remembers what it saw.
             </p>
           </div>
 
@@ -339,6 +467,52 @@ export default function Leaderboard() {
           )}
         </div>
 
+        <div className="mt-8 rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-semibold text-white">
+                <Database className="h-4 w-4 text-brand-300" />
+                Historical archive
+              </div>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
+                This archive now persists locally in the browser and syncs to the shared proof store when the hosted ledger is configured, so the terminal can remember tracked rows instead of rebuilding everything from only the current slate.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-400">
+              {historicalStats.rows} stored rows · {historicalStats.settled} settled · {historicalStats.wins} wins
+            </div>
+          </div>
+
+          <div className="mt-5">
+            {historyLoading ? (
+              <div className="rounded-2xl border border-white/8 bg-black/20 p-6 text-sm text-zinc-400">Loading historical archive...</div>
+            ) : historicalEntries.length === 0 ? (
+              <div className="rounded-2xl border border-white/8 bg-black/20 p-6 text-sm text-zinc-400">No archived rows yet. Once the live board tracks entries, they will start accumulating here.</div>
+            ) : hasHistoricalLedger ? (
+              <HistoryTable rows={historicalPreview} />
+            ) : (
+              <div className="relative overflow-hidden rounded-2xl border border-white/8 bg-black/20">
+                <div className="pointer-events-none absolute inset-0 z-10 bg-gradient-to-t from-[#030611] via-[#030611]/75 to-transparent" />
+                <div className="px-1 py-1 opacity-70 blur-[1px]">
+                  <HistoryTable rows={historicalPreview} />
+                </div>
+                <div className="absolute inset-x-0 bottom-0 z-20 flex flex-col items-center gap-3 px-6 pb-6 text-center">
+                  <div className="rounded-full border border-yellow-400/30 bg-yellow-400/10 px-3 py-1 text-xs text-yellow-300">
+                    Pro Monthly required
+                  </div>
+                  <p className="max-w-xl text-sm leading-6 text-zinc-300">
+                    The live board stays public, but the historical execution archive, snapshot counts, and full proof trail are part of the monthly terminal.
+                  </p>
+                  <Button className="bg-brand-600 text-white hover:bg-brand-700" onClick={() => void redirectToCheckout("premium")}>
+                    <Crown className="mr-2 h-4 w-4 text-yellow-300" />
+                    Unlock historical ledger
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="mt-8 grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
             <div className="flex items-center gap-2 text-sm font-semibold text-white">
@@ -355,7 +529,7 @@ export default function Leaderboard() {
               Next proof layer
             </div>
             <p className="mt-3 text-sm leading-6 text-zinc-400">
-              The next step is persisting alert time, entry time, and final close for every surfaced bet so this ledger can grow from an honest live board into a full historical audit trail.
+              The next step is pushing this archive from the browser database into a shared hosted store so every device and every subscriber sees the same proof history.
             </p>
           </div>
         </div>

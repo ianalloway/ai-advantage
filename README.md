@@ -65,7 +65,24 @@ Then open `http://localhost:5173`.
 
 ## Deployment
 
-The site is deployed on Netlify with automatic deployments from the main branch.
+The site is configured for static hosting plus preview-ready serverless payments:
+
+- `netlify.toml` keeps the current Netlify SPA deploy working.
+- `vercel.json` adds SPA rewrites so Vercel previews can serve `/daily-picks` and `/leaderboard`.
+- `api/create-checkout-session.ts` and `api/checkout-session.ts` let Vercel previews create and verify Stripe Checkout Sessions securely on the server.
+
+### Stripe Checkout env vars
+
+For the server-created Stripe flow, set these env vars in your deployment target:
+
+```bash
+STRIPE_SECRET_KEY=sk_live_or_test_...
+STRIPE_PREMIUM_PRICE_ID=price_...
+STRIPE_ONE_TIME_PRICE_ID=price_...
+PUBLIC_APP_URL=https://your-preview-or-production-domain
+```
+
+If those are missing, the app falls back to the static Stripe Payment Links from `VITE_STRIPE_CHECKOUT_URL` and `VITE_STRIPE_ONE_TIME_CHECKOUT_URL`.
 
 ## Notes
 

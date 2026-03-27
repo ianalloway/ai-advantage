@@ -15,7 +15,7 @@ import {
   Flame,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
-import { setPremiumStatus } from "@/lib/stripe";
+import { activateAccess, getEventAccessExpiry } from "@/lib/stripe";
 
 const ETH_ADDRESS = "0x6f278ce76ba5ed31fd9be646d074863e126836e9";
 const ETH_AMOUNT = "0.003";   // ≈ $10 at ~$3,300/ETH
@@ -117,7 +117,13 @@ export default function CryptoPaymentModal({
     // Simulate on-chain verification delay
     await new Promise((r) => setTimeout(r, 2200));
     setIsVerifying(false);
-    setPremiumStatus(true);
+    activateAccess({
+      tier: unlockType === "knowledge-vault" ? "premium" : "event",
+      source: "crypto",
+      label: unlockType === "knowledge-vault" ? "Crypto Knowledge Vault" : "Crypto Big Game Pass",
+      activatedAt: new Date().toISOString(),
+      expiresAt: unlockType === "knowledge-vault" ? undefined : getEventAccessExpiry(),
+    });
     setStep("done");
     onSuccess();
   };
@@ -169,7 +175,9 @@ export default function CryptoPaymentModal({
             >
               <div className="text-4xl font-extrabold text-white mb-0.5">$10</div>
               <div className="text-xs text-muted-foreground">
-                One-time · ETH or USDC · Unlock never expires
+                {unlockType === "knowledge-vault"
+                  ? "One-time · ETH or USDC · Full archive unlock"
+                  : "One-time · ETH or USDC · 72-hour event pass"}
               </div>
             </div>
 

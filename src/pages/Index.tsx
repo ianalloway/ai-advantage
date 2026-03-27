@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -94,7 +94,9 @@ const Index = () => {
 
   // Handle email subscription
   const handleEmailSubscribe = async () => {
-    if (!email.trim()) {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (!normalizedEmail) {
       toast({
         title: "Please enter your email",
         variant: "destructive",
@@ -102,7 +104,7 @@ const Index = () => {
       return;
     }
     setIsSubscribing(true);
-    const result = await subscribeEmail(email);
+    const result = await subscribeEmail(normalizedEmail);
     setIsSubscribing(false);
     toast({
       title: result.success ? "Subscribed!" : "Error",
@@ -114,7 +116,16 @@ const Index = () => {
 
   // Handle upgrade to premium
   const handleUpgrade = async (type: 'premium' | 'one-time' = 'premium') => {
-    await redirectToCheckout(type);
+    try {
+      await redirectToCheckout(type);
+    } catch (error) {
+      toast({
+        title: "Checkout unavailable",
+        description:
+          error instanceof Error ? error.message : "We could not start Stripe Checkout right now.",
+        variant: "destructive",
+      });
+    }
   };
 
   // Copy ETH address to clipboard
@@ -325,8 +336,6 @@ Always bet responsibly. Past performance does not guarantee future results.`;
     }
   ];
 
-  const navigate = useNavigate();
-
   const executionBoardEntries = useMemo(() => {
     return analyzedGames
       .flatMap(({ game, prediction }) => {
@@ -463,6 +472,12 @@ Always bet responsibly. Past performance does not guarantee future results.`;
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
+      <a
+        href="#main-content"
+        className="sr-only z-50 rounded-md bg-brand-600 px-4 py-2 text-sm font-semibold text-white focus:not-sr-only focus:absolute focus:left-4 focus:top-4"
+      >
+        Skip to main content
+      </a>
       <MatrixRain />
       {/* Live Odds Ticker */}
       <LiveOddsTicker speed={45} pauseOnHover />
@@ -491,6 +506,7 @@ Always bet responsibly. Past performance does not guarantee future results.`;
       </header>
 
       {/* Hero Section */}
+      <main id="main-content">
       <section className="relative overflow-hidden border-b border-border/60">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.16),_transparent_28%),radial-gradient(circle_at_85%_18%,_rgba(250,204,21,0.12),_transparent_26%),linear-gradient(180deg,rgba(2,6,23,0.98),rgba(4,10,24,0.98))]" />
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-400/60 to-transparent" />
@@ -515,22 +531,22 @@ Always bet responsibly. Past performance does not guarantee future results.`;
               </div>
 
               <div className="flex flex-wrap gap-3 pt-2">
-                <Button
-                  size="lg"
-                  className="bg-brand-600 px-8 font-bold text-white hover:bg-brand-700"
-                  onClick={() => navigate("/daily-picks")}
-                >
-                  <Star className="mr-2 h-5 w-5" />
-                  Open The Live Desk
+                <Button size="lg" className="bg-brand-600 px-8 font-bold text-white hover:bg-brand-700" asChild>
+                  <Link to="/daily-picks">
+                    <Star className="mr-2 h-5 w-5" />
+                    Open The Live Desk
+                  </Link>
                 </Button>
                 <Button
                   size="lg"
                   variant="outline"
                   className="border-white/15 bg-white/[0.03] px-8 font-bold text-gray-200 hover:bg-white/[0.07]"
-                  onClick={() => navigate("/leaderboard")}
+                  asChild
                 >
-                  <Trophy className="mr-2 h-5 w-5 text-yellow-300" />
-                  See Proof Ledger
+                  <Link to="/leaderboard">
+                    <Trophy className="mr-2 h-5 w-5 text-yellow-300" />
+                    See Proof Ledger
+                  </Link>
                 </Button>
                 <Button
                   size="lg"
@@ -1378,13 +1394,24 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                   </div>
                 </div>
 
-                <div className="space-y-4">
+                <form
+                  className="space-y-4"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void analyzeBetting();
+                  }}
+                >
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-muted-foreground">
+                    <label
+                      htmlFor="game-analysis-input"
+                      className="text-sm font-medium text-muted-foreground"
+                    >
                       Enter Game Details
                     </label>
                     <Textarea
-                      placeholder="e.g., Lakers vs Warriors, Celtics @ Heat, Nuggets vs Suns..."
+                      id="game-analysis-input"
+                      name="game-analysis"
+                      placeholder="e.g., Lakers vs Warriors, Celtics @ Heat, Nuggets vs Suns…"
                       value={gameInput}
                       onChange={(e) => setGameInput(e.target.value)}
                       className="min-h-[100px] resize-none bg-secondary border-border text-white placeholder:text-muted-foreground focus:ring-brand-500"
@@ -1392,7 +1419,7 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                   </div>
 
                   <Button
-                    onClick={analyzeBetting}
+                    type="submit"
                     className="w-full h-12 bg-brand-600 hover:bg-brand-700 text-white font-semibold text-lg"
                     disabled={isLoading}
                   >
@@ -1434,7 +1461,7 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                       </div>
                     </div>
                   )}
-                </div>
+                </form>
               </div>
             </TabsContent>
           </Tabs>
@@ -1768,23 +1795,36 @@ Always bet responsibly. Past performance does not guarantee future results.`;
             <p className="text-muted-foreground mb-6">
               Join our newsletter for weekly picks, strategy tips, and exclusive analysis
             </p>
-            <div className="flex gap-3 max-w-md mx-auto">
+            <form
+              className="flex max-w-md gap-3 mx-auto"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handleEmailSubscribe();
+              }}
+            >
+              <label htmlFor="newsletter-email" className="sr-only">
+                Email address
+              </label>
               <Input
+                id="newsletter-email"
                 type="email"
-                placeholder="Enter your email"
+                name="email"
+                autoComplete="email"
+                inputMode="email"
+                spellCheck={false}
+                placeholder="you@example.com…"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="bg-secondary border-border text-white placeholder:text-muted-foreground"
-                onKeyDown={(e) => e.key === 'Enter' && handleEmailSubscribe()}
               />
               <Button 
-                onClick={handleEmailSubscribe}
+                type="submit"
                 disabled={isSubscribing}
                 className="bg-brand-600 hover:bg-brand-700 text-white px-6"
               >
                 {isSubscribing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Subscribe"}
               </Button>
-            </div>
+            </form>
           </div>
         </div>
       </section>
@@ -1840,6 +1880,7 @@ Always bet responsibly. Past performance does not guarantee future results.`;
           </p>
         </div>
       </footer>
+      </main>
     </div>
   );
 };
