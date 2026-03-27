@@ -14,6 +14,18 @@ export interface AccessState {
   expiresAt?: string;
 }
 
+export interface CryptoAccessAccount {
+  id: string;
+  email: string;
+  walletAddress: string;
+  txHash: string;
+  tier: AccessTier;
+  source: AccessSource;
+  label: string;
+  activatedAt: string;
+  expiresAt?: string;
+}
+
 type CheckoutMode = "premium" | "one-time";
 
 interface CheckoutSessionResponse {
@@ -29,6 +41,9 @@ interface CheckoutSessionStatusResponse {
 const STORAGE_KEY = "ai_advantage_access_v2";
 const LEGACY_STORAGE_KEY = "ai_advantage_premium";
 const CHECKOUT_SYNC_KEY = "ai_advantage_checkout_sync";
+const CRYPTO_ACCOUNT_STORAGE_KEY = "ai_advantage_crypto_accounts_v1";
+const CRYPTO_SESSION_KEY = "ai_advantage_crypto_session_v1";
+const ACCESS_CHANGE_EVENT = "ai-advantage-access-changed";
 const EVENT_ACCESS_DURATION_HOURS = 72;
 
 const MONTHLY_PAYMENT_LINK =
@@ -73,6 +88,53 @@ function cleanupCheckoutParams(url: URL) {
     url.searchParams.delete(key),
   );
   window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+}
+
+function emitAccessChange(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(ACCESS_CHANGE_EVENT));
+}
+
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function normalizeWalletAddress(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function normalizeTxHash(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function loadCryptoAccounts(): CryptoAccessAccount[] {
+  if (typeof window === "undefined") return [];
+
+  const stored = localStorage.getItem(CRYPTO_ACCOUNT_STORAGE_KEY);
+  if (!stored) return [];
+
+  try {
+    const parsed = JSON.parse(stored) as CryptoAccessAccount[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    localStorage.removeItem(CRYPTO_ACCOUNT_STORAGE_KEY);
+    return [];
+  }
+}
+
+function saveCryptoAccounts(accounts: CryptoAccessAccount[]): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(CRYPTO_ACCOUNT_STORAGE_KEY, JSON.stringify(accounts));
+}
+
+function buildAccessState(account: Pick<CryptoAccessAccount, "tier" | "source" | "label" | "activatedAt" | "expiresAt">): AccessState {
+  return {
+    tier: account.tier,
+    source: account.source,
+    label: account.label,
+    activatedAt: account.activatedAt,
+    expiresAt: account.expiresAt,
+  };
 }
 
 function buildAccessLabel(mode: CheckoutSessionStatusResponse["mode"]): AccessState {
@@ -137,12 +199,14 @@ export function activateAccess(access: AccessState): void {
   } else if (access.tier === "free") {
     localStorage.removeItem(LEGACY_STORAGE_KEY);
   }
+  emitAccessChange();
 }
 
 export function clearAccess(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(LEGACY_STORAGE_KEY);
+  emitAccessChange();
 }
 
 export function getAccessState(): AccessState {
@@ -202,6 +266,106 @@ export const setPremiumStatus = (isPremium: boolean): void => {
     clearAccess();
   }
 };
+
+export function getAccessChangeEventName(): string {
+  return ACCESS_CHANGE_EVENT;
+}
+
+export function getCurrentCryptoAccount(): CryptoAccessAccount | null {
+  if (typeof window === "undefined") return null;
+
+  const sessionId = localStorage.getItem(CRYPTO_SESSION_KEY);
+  if (!sessionId) return null;
+
+  const account = loadCryptoAccounts().find((entry) => entry.id === sessionId) ?? null;
+  if (!account) {
+    localStorage.removeItem(CRYPTO_SESSION_KEY);
+    return null;
+  }
+
+  if (isExpired(buildAccessState(account))) {
+    localStorage.removeItem(CRYPTO_SESSION_KEY);
+    return null;
+  }
+
+  return account;
+}
+
+export function saveCryptoAccessAccount(input: {
+  email: string;
+  walletAddress: string;
+  txHash: string;
+  tier: AccessTier;
+  label: string;
+  activatedAt?: string;
+  expiresAt?: string;
+}): CryptoAccessAccount {
+  const account: CryptoAccessAccount = {
+    id: `${normalizeEmail(input.email)}::${normalizeTxHash(input.txHash)}`,
+    email: normalizeEmail(input.email),
+    walletAddress: normalizeWalletAddress(input.walletAddress),
+    txHash: normalizeTxHash(input.txHash),
+    tier: input.tier,
+    source: "crypto",
+    label: input.label,
+    activatedAt: input.activatedAt ?? new Date().toISOString(),
+    expiresAt: input.expiresAt,
+  };
+
+  if (typeof window !== "undefined") {
+    const nextAccounts = loadCryptoAccounts().filter((entry) => entry.id !== account.id);
+    nextAccounts.push(account);
+    saveCryptoAccounts(nextAccounts);
+    localStorage.setItem(CRYPTO_SESSION_KEY, account.id);
+  }
+
+  activateAccess(buildAccessState(account));
+  return account;
+}
+
+export function signOutAccessSession(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(CRYPTO_SESSION_KEY);
+  clearAccess();
+}
+
+export function signInWithCryptoAccount(input: {
+  email: string;
+  txHash: string;
+}): { success: boolean; message: string; account?: CryptoAccessAccount } {
+  if (typeof window === "undefined") {
+    return { success: false, message: "Crypto sign-in is only available in the browser." };
+  }
+
+  const email = normalizeEmail(input.email);
+  const txHash = normalizeTxHash(input.txHash);
+  const account = loadCryptoAccounts().find(
+    (entry) => entry.email === email && entry.txHash === txHash,
+  );
+
+  if (!account) {
+    return {
+      success: false,
+      message: "We could not find a saved crypto unlock for that email and transaction hash on this device.",
+    };
+  }
+
+  if (isExpired(buildAccessState(account))) {
+    localStorage.removeItem(CRYPTO_SESSION_KEY);
+    return {
+      success: false,
+      message: "That crypto pass has expired. Buy a fresh event pass or unlock the vault again.",
+    };
+  }
+
+  localStorage.setItem(CRYPTO_SESSION_KEY, account.id);
+  activateAccess(buildAccessState(account));
+  return {
+    success: true,
+    message: "Crypto access restored. You are signed back in.",
+    account,
+  };
+}
 
 export async function syncAccessFromUrl(): Promise<AccessState | null> {
   if (typeof window === "undefined") return null;

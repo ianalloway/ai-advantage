@@ -15,7 +15,7 @@ import {
   Flame,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
-import { activateAccess, getEventAccessExpiry } from "@/lib/stripe";
+import { getEventAccessExpiry, saveCryptoAccessAccount } from "@/lib/stripe";
 
 const ETH_ADDRESS = "0x6f278ce76ba5ed31fd9be646d074863e126836e9";
 const ETH_AMOUNT = "0.003";   // ≈ $10 at ~$3,300/ETH
@@ -80,6 +80,8 @@ export default function CryptoPaymentModal({
   onSuccess,
 }: CryptoPaymentModalProps) {
   const [step, setStep] = useState<Step>("info");
+  const [accessEmail, setAccessEmail] = useState("");
+  const [walletAddress, setWalletAddress] = useState("");
   const [txHash, setTxHash] = useState("");
   const [copiedAddress, setCopiedAddress] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -100,7 +102,25 @@ export default function CryptoPaymentModal({
   };
 
   const verifyTransaction = async () => {
+    const email = accessEmail.trim().toLowerCase();
+    const wallet = walletAddress.trim();
     const hash = txHash.trim();
+    if (!email || !email.includes("@")) {
+      toast({
+        title: "Add an access email",
+        description: "This is what the customer will use to sign back in later.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
+      toast({
+        title: "Invalid wallet address",
+        description: "Use the Ethereum wallet that sent the payment.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (!hash) {
       toast({ title: "Paste your transaction hash", variant: "destructive" });
       return;
@@ -117,9 +137,11 @@ export default function CryptoPaymentModal({
     // Simulate on-chain verification delay
     await new Promise((r) => setTimeout(r, 2200));
     setIsVerifying(false);
-    activateAccess({
+    saveCryptoAccessAccount({
+      email,
+      walletAddress: wallet,
+      txHash: hash,
       tier: unlockType === "knowledge-vault" ? "premium" : "event",
-      source: "crypto",
       label: unlockType === "knowledge-vault" ? "Crypto Knowledge Vault" : "Crypto Big Game Pass",
       activatedAt: new Date().toISOString(),
       expiresAt: unlockType === "knowledge-vault" ? undefined : getEventAccessExpiry(),
@@ -130,6 +152,8 @@ export default function CryptoPaymentModal({
 
   const handleClose = () => {
     setStep("info");
+    setAccessEmail("");
+    setWalletAddress("");
     setTxHash("");
     onOpenChange(false);
   };
@@ -258,8 +282,33 @@ export default function CryptoPaymentModal({
         {step === "verify" && (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground text-center">
-              Paste your transaction hash to instantly verify and unlock access.
+              Save the unlock to an access account, then paste the transaction hash to verify it.
             </p>
+
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Access email</label>
+              <Input
+                placeholder="you@example.com"
+                type="email"
+                autoComplete="email"
+                value={accessEmail}
+                onChange={(e) => setAccessEmail(e.target.value)}
+                className="bg-secondary border-border text-white placeholder:text-muted-foreground"
+              />
+              <p className="text-xs text-muted-foreground">
+                We use this with the transaction hash as the login for future crypto sign-ins on this device.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs text-muted-foreground">Sending wallet address</label>
+              <Input
+                placeholder="0x..."
+                value={walletAddress}
+                onChange={(e) => setWalletAddress(e.target.value)}
+                className="font-mono text-xs bg-secondary border-border text-white placeholder:text-muted-foreground"
+              />
+            </div>
 
             <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground">Transaction Hash (TxID)</label>
@@ -280,6 +329,10 @@ export default function CryptoPaymentModal({
                   Etherscan <ExternalLink className="w-3 h-3" />
                 </a>
               </p>
+            </div>
+
+            <div className="rounded-xl border border-white/8 bg-black/20 p-3 text-xs text-zinc-400">
+              Login recipe later: access email + transaction hash. Log out clears the device session, not the saved crypto receipt.
             </div>
 
             <Button

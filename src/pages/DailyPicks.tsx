@@ -18,7 +18,21 @@ import {
   Zap,
 } from "lucide-react";
 import CryptoPaymentModal, { type UnlockType } from "@/components/CryptoPaymentModal";
-import { getAccessState, hasFeatureAccess, redirectToCheckout } from "@/lib/stripe";
+import AccessSessionDialog from "@/components/AccessSessionDialog";
+import {
+  getAuthChangeEventName,
+  getCurrentSiteUser,
+  signOutSiteUser,
+  type SiteUser,
+} from "@/lib/auth";
+import {
+  getAccessChangeEventName,
+  getAccessState,
+  getCurrentCryptoAccount,
+  hasFeatureAccess,
+  redirectToCheckout,
+  signOutAccessSession,
+} from "@/lib/stripe";
 import { analyzeGame, formatEdge, formatOdds, formatProb, type GamePrediction } from "@/lib/predictions";
 import { fetchLiveGamesForSports, type LiveMarketGame } from "@/lib/liveSports";
 
@@ -207,12 +221,20 @@ function PickCard({
 
 export default function DailyPicks() {
   const [access, setAccess] = useState(getAccessState());
+  const [cryptoAccount, setCryptoAccount] = useState(getCurrentCryptoAccount());
+  const [siteUser, setSiteUser] = useState<SiteUser | null>(getCurrentSiteUser());
   const [showCryptoModal, setShowCryptoModal] = useState(false);
+  const [showAccessDialog, setShowAccessDialog] = useState(false);
   const [cryptoUnlockType] = useState<UnlockType>("big-game");
   const [games, setGames] = useState<LiveMarketGame[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [hasError, setHasError] = useState(false);
+  const syncAccessUi = () => {
+    setAccess(getAccessState());
+    setCryptoAccount(getCurrentCryptoAccount());
+    setSiteUser(getCurrentSiteUser());
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -239,6 +261,19 @@ export default function DailyPicks() {
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleAccessChange = () => {
+      syncAccessUi();
+    };
+
+    window.addEventListener(getAuthChangeEventName(), handleAccessChange);
+    window.addEventListener(getAccessChangeEventName(), handleAccessChange);
+    return () => {
+      window.removeEventListener(getAuthChangeEventName(), handleAccessChange);
+      window.removeEventListener(getAccessChangeEventName(), handleAccessChange);
     };
   }, []);
 
@@ -345,6 +380,14 @@ export default function DailyPicks() {
               {sport}
             </span>
           ))}
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-white/10 text-zinc-300 hover:bg-white/[0.06]"
+            onClick={() => setShowAccessDialog(true)}
+          >
+            {cryptoAccount ? "Paid access" : "Restore pass"}
+          </Button>
           {!hasPremiumBoard ? (
             <div className="ml-auto flex flex-wrap gap-2">
               <Button
@@ -366,9 +409,53 @@ export default function DailyPicks() {
               </Button>
             </div>
           ) : (
-            <Badge variant="outline" className="ml-auto border-emerald-400/30 bg-emerald-400/10 text-emerald-300">
-              {access.label}
-            </Badge>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="border-emerald-400/30 bg-emerald-400/10 text-emerald-300">
+                {cryptoAccount ? `${access.label} logged in` : access.label}
+              </Badge>
+              {siteUser ? (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-white/10 text-zinc-300 hover:bg-white/[0.06]"
+                    asChild
+                  >
+                    <Link to="/profile">My Profile</Link>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-white/10 text-zinc-300 hover:bg-white/[0.06]"
+                    onClick={() => {
+                      signOutSiteUser();
+                      syncAccessUi();
+                    }}
+                  >
+                    Log out
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-white/10 text-zinc-300 hover:bg-white/[0.06]"
+                    asChild
+                  >
+                    <Link to="/login">Log in</Link>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-white/10 text-zinc-300 hover:bg-white/[0.06]"
+                    asChild
+                  >
+                    <Link to="/signup">Create account</Link>
+                  </Button>
+                </>
+              )}
+            </div>
           )}
         </div>
 
@@ -435,7 +522,12 @@ export default function DailyPicks() {
         open={showCryptoModal}
         onOpenChange={setShowCryptoModal}
         unlockType={cryptoUnlockType}
-        onSuccess={() => setAccess(getAccessState())}
+        onSuccess={syncAccessUi}
+      />
+      <AccessSessionDialog
+        open={showAccessDialog}
+        onOpenChange={setShowAccessDialog}
+        onSessionChange={syncAccessUi}
       />
     </div>
   );

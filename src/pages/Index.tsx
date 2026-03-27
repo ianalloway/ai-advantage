@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import { useToast } from "@/components/ui/use-toast";
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/components/ui/use-toast";
 import LiveOddsTicker from "@/components/LiveOddsTicker";
 import MatrixRain from "@/components/MatrixRain";
 import {
@@ -54,13 +54,23 @@ import {
 } from "@/lib/predictions";
 import { fetchLiveGamesForSport, type LiveMarketGame } from "@/lib/liveSports";
 import {
-  isPremiumUser,
+  getAuthChangeEventName,
+  getCurrentSiteUser,
+  signOutSiteUser,
+  type SiteUser,
+} from "@/lib/auth";
+import {
+  getAccessChangeEventName,
+  getAccessState,
+  getCurrentCryptoAccount,
   redirectToCheckout,
-  subscribeEmail,
+  signOutAccessSession,
   PREMIUM_FEATURES,
   FREE_FEATURES,
 } from "@/lib/stripe";
 import CryptoPaymentModal, { type UnlockType } from "@/components/CryptoPaymentModal";
+import AccessSessionDialog from "@/components/AccessSessionDialog";
+import SubstackEmbed from "@/components/SubstackEmbed";
 import { createExecutionBoardEntry } from "@/lib/executionBoard";
 
 const ETH_DONATION_ADDRESS = "0x6f278ce76ba5ed31fd9be646d074863e126836e9";
@@ -79,47 +89,37 @@ const Index = () => {
   const [selectedSport, setSelectedSport] = useState<Sport>('nba');
   const [backtestSummary, setBacktestSummary] = useState<BacktestSummary | null>(null);
   const [isBacktesting, setIsBacktesting] = useState(false);
-  const [email, setEmail] = useState("");
-  const [isSubscribing, setIsSubscribing] = useState(false);
-  const [isPremium, setIsPremium] = useState(false);
+  const [access, setAccess] = useState(getAccessState());
+  const [cryptoAccount, setCryptoAccount] = useState(getCurrentCryptoAccount());
+  const [siteUser, setSiteUser] = useState<SiteUser | null>(getCurrentSiteUser());
   const [performanceData, setPerformanceData] = useState<PerformanceData | null>(null);
   const [showCryptoModal, setShowCryptoModal] = useState(false);
+  const [showAccessDialog, setShowAccessDialog] = useState(false);
   const [cryptoUnlockType, setCryptoUnlockType] = useState<UnlockType>("big-game");
   const { toast } = useToast();
+  const hasPaidAccess = access.tier !== "free";
+  const hasFullVaultAccess = access.tier === "premium";
 
-  // Check premium status on mount
-  useEffect(() => {
-    setIsPremium(isPremiumUser());
-  }, []);
-
-  // Handle email subscription
-  const handleEmailSubscribe = async () => {
-    const normalizedEmail = email.trim().toLowerCase();
-
-    if (!normalizedEmail) {
-      toast({
-        title: "Please enter your email",
-        variant: "destructive",
-      });
-      return;
-    }
-    setIsSubscribing(true);
-    const result = await subscribeEmail(normalizedEmail);
-    setIsSubscribing(false);
-    toast({
-      title: result.success ? "Subscribed!" : "Error",
-      description: result.message,
-      variant: result.success ? "default" : "destructive",
-    });
-    if (result.success) {
-      setEmail("");
-      if (result.redirectUrl) {
-        window.setTimeout(() => {
-          window.location.assign(result.redirectUrl as string);
-        }, 900);
-      }
-    }
+  const syncAccessUi = () => {
+    setAccess(getAccessState());
+    setCryptoAccount(getCurrentCryptoAccount());
+    setSiteUser(getCurrentSiteUser());
   };
+
+  useEffect(() => {
+    syncAccessUi();
+
+    const handleAccessChange = () => {
+      syncAccessUi();
+    };
+
+    window.addEventListener(getAuthChangeEventName(), handleAccessChange);
+    window.addEventListener(getAccessChangeEventName(), handleAccessChange);
+    return () => {
+      window.removeEventListener(getAuthChangeEventName(), handleAccessChange);
+      window.removeEventListener(getAccessChangeEventName(), handleAccessChange);
+    };
+  }, []);
 
   // Handle upgrade to premium
   const handleUpgrade = async (type: 'premium' | 'one-time' = 'premium') => {
@@ -528,14 +528,14 @@ Always bet responsibly. Past performance does not guarantee future results.`;
       },
       {
         key: "premium-layer",
-        eyebrow: isPremium ? "Unlocked" : "Locked Layer",
-        title: isPremium
+        eyebrow: hasPaidAccess ? "Unlocked" : "Locked Layer",
+        title: hasPaidAccess
           ? "You already have the deeper terminal unlocked"
           : "Peek at the part of the product that is not public",
-        description: isPremium
+        description: hasPaidAccess
           ? "Skip the free surface and go straight to the premium board, archive, and workflow tools."
           : "The premium layer is where the archive, deeper workflow tools, and long-memory edge tracking live.",
-        cta: isPremium ? "Review premium section" : "See what is behind the wall",
+        cta: hasPaidAccess ? "Review premium section" : "See what is behind the wall",
         kind: "scroll" as const,
         target: "pricing",
         accent: "text-purple-300",
@@ -544,7 +544,7 @@ Always bet responsibly. Past performance does not guarantee future results.`;
         icon: Crown,
       },
     ],
-    [isPremium, topExecutionEntries],
+    [hasPaidAccess, topExecutionEntries],
   );
 
   return (
@@ -575,10 +575,77 @@ Always bet responsibly. Past performance does not guarantee future results.`;
             <a href="#model-suite" className="text-muted-foreground hover:text-white transition-colors">Model Suite</a>
             <a href="/daily-picks" className="text-muted-foreground hover:text-white transition-colors">Daily Picks</a>
             <a href="/leaderboard" className="text-muted-foreground hover:text-white transition-colors">Proof Ledger</a>
+            {siteUser ? (
+              <Link to="/profile" className="text-muted-foreground hover:text-white transition-colors">
+                My Profile
+              </Link>
+            ) : null}
             <a href="#edge-system" className="text-muted-foreground hover:text-white transition-colors">Edge</a>
             <a href="#sports-stack" className="text-muted-foreground hover:text-white transition-colors">Stack</a>
             <a href="#pricing" className="text-muted-foreground hover:text-white transition-colors">Pricing</a>
           </nav>
+
+          <div className="flex items-center gap-2">
+            {hasPaidAccess ? (
+              <Badge variant="outline" className="hidden border-emerald-400/30 bg-emerald-400/10 text-emerald-300 md:inline-flex">
+                {cryptoAccount ? `${access.label} logged in` : access.label}
+              </Badge>
+            ) : null}
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-white/10 text-zinc-200 hover:bg-white/[0.06]"
+              onClick={() => setShowAccessDialog(true)}
+            >
+              {cryptoAccount ? "Paid access" : "Restore pass"}
+            </Button>
+            {siteUser ? (
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="border-white/10 text-zinc-200 hover:bg-white/[0.06]"
+              >
+                <Link to="/profile">
+                  {siteUser.username ? `@${siteUser.username}` : "My Profile"}
+                </Link>
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-white/10 text-zinc-200 hover:bg-white/[0.06]"
+                  asChild
+                >
+                  <Link to="/login">Log in</Link>
+                </Button>
+                <Button
+                  size="sm"
+                  className="bg-white text-black hover:bg-zinc-200"
+                  asChild
+                >
+                  <Link to="/signup">Create account</Link>
+                </Button>
+              </>
+            )}
+            {siteUser ? (
+              <Button
+                size="sm"
+                className="bg-white text-black hover:bg-zinc-200"
+                onClick={() => {
+                  signOutSiteUser();
+                  syncAccessUi();
+                  toast({
+                    title: "Logged out",
+                    description: "Your site account has been logged out.",
+                  });
+                }}
+              >
+                Log out
+              </Button>
+            ) : null}
+          </div>
         </div>
       </header>
 
@@ -1812,7 +1879,7 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                   Crypto Unlock
                 </h3>
                 <div className="text-4xl font-bold text-white">$10<span className="text-lg text-muted-foreground"> one-time</span></div>
-                <p className="text-muted-foreground text-sm">ETH or USDC · Never expires</p>
+                <p className="text-muted-foreground text-sm">ETH or USDC · Login + logout included</p>
               </div>
 
               {/* Two unlock options */}
@@ -1861,9 +1928,9 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                   }}
                 >
                   <Flame className="w-4 h-4 mr-2" />
-                  {isPremium ? "Already Unlocked ✓" : "Unlock for $10 in Crypto"}
+                  {hasPaidAccess ? "Paid access active" : "Unlock for $10 in Crypto"}
                 </Button>
-                {!isPremium && (
+                {!hasPaidAccess && (
                   <Button
                     variant="outline"
                     className="w-full border-brand-500/30 text-brand-400 hover:bg-brand-500/10 font-semibold"
@@ -1901,7 +1968,7 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                 className="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold"
                 onClick={handleUpgrade}
               >
-                {isPremium ? (
+                {hasFullVaultAccess ? (
                   <>
                     <Check className="mr-2 h-5 w-5" />
                     Premium Active
@@ -1924,12 +1991,18 @@ Always bet responsibly. Past performance does not guarantee future results.`;
         onOpenChange={setShowCryptoModal}
         unlockType={cryptoUnlockType}
         onSuccess={() => {
-          setIsPremium(true);
+          syncAccessUi();
           toast({
             title: "🔥 Access Unlocked!",
-            description: "Your crypto payment was verified. Enjoy full access!",
+            description: "Your crypto payment is saved to an access login. You can now log in and out on this device.",
           });
         }}
+      />
+
+      <AccessSessionDialog
+        open={showAccessDialog}
+        onOpenChange={setShowAccessDialog}
+        onSessionChange={syncAccessUi}
       />
 
       {/* Email Capture Section */}
@@ -1941,39 +2014,21 @@ Always bet responsibly. Past performance does not guarantee future results.`;
               Get Free Betting Insights
             </h2>
             <p className="text-muted-foreground mb-6">
-              Join our newsletter for weekly picks, strategy tips, and exclusive analysis.
-              We log each signup, email Ian the details, then hand you off to the official Substack subscribe page.
+              Join the official AllowayAI Substack without leaving the site. The subscribe step now happens inside Substack&apos;s supported embedded form.
             </p>
-            <form
-              className="flex max-w-md gap-3 mx-auto"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void handleEmailSubscribe();
-              }}
-            >
-              <label htmlFor="newsletter-email" className="sr-only">
-                Email address
-              </label>
-              <Input
-                id="newsletter-email"
-                type="email"
-                name="email"
-                autoComplete="email"
-                inputMode="email"
-                spellCheck={false}
-                placeholder="you@example.com…"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="bg-secondary border-border text-white placeholder:text-muted-foreground"
-              />
-              <Button 
-                type="submit"
-                disabled={isSubscribing}
-                className="bg-brand-600 hover:bg-brand-700 text-white px-6"
+            <SubstackEmbed className="mx-auto max-w-xl" />
+            <p className="mt-4 text-xs text-muted-foreground">
+              If the embed does not load,{" "}
+              <a
+                href="https://allowayai.substack.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-brand-300 hover:text-white"
               >
-                {isSubscribing ? <Loader2 className="h-4 w-4 animate-spin" /> : "Subscribe"}
-              </Button>
-            </form>
+                open AllowayAI on Substack directly
+              </a>
+              .
+            </p>
           </div>
         </div>
       </section>
