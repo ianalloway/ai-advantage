@@ -84,6 +84,27 @@ PUBLIC_APP_URL=https://your-preview-or-production-domain
 
 If those are missing, the app falls back to the static Stripe Payment Links from `VITE_STRIPE_CHECKOUT_URL` and `VITE_STRIPE_ONE_TIME_CHECKOUT_URL`.
 
+### Newsletter automation env vars
+
+The homepage email form now posts to `/api/newsletter-subscribe`. On each signup it:
+
+- creates a child page in Notion with the subscriber details
+- sends you a notification email
+- redirects the visitor into the official Substack subscribe page
+
+Set these env vars before turning the form on in production:
+
+```bash
+NOTION_API_KEY=secret_your_notion_integration_token
+NOTION_PARENT_PAGE_ID=your_notion_parent_page_id
+RESEND_API_KEY=re_your_resend_api_key
+RESEND_FROM_EMAIL="AI Advantage <onboarding@yourdomain.com>"
+NOTIFY_EMAIL=ian@allowayllc.com
+SUBSTACK_PUBLICATION_URL=https://allowayai.substack.com
+```
+
+`NOTION_PARENT_PAGE_ID` should be the page where you want each new subscriber page to appear. Share that Notion page with your Notion integration before testing.
+
 ## Notes
 
 - This repository is best read as a shipped product and frontend/application example.

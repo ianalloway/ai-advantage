@@ -287,21 +287,49 @@ export const redirectToCheckout = async (type: CheckoutMode = "premium"): Promis
 
 export const subscribeEmail = async (
   email: string,
-): Promise<{ success: boolean; message: string }> => {
+): Promise<{ success: boolean; message: string; redirectUrl?: string }> => {
   if (!email || !email.includes("@")) {
     return { success: false, message: "Please enter a valid email address." };
   }
 
   try {
-    const emails = JSON.parse(localStorage.getItem("ai_advantage_emails") || "[]") as string[];
-    if (!emails.includes(email)) {
-      emails.push(email);
-      localStorage.setItem("ai_advantage_emails", JSON.stringify(emails));
+    const submission = new URLSearchParams({
+      "form-name": "ai-advantage-newsletter",
+      email,
+      name: "",
+      site: "ai-advantage",
+      source: "homepage-newsletter",
+      page_url: typeof window !== "undefined" ? window.location.href : "",
+      referrer: typeof document !== "undefined" ? document.referrer : "",
+      user_agent: typeof navigator !== "undefined" ? navigator.userAgent : "",
+    });
+    const response = await fetch("/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: submission.toString(),
+    });
+
+    if (!response.ok) {
+      return {
+        success: false,
+        message: "Netlify could not save your signup. Please try again.",
+      };
     }
+
+    const redirectUrl = new URL(
+      "/subscribe",
+      import.meta.env.VITE_SUBSTACK_PUBLICATION_URL || "https://allowayai.substack.com",
+    );
+    redirectUrl.searchParams.set("utm_source", "ai-advantage-homepage");
+    redirectUrl.searchParams.set("utm_medium", "website");
+    redirectUrl.searchParams.set("utm_campaign", "newsletter");
 
     return {
       success: true,
-      message: "Thanks for subscribing. Weekly edge notes will land in your inbox.",
+      message: "Saved. We captured your signup and are taking you to the official Substack subscribe page.",
+      redirectUrl: redirectUrl.toString(),
     };
   } catch {
     return { success: false, message: "Something went wrong. Please try again." };

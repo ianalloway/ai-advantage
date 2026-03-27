@@ -111,7 +111,14 @@ const Index = () => {
       description: result.message,
       variant: result.success ? "default" : "destructive",
     });
-    if (result.success) setEmail("");
+    if (result.success) {
+      setEmail("");
+      if (result.redirectUrl) {
+        window.setTimeout(() => {
+          window.location.assign(result.redirectUrl as string);
+        }, 900);
+      }
+    }
   };
 
   // Handle upgrade to premium
@@ -401,8 +408,12 @@ Always bet responsibly. Past performance does not guarantee future results.`;
     "Show the number, the timing, and whether we beat the close.",
   ];
 
+  const scrollToSection = (sectionId: string) => {
+    document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   const scrollToPricing = () => {
-    document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    scrollToSection("pricing");
   };
 
   const sportsRepoGroups = [
@@ -469,6 +480,72 @@ Always bet responsibly. Past performance does not guarantee future results.`;
   ];
 
   const topExecutionEntries = executionBoardEntries.slice(0, 3);
+
+  const heroExplorationLinks = useMemo(
+    () => [
+      {
+        key: "live-desk",
+        eyebrow: "Live Hunt",
+        title: topExecutionEntries[0]
+          ? `Track ${topExecutionEntries[0].recommendedSide} before the number moves`
+          : "Open the live board before the market wakes up",
+        description: topExecutionEntries[0]
+          ? `${topExecutionEntries[0].eventLabel} is the strongest execution lead on the desk right now.`
+          : "Jump straight into the desk and see whether anything on the slate is actually worth acting on.",
+        cta: "Open live desk",
+        kind: "link" as const,
+        href: "/daily-picks",
+        accent: "text-brand-300",
+        border: "border-brand-500/25 hover:border-brand-400/50",
+        glow: "hover:shadow-[0_18px_50px_rgba(56,189,248,0.12)]",
+        icon: Activity,
+      },
+      {
+        key: "proof-ledger",
+        eyebrow: "Proof Audit",
+        title: "See whether the edge survives contact with reality",
+        description: "Open the ledger, inspect tracked rows, and check the proof trail before you trust the pitch.",
+        cta: "Inspect proof ledger",
+        kind: "link" as const,
+        href: "/leaderboard",
+        accent: "text-yellow-300",
+        border: "border-yellow-500/20 hover:border-yellow-400/45",
+        glow: "hover:shadow-[0_18px_50px_rgba(250,204,21,0.10)]",
+        icon: Trophy,
+      },
+      {
+        key: "manual-probe",
+        eyebrow: "Manual Probe",
+        title: "Pressure-test your own matchup",
+        description: "Drop in any game and make the model tell you whether it has conviction or whether it should pass.",
+        cta: "Jump to analyzer",
+        kind: "scroll" as const,
+        target: "model-suite",
+        accent: "text-emerald-300",
+        border: "border-emerald-500/20 hover:border-emerald-400/45",
+        glow: "hover:shadow-[0_18px_50px_rgba(52,211,153,0.10)]",
+        icon: Brain,
+      },
+      {
+        key: "premium-layer",
+        eyebrow: isPremium ? "Unlocked" : "Locked Layer",
+        title: isPremium
+          ? "You already have the deeper terminal unlocked"
+          : "Peek at the part of the product that is not public",
+        description: isPremium
+          ? "Skip the free surface and go straight to the premium board, archive, and workflow tools."
+          : "The premium layer is where the archive, deeper workflow tools, and long-memory edge tracking live.",
+        cta: isPremium ? "Review premium section" : "See what is behind the wall",
+        kind: "scroll" as const,
+        target: "pricing",
+        accent: "text-purple-300",
+        border: "border-purple-500/20 hover:border-purple-400/45",
+        glow: "hover:shadow-[0_18px_50px_rgba(168,85,247,0.10)]",
+        icon: Crown,
+      },
+    ],
+    [isPremium, topExecutionEntries],
+  );
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
@@ -559,6 +636,60 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                 </Button>
               </div>
 
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Four ways to go deeper</p>
+                  <p className="text-xs text-zinc-500">Designed to pull you further into the desk</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {heroExplorationLinks.map((item) => {
+                    const Icon = item.icon;
+                    const sharedClasses = `group rounded-[24px] border bg-white/[0.03] p-5 text-left backdrop-blur-sm transition-all duration-200 hover:-translate-y-1 ${item.border} ${item.glow}`;
+
+                    if (item.kind === "link") {
+                      return (
+                        <Link key={item.key} to={item.href} className={sharedClasses}>
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">{item.eyebrow}</div>
+                              <div className="mt-2 max-w-xs text-lg font-semibold text-white">{item.title}</div>
+                            </div>
+                            <Icon className={`mt-1 h-5 w-5 shrink-0 ${item.accent}`} />
+                          </div>
+                          <p className="mt-3 text-sm leading-relaxed text-zinc-400">{item.description}</p>
+                          <div className={`mt-4 inline-flex items-center gap-2 text-sm font-semibold ${item.accent}`}>
+                            {item.cta}
+                            <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                          </div>
+                        </Link>
+                      );
+                    }
+
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => scrollToSection(item.target)}
+                        className={sharedClasses}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">{item.eyebrow}</div>
+                            <div className="mt-2 max-w-xs text-lg font-semibold text-white">{item.title}</div>
+                          </div>
+                          <Icon className={`mt-1 h-5 w-5 shrink-0 ${item.accent}`} />
+                        </div>
+                        <p className="mt-3 text-sm leading-relaxed text-zinc-400">{item.description}</p>
+                        <div className={`mt-4 inline-flex items-center gap-2 text-sm font-semibold ${item.accent}`}>
+                          {item.cta}
+                          <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="grid gap-3 pt-3 sm:grid-cols-2">
                 {terminalStats.map((item) => (
                   <div key={item.label} className="rounded-[24px] border border-white/10 bg-white/[0.04] px-5 py-4 backdrop-blur-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
@@ -618,7 +749,11 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                     {topExecutionEntries.length > 0 ? (
                       <div className="grid gap-3 md:grid-cols-3">
                         {topExecutionEntries.map((entry) => (
-                          <div key={entry.id} className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                          <Link
+                            key={entry.id}
+                            to="/daily-picks"
+                            className="group rounded-2xl border border-white/10 bg-black/25 p-4 transition-all duration-200 hover:-translate-y-1 hover:border-brand-400/45 hover:bg-black/40"
+                          >
                             <div className="flex items-center justify-between gap-3">
                               <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">{entry.sportLabel}</div>
                               <div className="font-mono text-xs text-yellow-300">Score {entry.score.toFixed(1)}</div>
@@ -643,7 +778,11 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                                 <div className="mt-1 text-white">{entry.executionWindow}</div>
                               </div>
                             </div>
-                          </div>
+                            <div className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-brand-300">
+                              Follow this signal
+                              <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                            </div>
+                          </Link>
                         ))}
                       </div>
                     ) : (
@@ -666,7 +805,12 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                   </div>
                   <div className="mt-4 space-y-3">
                     {marketPulse.length > 0 ? marketPulse.map((item) => (
-                      <div key={item.id} className="rounded-2xl border border-white/8 bg-black/20 p-4">
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => scrollToSection("model-suite")}
+                        className="w-full rounded-2xl border border-white/8 bg-black/20 p-4 text-left transition-all duration-200 hover:-translate-y-1 hover:border-brand-400/35 hover:bg-black/35"
+                      >
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <div className="font-semibold text-white">{item.matchup}</div>
@@ -683,7 +827,11 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                           <span className="text-zinc-500">Exec edge</span>
                           <span className={`font-semibold ${item.execEdge >= 0 ? "text-brand-300" : "text-red-300"}`}>{formatEdge(item.execEdge)}</span>
                         </div>
-                      </div>
+                        <div className="mt-3 inline-flex items-center gap-2 text-xs font-semibold text-brand-300">
+                          Open this slate
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        </div>
+                      </button>
                     )) : (
                       <div className="rounded-2xl border border-white/8 bg-black/20 p-4 text-sm text-zinc-400">
                         Waiting for posted open numbers before the pulse board has anything worth highlighting.
@@ -1793,7 +1941,8 @@ Always bet responsibly. Past performance does not guarantee future results.`;
               Get Free Betting Insights
             </h2>
             <p className="text-muted-foreground mb-6">
-              Join our newsletter for weekly picks, strategy tips, and exclusive analysis
+              Join our newsletter for weekly picks, strategy tips, and exclusive analysis.
+              We log each signup, email Ian the details, then hand you off to the official Substack subscribe page.
             </p>
             <form
               className="flex max-w-md gap-3 mx-auto"

@@ -33,3 +33,4 @@ dist-ssr
 !env.example
 *.pem
 *.key
+.vercel

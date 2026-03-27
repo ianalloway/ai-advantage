@@ -15,7 +15,7 @@ type ResponseLike = {
   setHeader: (name: string, value: string) => void;
 };
 
-const API_VERSION = "2026-02-25.clover";
+const API_VERSION = "2026-03-25.dahlia";
 
 let stripeClient: Stripe | null = null;
 
