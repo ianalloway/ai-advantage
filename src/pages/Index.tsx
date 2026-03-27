@@ -61,6 +61,7 @@ import {
   FREE_FEATURES,
 } from "@/lib/stripe";
 import CryptoPaymentModal, { type UnlockType } from "@/components/CryptoPaymentModal";
+import { createExecutionBoardEntry } from "@/lib/executionBoard";
 
 const ETH_DONATION_ADDRESS = "0x6f278ce76ba5ed31fd9be646d074863e126836e9";
 
@@ -326,23 +327,69 @@ Always bet responsibly. Past performance does not guarantee future results.`;
 
   const navigate = useNavigate();
 
-  const stats = [
-    { value: "73%", label: "Win Rate" },
-    { value: "2,847", label: "Picks Made" },
-    { value: "+142.5", label: "Units Profit" },
-    { value: "4.2", label: "Avg Odds" }
-  ];
+  const executionBoardEntries = useMemo(() => {
+    return analyzedGames
+      .flatMap(({ game, prediction }) => {
+        if (!prediction) return [];
+        const entry = createExecutionBoardEntry(game, prediction);
+        return entry ? [entry] : [];
+      })
+      .sort((a, b) => b.score - a.score);
+  }, [analyzedGames]);
 
-  const heroSignals = [
-    "Live model predictions across NBA, NFL, and MLB",
-    "Kelly-sized value bets instead of random pick spam",
-    "Backtests and performance views that make the edge inspectable",
-  ];
+  const terminalStats = useMemo(() => {
+    const bestEntry = executionBoardEntries[0];
+    const averageExecEdge = executionBoardEntries.length
+      ? executionBoardEntries.reduce((sum, entry) => sum + entry.executionAdjustedEdge, 0) / executionBoardEntries.length
+      : 0;
 
-  const workflowSteps = [
-    "Pick a sport and review today's model board",
-    "Filter for value based on your edge threshold and bankroll",
-    "Upgrade only if you want full picks, premium views, or one-time unlocks",
+    return [
+      {
+        label: "Tracked edges",
+        value: String(executionBoardEntries.length),
+        accent: "text-white",
+        detail: "Rows with real prices and board-qualified edge",
+      },
+      {
+        label: "Live games",
+        value: String(liveGames.filter((game) => game.status.state === "in").length),
+        accent: "text-emerald-300",
+        detail: "Active games the desk is monitoring right now",
+      },
+      {
+        label: "Best exec edge",
+        value: bestEntry ? formatEdge(bestEntry.executionAdjustedEdge) : "Pass",
+        accent: "text-brand-300",
+        detail: bestEntry ? `${bestEntry.recommendedSide} at ${bestEntry.summary.line}` : "No row clears threshold yet",
+      },
+      {
+        label: "Desk average",
+        value: executionBoardEntries.length ? formatEdge(averageExecEdge) : "0.0%",
+        accent: "text-yellow-300",
+        detail: "Average execution-adjusted edge across tracked rows",
+      },
+    ];
+  }, [executionBoardEntries, liveGames]);
+
+  const marketPulse = useMemo(() => {
+    return analyzedGames
+      .filter(({ game, prediction }) => game.odds && prediction)
+      .map(({ game, prediction }) => ({
+        id: game.id,
+        matchup: `${game.awayAbbr} @ ${game.homeAbbr}`,
+        state: game.status.shortDetail,
+        movement: prediction!.executionFactors.openToCurrentDelta,
+        execEdge: prediction!.executionAdjustedEdge,
+        signal: prediction!.predictedWinner,
+      }))
+      .sort((a, b) => Math.abs(b.movement) - Math.abs(a.movement))
+      .slice(0, 3);
+  }, [analyzedGames]);
+
+  const deskProtocols = [
+    "Signal first. Price second. Proof always.",
+    "If the market is stale, surface it. If the edge is gone, pass.",
+    "Show the number, the timing, and whether we beat the close.",
   ];
 
   const scrollToPricing = () => {
@@ -412,6 +459,8 @@ Always bet responsibly. Past performance does not guarantee future results.`;
     { phase: "Phase 3", title: "Productize trust", detail: "Ship an execution board, CLV console, and public proof page that show why the edge deserves payment." },
   ];
 
+  const topExecutionEntries = executionBoardEntries.slice(0, 3);
+
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
       <MatrixRain />
@@ -443,23 +492,25 @@ Always bet responsibly. Past performance does not guarantee future results.`;
 
       {/* Hero Section */}
       <section className="relative overflow-hidden border-b border-border/60">
-        <div className="absolute inset-0 bg-gradient-to-br from-brand-900/20 via-background to-background" />
-        <div className="absolute right-0 top-0 h-[520px] w-[520px] rounded-full bg-brand-500/10 blur-3xl" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.16),_transparent_28%),radial-gradient(circle_at_85%_18%,_rgba(250,204,21,0.12),_transparent_26%),linear-gradient(180deg,rgba(2,6,23,0.98),rgba(4,10,24,0.98))]" />
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-brand-400/60 to-transparent" />
+        <div className="absolute left-[14%] top-24 h-56 w-56 rounded-full bg-brand-500/10 blur-3xl" />
+        <div className="absolute right-[12%] top-16 h-48 w-48 rounded-full bg-yellow-400/10 blur-3xl" />
 
         <div className="relative max-w-6xl mx-auto px-6 py-16 md:py-20">
-          <div className="grid gap-10 lg:grid-cols-[1.05fr_0.95fr] lg:items-end">
+          <div className="grid gap-10 lg:grid-cols-[0.95fr_1.05fr] lg:items-start">
             <div className="space-y-6">
-              <div className="inline-flex items-center gap-2 rounded-full border border-brand-500/20 bg-brand-500/10 px-4 py-2 text-sm font-medium text-brand-400">
-                <Zap className="w-4 h-4" />
-                AI-Powered Sports Betting Intelligence
+              <div className="inline-flex items-center gap-2 rounded-full border border-brand-500/20 bg-brand-500/10 px-4 py-2 text-sm font-medium text-brand-300 shadow-[0_0_30px_rgba(56,189,248,0.08)]">
+                <Zap className="h-4 w-4" />
+                Sports Trading Terminal
               </div>
 
               <div className="space-y-4">
                 <h1 className="max-w-4xl text-5xl font-extrabold tracking-tight text-white md:text-7xl">
-                  Sports betting models people can actually inspect.
+                  A sharper desk for sports intelligence, execution, and proof.
                 </h1>
                 <p className="max-w-2xl text-lg text-muted-foreground md:text-xl">
-                  AI Advantage turns model output into usable betting workflow: live boards, value detection, Kelly sizing, and proof views that make the edge easier to trust.
+                  AI Advantage now behaves more like an operator terminal than a picks page: live market pulse, tracked execution edges, Kelly-sized entries, and proof views built to survive scrutiny.
                 </p>
               </div>
 
@@ -470,18 +521,16 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                   onClick={() => navigate("/daily-picks")}
                 >
                   <Star className="mr-2 h-5 w-5" />
-                  View Today's Picks
+                  Open The Live Desk
                 </Button>
                 <Button
                   size="lg"
                   variant="outline"
-                  className="border-gray-600 px-8 font-bold text-gray-300 hover:bg-gray-800"
-                  onClick={() => {
-                    document.getElementById("model-suite")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                  }}
+                  className="border-white/15 bg-white/[0.03] px-8 font-bold text-gray-200 hover:bg-white/[0.07]"
+                  onClick={() => navigate("/leaderboard")}
                 >
-                  <Brain className="mr-2 h-5 w-5" />
-                  Run the Model Demo
+                  <Trophy className="mr-2 h-5 w-5 text-yellow-300" />
+                  See Proof Ledger
                 </Button>
                 <Button
                   size="lg"
@@ -490,67 +539,157 @@ Always bet responsibly. Past performance does not guarantee future results.`;
                   onClick={scrollToPricing}
                 >
                   <Crown className="mr-2 h-5 w-5 text-yellow-400" />
-                  See Pricing
+                  Unlock Premium Flow
                 </Button>
               </div>
 
-              <div className="grid gap-3 pt-2 sm:grid-cols-3">
-                {heroSignals.map((item) => (
-                  <div key={item} className="rounded-2xl border border-border bg-card/40 px-4 py-4 backdrop-blur-sm">
-                    <p className="text-sm leading-relaxed text-muted-foreground">{item}</p>
+              <div className="grid gap-3 pt-3 sm:grid-cols-2">
+                {terminalStats.map((item) => (
+                  <div key={item.label} className="rounded-[24px] border border-white/10 bg-white/[0.04] px-5 py-4 backdrop-blur-sm shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">{item.label}</div>
+                    <div className={`mt-2 text-3xl font-black ${item.accent}`}>{item.value}</div>
+                    <div className="mt-2 text-sm leading-relaxed text-zinc-400">{item.detail}</div>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-brand-500/20 bg-card/55 p-6 backdrop-blur-xl">
-              <div className="mb-6 flex items-center justify-between">
-                <div>
-                  <p className="mb-2 text-xs uppercase tracking-[0.2em] text-brand-400/70">What You Get</p>
-                  <h2 className="text-2xl font-bold text-white">A cleaner betting workflow</h2>
-                </div>
-                <div className="rounded-2xl border border-brand-500/20 bg-brand-500/10 p-3">
-                  <Target className="h-5 w-5 text-brand-400" />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                {stats.map((stat) => (
-                  <div key={stat.label} className="rounded-2xl border border-border bg-black/30 p-4">
-                    <div className="text-3xl font-bold text-brand-400">{stat.value}</div>
-                    <div className="mt-1 text-sm text-muted-foreground">{stat.label}</div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-6 space-y-3">
-                {workflowSteps.map((step, index) => (
-                  <div key={step} className="flex gap-3 rounded-2xl border border-border bg-black/25 px-4 py-4">
-                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-brand-500/30 bg-brand-500/10 text-xs font-semibold text-brand-300">
-                      {index + 1}
+            <div className="grid gap-4">
+              <div className="overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(10,15,28,0.95),rgba(4,8,18,0.98))] shadow-[0_28px_120px_rgba(0,0,0,0.45)]">
+                <div className="border-b border-white/10 px-5 py-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.24em] text-brand-300/80">Desk state</div>
+                      <h2 className="mt-1 text-2xl font-bold text-white">Execution terminal</h2>
                     </div>
-                    <p className="text-sm leading-relaxed text-muted-foreground">{step}</p>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                      <span className="rounded-full border border-white/10 px-3 py-1">{selectedSport.toUpperCase()} focus</span>
+                      <span className="rounded-full border border-white/10 px-3 py-1">
+                        {liveSlateUpdatedAt ? `Updated ${liveSlateUpdatedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Syncing"}
+                      </span>
+                    </div>
                   </div>
-                ))}
+                </div>
+
+                <div className="grid gap-4 px-5 py-5">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+                      <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Board rows</div>
+                      <div className="mt-2 text-2xl font-bold text-white">{executionBoardEntries.length}</div>
+                      <div className="mt-1 text-xs text-zinc-500">Tracked entries clearing the desk threshold</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+                      <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Posted lines</div>
+                      <div className="mt-2 text-2xl font-bold text-brand-300">{analyzedGames.filter(({ game }) => game.odds).length}</div>
+                      <div className="mt-1 text-xs text-zinc-500">Games with current market pricing on the desk</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+                      <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Live pulse</div>
+                      <div className="mt-2 text-2xl font-bold text-emerald-300">{liveGames.filter((game) => game.status.state === "in").length}</div>
+                      <div className="mt-1 text-xs text-zinc-500">Games actively moving while the market reprices</div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[26px] border border-brand-500/20 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.12),_transparent_48%),rgba(255,255,255,0.02)] p-4">
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.24em] text-brand-300/80">Top board entries</div>
+                        <div className="mt-1 text-lg font-semibold text-white">Best execution opportunities right now</div>
+                      </div>
+                      <div className="text-xs text-zinc-500">Ranked by execution score, not fake hype</div>
+                    </div>
+
+                    {topExecutionEntries.length > 0 ? (
+                      <div className="grid gap-3 md:grid-cols-3">
+                        {topExecutionEntries.map((entry) => (
+                          <div key={entry.id} className="rounded-2xl border border-white/10 bg-black/25 p-4">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">{entry.sportLabel}</div>
+                              <div className="font-mono text-xs text-yellow-300">Score {entry.score.toFixed(1)}</div>
+                            </div>
+                            <div className="mt-3 text-lg font-bold text-white">{entry.recommendedSide}</div>
+                            <div className="mt-1 text-sm text-zinc-500">{entry.eventLabel}</div>
+                            <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                              <div>
+                                <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Entry</div>
+                                <div className="mt-1 font-mono text-white">{entry.summary.line}</div>
+                              </div>
+                              <div>
+                                <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Exec edge</div>
+                                <div className="mt-1 font-semibold text-brand-300">{entry.summary.execution}</div>
+                              </div>
+                              <div>
+                                <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Model</div>
+                                <div className="mt-1 text-white">{entry.summary.model}</div>
+                              </div>
+                              <div>
+                                <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Window</div>
+                                <div className="mt-1 text-white">{entry.executionWindow}</div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-2xl border border-white/8 bg-black/20 p-6 text-sm leading-6 text-zinc-400">
+                        No row clears the execution threshold right now. The terminal stays quiet instead of inventing a best bet.
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
-              <div className="mt-6 flex flex-wrap gap-3">
-                <Button
-                  variant="outline"
-                  className="border-border text-gray-300 hover:bg-gray-800 font-bold px-5"
-                  onClick={() => navigate("/leaderboard")}
-                >
-                  <Trophy className="w-5 h-5 mr-2" />
-                  Proof Ledger
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="px-5 text-muted-foreground hover:text-white"
-                  onClick={scrollToPricing}
-                >
-                  Compare Plans
-                  <ChevronRight className="ml-2 h-4 w-4" />
-                </Button>
+              <div className="grid gap-4 md:grid-cols-[1.1fr_0.9fr]">
+                <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Market pulse</div>
+                      <div className="mt-1 text-lg font-semibold text-white">Line movement worth watching</div>
+                    </div>
+                    <Activity className="h-4 w-4 text-brand-300" />
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {marketPulse.length > 0 ? marketPulse.map((item) => (
+                      <div key={item.id} className="rounded-2xl border border-white/8 bg-black/20 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="font-semibold text-white">{item.matchup}</div>
+                            <div className="mt-1 text-xs text-zinc-500">{item.state} · signal on {item.signal}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className={`font-mono text-sm ${item.movement <= 0 ? "text-emerald-300" : "text-yellow-300"}`}>
+                              {item.movement > 0 ? "+" : ""}{item.movement.toFixed(3)}
+                            </div>
+                            <div className="mt-1 text-xs text-zinc-500">open to current</div>
+                          </div>
+                        </div>
+                        <div className="mt-3 flex items-center justify-between text-sm">
+                          <span className="text-zinc-500">Exec edge</span>
+                          <span className={`font-semibold ${item.execEdge >= 0 ? "text-brand-300" : "text-red-300"}`}>{formatEdge(item.execEdge)}</span>
+                        </div>
+                      </div>
+                    )) : (
+                      <div className="rounded-2xl border border-white/8 bg-black/20 p-4 text-sm text-zinc-400">
+                        Waiting for posted open numbers before the pulse board has anything worth highlighting.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-sm">
+                  <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Desk protocol</div>
+                  <div className="mt-1 text-lg font-semibold text-white">How this terminal thinks</div>
+                  <div className="mt-4 space-y-3">
+                    {deskProtocols.map((item, index) => (
+                      <div key={item} className="flex gap-3 rounded-2xl border border-white/8 bg-black/20 p-4">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-brand-500/30 bg-brand-500/10 text-xs font-semibold text-brand-300">
+                          {index + 1}
+                        </div>
+                        <p className="text-sm leading-relaxed text-zinc-400">{item}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
