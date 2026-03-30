@@ -169,7 +169,7 @@ function formatTipoff(date: string, statusState: "pre" | "in" | "post"): string 
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
 
   if (!response.ok) {
     throw new Error(`Failed to fetch ${url}: ${response.status}`);
@@ -291,7 +291,7 @@ export async function fetchLiveGamesForSport(sport: Sport, date = new Date()): P
   const scoreboard = await fetchJson<{ events?: EspnScoreboardEvent[] }>(scoreboardUrl);
   const events = scoreboard.events ?? [];
 
-  const summaries = await Promise.all(events.map((event) => fetchSummaryData(sport, event.id)));
+  const summaries = await Promise.allSettled(events.map((event) => fetchSummaryData(sport, event.id)));
 
   return events
     .map((event, index) => toLiveMarketGame(event, sport, summaries[index]))
@@ -304,6 +304,6 @@ export async function fetchLiveGamesForSport(sport: Sport, date = new Date()): P
 }
 
 export async function fetchLiveGamesForSports(sports: Sport[], date = new Date()) {
-  const slates = await Promise.all(sports.map((sport) => fetchLiveGamesForSport(sport, date)));
+  const slates = await Promise.allSettled(sports.map((sport) => fetchLiveGamesForSport(sport, date)));
   return slates.flat();
 }
