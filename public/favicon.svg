@@ -1,18 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="AI Advantage Sports football favicon">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="AI Advantage Sports favicon">
   <defs>
     <linearGradient id="bg" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#14532d" />
-      <stop offset="1" stop-color="#052e16" />
-    </linearGradient>
-    <linearGradient id="ball" x1="18" y1="20" x2="46" y2="44" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#d97706" />
-      <stop offset="1" stop-color="#92400e" />
+      <stop offset="0" stop-color="#16a34a" />
+      <stop offset="1" stop-color="#14532d" />
     </linearGradient>
   </defs>
   <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#bg)" />
-  <path d="M16 14c6 0 11 2 16 6 5-4 10-6 16-6 2 6 2 13 0 18-2 7-8 13-16 18-8-5-14-11-16-18-2-5-2-12 0-18Z" fill="#16a34a" opacity=".22" />
-  <path d="M23 18c4 1 8 4 13 8 5-4 9-7 13-8 2 4 2 10 1 14-2 6-7 11-14 16-7-5-12-10-14-16-1-4-1-10 1-14Z" fill="url(#ball)" stroke="#fef3c7" stroke-width="2.5" stroke-linejoin="round" />
-  <path d="M22 44c4-5 9-10 19-18" stroke="#7c2d12" stroke-width="2.4" stroke-linecap="round" opacity=".45" />
-  <path d="M27 31h10" stroke="#fff" stroke-width="3" stroke-linecap="round" />
-  <path d="M29 27v8M32 27v8M35 27v8" stroke="#fff" stroke-width="2.2" stroke-linecap="round" />
+  <path d="M18 42l10-20 8 12 10-16" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none" />
+  <circle cx="46" cy="18" r="3" fill="#ffffff" />
 </svg>
