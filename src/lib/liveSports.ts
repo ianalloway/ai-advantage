@@ -303,7 +303,7 @@ export async function fetchLiveGamesForSport(sport: Sport, date = new Date()): P
     });
 }
 
-export async function fetchLiveGamesForSports(sports: Sport[], date = new Date()) {
+export async function fetchLiveGamesForSports(sports: Sport[], date = new Date()): Promise<LiveMarketGame[]> {
   const slates = await Promise.allSettled(sports.map((sport) => fetchLiveGamesForSport(sport, date)));
-  return slates.flat();
+  return slates.flatMap((slate) => (slate.status === "fulfilled" ? slate.value : []));
 }
