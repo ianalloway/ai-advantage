@@ -5,54 +5,41 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=flat&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
 
-Sports analytics product for ML-driven picks, bankroll sizing, and live betting workflows.
-
-## Why This Repo Matters
-
-This project shows product-oriented ML work rather than notebook-only experimentation:
-
-- prediction workflows tied to a user-facing app
-- live odds and betting-oriented UX
-- Kelly-based stake sizing and decision support
-- production-style frontend architecture with a real deployed surface
+> ML-driven sports betting product: predictions, Kelly-based bet sizing, live odds, and a real subscription surface. Live at **[aiadvantagesports.com](https://aiadvantagesports.com)**.
 
 ![AI Advantage Sports Screenshot](https://raw.githubusercontent.com/ianalloway/ai-advantage/main/screenshot.png)
 
-## Features
+## Why this exists
 
-- **AI-Powered Analysis** - Advanced machine learning models analyze thousands of data points in seconds
-- **Game Analyzer** - Enter any matchup for instant AI analysis and betting recommendations
-- **Real-Time Odds** - Track line movements and find value before the market adjusts
-- **High Accuracy** - Models consistently outperform traditional handicapping methods
-- **Bankroll Protection** - Smart stake sizing recommendations to protect your investment
-- **Kelly Criterion** - Optimal bet sizing based on edge and bankroll management
-- **Multi-Sport Support** - NBA, NFL, and MLB predictions
-- **Premium Tier** - Advanced features with Stripe subscription integration
+Most "AI betting" projects stop at a notebook. This one ships.
 
-## Highlights
+AI Advantage turns model output into a decision a user can actually act on:
 
-- Live product experience at [aiadvantagesports.com](https://aiadvantagesports.com)
-- Supports NBA, NFL, and MLB workflows
-- Includes odds, picks, leaderboard, and premium/paywall paths
-- Useful as a portfolio example of turning modeling ideas into an actual product
+- **Predict** — model-driven picks across NBA, NFL, and MLB
+- **Size** — Kelly-based stake recommendations that protect bankroll
+- **Time** — live odds and line-movement views to catch value before the market adjusts
+- **Monetize** — premium tier with real Stripe checkout, not a fake paywall
 
-## Tech Stack
+It's the product layer of a larger sports-analytics stack — the modeling lives in adjacent repos, this is where it meets a user.
 
-- **Frontend:** React, TypeScript, Tailwind CSS
-- **UI Components:** shadcn/ui
-- **Build Tool:** Vite
-- **Styling:** Custom dark theme with green accents
+## Feature tour
 
-## Project Structure
+| Area | What it does |
+|------|--------------|
+| Game analyzer | Enter a matchup, get an analysis and a recommendation |
+| Live odds | Track lines and movement across the slate |
+| Kelly sizing | Translate edge + bankroll into a stake |
+| Multi-sport | NBA, NFL, MLB workflows |
+| Premium | Stripe subscription + one-time checkout |
+| Newsletter | Notion-backed capture wired into Substack |
 
-```text
-src/
-  components/        UI and product features
-  lib/               predictions, rosters, Stripe helpers
-  pages/             landing page, picks, leaderboard
-```
+## Stack
 
-## Getting Started
+`React` · `TypeScript` · `Vite` · `Tailwind CSS` · `shadcn/ui`
+
+Serverless API routes handle Stripe checkout and newsletter capture so previews and production stay fully functional.
+
+## Run it locally
 
 ```bash
 git clone https://github.com/ianalloway/ai-advantage.git
@@ -61,63 +48,50 @@ npm install
 npm run dev
 ```
 
-Then open `http://localhost:5173`.
+Open `http://localhost:5173`.
 
 ## Deployment
 
-The site is configured for static hosting plus preview-ready serverless payments:
+- `netlify.toml` — Netlify SPA deploy
+- `vercel.json` — SPA rewrites for Vercel preview deploys
+- `api/create-checkout-session.ts` + `api/checkout-session.ts` — server-side Stripe checkout
 
-- `netlify.toml` keeps the current Netlify SPA deploy working.
-- `vercel.json` adds SPA rewrites so Vercel previews can serve `/daily-picks` and `/leaderboard`.
-- `api/create-checkout-session.ts` and `api/checkout-session.ts` let Vercel previews create and verify Stripe Checkout Sessions securely on the server.
-
-### Stripe Checkout env vars
-
-For the server-created Stripe flow, set these env vars in your deployment target:
+### Stripe (server flow)
 
 ```bash
-STRIPE_SECRET_KEY=sk_live_or_test_...
+STRIPE_SECRET_KEY=***
 STRIPE_PREMIUM_PRICE_ID=price_...
 STRIPE_ONE_TIME_PRICE_ID=price_...
-PUBLIC_APP_URL=https://your-preview-or-production-domain
+PUBLIC_APP_URL=https://your-domain
 ```
 
-If those are missing, the app falls back to the static Stripe Payment Links from `VITE_STRIPE_CHECKOUT_URL` and `VITE_STRIPE_ONE_TIME_CHECKOUT_URL`.
+If unset, the app falls back to static Stripe Payment Links via `VITE_STRIPE_CHECKOUT_URL` and `VITE_STRIPE_ONE_TIME_CHECKOUT_URL`.
 
-### Newsletter automation env vars
+### Newsletter capture
 
-The homepage email form now posts to `/api/newsletter-subscribe`. On each signup it:
-
-- creates a child page in Notion with the subscriber details
-- sends you a notification email
-- redirects the visitor into the official Substack subscribe page
-
-Set these env vars before turning the form on in production:
+The homepage form posts to `/api/newsletter-subscribe`, which creates a Notion entry, emails a notification, and redirects into the Substack subscribe flow.
 
 ```bash
-NOTION_API_KEY=secret_your_notion_integration_token
-NOTION_PARENT_PAGE_ID=your_notion_parent_page_id
-RESEND_API_KEY=re_your_resend_api_key
+NOTION_API_KEY=***
+NOTION_PARENT_PAGE_ID=...
+RESEND_API_KEY=re_...
 RESEND_FROM_EMAIL="AI Advantage <onboarding@yourdomain.com>"
 NOTIFY_EMAIL=ian@allowayllc.com
 SUBSTACK_PUBLICATION_URL=https://allowayai.substack.com
 ```
 
-`NOTION_PARENT_PAGE_ID` should be the page where you want each new subscriber page to appear. Share that Notion page with your Notion integration before testing.
+## Where the modeling lives
 
-## Notes
-
-- This repository is best read as a shipped product and frontend/application example.
-- Modeling details live in adjacent public projects such as `sports-betting-ml`, `nba-ratings`, and `nba-clv-dashboard`.
+| Repo | Role |
+|------|------|
+| [sports-betting-ml](https://github.com/ianalloway/sports-betting-ml) | Models — logistic regression, XGBoost, ensembles |
+| [nba-ratings](https://github.com/ianalloway/nba-ratings) | Ratings + win-probability library |
+| [kelly-js](https://github.com/ianalloway/kelly-js) | Kelly / odds / bankroll math (TS) |
 
 ## Author
 
-**Ian Alloway**
-
-- Portfolio: [ianalloway.xyz](https://ianalloway.xyz)
-- LinkedIn: [linkedin.com/in/ianit](https://www.linkedin.com/in/ianit)
-- GitHub: [github.com/ianalloway](https://github.com/ianalloway)
+**Ian Alloway** — [Portfolio](https://ianalloway.xyz) · [LinkedIn](https://www.linkedin.com/in/ianit) · [Writing](https://allowayai.substack.com)
 
 ## License
 
-This project is proprietary. All rights reserved.
+Proprietary. All rights reserved.
