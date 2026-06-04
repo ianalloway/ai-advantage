@@ -24,8 +24,8 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Expose port 80
-EXPOSE 80
+# Expose an unprivileged port for the non-root nginx worker
+EXPOSE 8080
 
 # Run as non-root user
 RUN touch /var/run/nginx.pid && \
