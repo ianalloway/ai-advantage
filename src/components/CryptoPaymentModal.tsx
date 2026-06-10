@@ -134,9 +134,31 @@ export default function CryptoPaymentModal({
       return;
     }
     setIsVerifying(true);
-    // Simulate on-chain verification delay
-    await new Promise((r) => setTimeout(r, 2200));
-    setIsVerifying(false);
+    try {
+      const response = await fetch("/api/verify-crypto-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ txHash: hash, walletAddress: wallet }),
+      });
+      const result = (await response.json()) as { verified?: boolean; reason?: string };
+      if (!result.verified) {
+        toast({
+          title: "Payment not verified",
+          description: result.reason || "We could not confirm this transaction on-chain.",
+          variant: "destructive",
+        });
+        return;
+      }
+    } catch {
+      toast({
+        title: "Verification unavailable",
+        description: "Could not reach the verification service. Try again in a minute.",
+        variant: "destructive",
+      });
+      return;
+    } finally {
+      setIsVerifying(false);
+    }
     saveCryptoAccessAccount({
       email,
       walletAddress: wallet,

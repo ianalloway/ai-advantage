@@ -46,12 +46,10 @@ const CRYPTO_SESSION_KEY = "ai_advantage_crypto_session_v1";
 const ACCESS_CHANGE_EVENT = "ai-advantage-access-changed";
 const EVENT_ACCESS_DURATION_HOURS = 72;
 
-const MONTHLY_PAYMENT_LINK =
-  import.meta.env.VITE_STRIPE_CHECKOUT_URL ||
-  "https://buy.stripe.com/00w00lfcah1r6y08wWfAc04";
-const ONE_TIME_PAYMENT_LINK =
-  import.meta.env.VITE_STRIPE_ONE_TIME_CHECKOUT_URL ||
-  "https://buy.stripe.com/00wdRb9RQ4eF09CdRgfAc05";
+// Checkout URLs must come from environment config — never hardcode payment
+// links in the bundle (issue #36). Server-side session creation is preferred.
+const MONTHLY_PAYMENT_LINK = import.meta.env.VITE_STRIPE_CHECKOUT_URL || "";
+const ONE_TIME_PAYMENT_LINK = import.meta.env.VITE_STRIPE_ONE_TIME_CHECKOUT_URL || "";
 
 const FREE_ACCESS: AccessState = {
   tier: "free",
@@ -194,11 +192,8 @@ async function verifyCheckoutSession(sessionId: string): Promise<CheckoutSession
 export function activateAccess(access: AccessState): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(access));
-  if (access.tier === "premium") {
-    localStorage.setItem(LEGACY_STORAGE_KEY, "true");
-  } else if (access.tier === "free") {
-    localStorage.removeItem(LEGACY_STORAGE_KEY);
-  }
+  // Never write the legacy flag — it was a trivially forgeable premium bypass.
+  localStorage.removeItem(LEGACY_STORAGE_KEY);
   emitAccessChange();
 }
 
@@ -225,13 +220,9 @@ export function getAccessState(): AccessState {
     }
   }
 
-  if (localStorage.getItem(LEGACY_STORAGE_KEY) === "true") {
-    return {
-      tier: "premium",
-      source: "legacy",
-      label: "Legacy premium unlock",
-    };
-  }
+  // The legacy `ai_advantage_premium` flag is no longer honored — it allowed
+  // anyone to grant themselves premium from the console (issue #36).
+  localStorage.removeItem(LEGACY_STORAGE_KEY);
 
   return FREE_ACCESS;
 }
@@ -253,19 +244,6 @@ export function hasFeatureAccess(feature: AccessFeature, access = getAccessState
 }
 
 export const isPremiumUser = (): boolean => hasFeatureAccess("premium_board");
-
-export const setPremiumStatus = (isPremium: boolean): void => {
-  if (isPremium) {
-    activateAccess({
-      tier: "premium",
-      source: "legacy",
-      label: "Manual premium unlock",
-      activatedAt: new Date().toISOString(),
-    });
-  } else {
-    clearAccess();
-  }
-};
 
 export function getAccessChangeEventName(): string {
   return ACCESS_CHANGE_EVENT;
