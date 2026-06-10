@@ -294,7 +294,14 @@ export async function fetchLiveGamesForSport(sport: Sport, date = new Date()): P
   const summaries = await Promise.allSettled(events.map((event) => fetchSummaryData(sport, event.id)));
 
   return events
-    .map((event, index) => toLiveMarketGame(event, sport, summaries[index]))
+    .map((event, index) => {
+      const summary = summaries[index];
+      return toLiveMarketGame(
+        event,
+        sport,
+        summary?.status === "fulfilled" ? summary.value : null,
+      );
+    })
     .filter((game): game is LiveMarketGame => Boolean(game))
     .sort((a, b) => {
       const statusDiff = STATUS_ORDER[a.status.state] - STATUS_ORDER[b.status.state];
@@ -303,7 +310,7 @@ export async function fetchLiveGamesForSport(sport: Sport, date = new Date()): P
     });
 }
 
-export async function fetchLiveGamesForSports(sports: Sport[], date = new Date()) {
+export async function fetchLiveGamesForSports(sports: Sport[], date = new Date()): Promise<LiveMarketGame[]> {
   const slates = await Promise.allSettled(sports.map((sport) => fetchLiveGamesForSport(sport, date)));
-  return slates.flat();
+  return slates.flatMap((slate) => (slate.status === "fulfilled" ? slate.value : []));
 }

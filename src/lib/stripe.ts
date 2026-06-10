@@ -372,9 +372,6 @@ export async function syncAccessFromUrl(): Promise<AccessState | null> {
 
   const url = new URL(window.location.href);
   const checkout = url.searchParams.get("checkout");
-  const tier = url.searchParams.get("tier");
-  const source = url.searchParams.get("source");
-  const expiresAt = url.searchParams.get("expires_at");
   const sessionId = url.searchParams.get("session_id");
 
   if (checkout === "cancelled") {
@@ -409,22 +406,8 @@ export async function syncAccessFromUrl(): Promise<AccessState | null> {
     }
   }
 
-  if (tier !== "event" && tier !== "premium") {
-    cleanupCheckoutParams(url);
-    return null;
-  }
-
-  const access: AccessState = {
-    tier,
-    source: source === "crypto" ? "crypto" : "stripe",
-    label: tier === "premium" ? "Stripe Pro Monthly" : "Stripe one-time event unlock",
-    activatedAt: new Date().toISOString(),
-    expiresAt: tier === "event" ? expiresAt || getEventAccessExpiry() : expiresAt || undefined,
-  };
-
-  activateAccess(access);
   cleanupCheckoutParams(url);
-  return access;
+  return null;
 }
 
 export function getCheckoutUrl(type: CheckoutMode = "premium"): string {
