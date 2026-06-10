@@ -1,11 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="AI Advantage Sports favicon">
-  <defs>
-    <linearGradient id="bg" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#16a34a" />
-      <stop offset="1" stop-color="#14532d" />
-    </linearGradient>
-  </defs>
-  <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#bg)" />
-  <path d="M18 42l10-20 8 12 10-16" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none" />
-  <circle cx="46" cy="18" r="3" fill="#ffffff" />
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" aria-label="AI Advantage Sports favicon" role="img" viewBox="0 0 64 64"><defs><linearGradient id="bg" x1="8" x2="56" y1="6" y2="58" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#16a34a"/><stop offset="1" stop-color="#14532d"/></linearGradient></defs><rect width="56" height="56" x="4" y="4" fill="url(#bg)" rx="16"/><path fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="4" d="M18 42l10-20 8 12 10-16"/><circle cx="46" cy="18" r="3" fill="#fff"/></svg>
