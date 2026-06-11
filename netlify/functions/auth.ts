@@ -1,8 +1,12 @@
 import { randomBytes, pbkdf2 as pbkdf2Callback, timingSafeEqual, createHash } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
+import { connectLambda, getStore } from "@netlify/blobs";
 import { Redis } from "@upstash/redis";
 
 type NetlifyEvent = {
+  blobs?: string;
   body: string | null;
   headers: Record<string, string | undefined>;
   httpMethod: string;
@@ -22,6 +26,17 @@ interface StoredSiteUser {
 
 type SiteUser = Omit<StoredSiteUser, "passwordHash" | "passwordSalt">;
 
+interface SessionRecord {
+  userId: string;
+  expiresAt: string;
+}
+
+interface AuthStore {
+  delete: (key: string) => Promise<void>;
+  get: <T>(key: string) => Promise<T | null>;
+  set: (key: string, value: unknown, options?: { ex?: number }) => Promise<void>;
+}
+
 const pbkdf2 = promisify(pbkdf2Callback);
 const COOKIE_NAME = "ai_advantage_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
@@ -31,6 +46,9 @@ const PASSWORD_KEY_LENGTH = 32;
 const PASSWORD_DIGEST = "sha256";
 
 let redisClient: Redis | null | undefined;
+let localAuthData: Record<string, unknown> | null = null;
+let localAuthLoad: Promise<Record<string, unknown>> | null = null;
+let localAuthWrite: Promise<void> = Promise.resolve();
 
 function response(statusCode: number, body: unknown, headers: Record<string, string | string[]> = {}) {
   return {
@@ -53,6 +71,114 @@ function getRedis() {
 
   redisClient = Redis.fromEnv();
   return redisClient;
+}
+
+function normalizeLambdaHeaders(headers: NetlifyEvent["headers"]) {
+  return Object.fromEntries(
+    Object.entries(headers).flatMap(([key, value]) => (typeof value === "string" ? [[key.toLowerCase(), value]] : [])),
+  );
+}
+
+function canUseLocalAuthStore() {
+  return process.env.NETLIFY_DEV === "true" || process.env.NETLIFY_LOCAL === "true" || process.env.NODE_ENV !== "production";
+}
+
+function getLocalAuthPath() {
+  return join(process.cwd(), ".netlify", "state", "ai-advantage-auth.json");
+}
+
+async function readLocalAuthData() {
+  if (localAuthData) return localAuthData;
+  if (!localAuthLoad) {
+    localAuthLoad = readFile(getLocalAuthPath(), "utf8")
+      .then((contents) => {
+        const parsed = JSON.parse(contents) as unknown;
+        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+      })
+      .catch((error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return {};
+        throw error;
+      });
+  }
+
+  localAuthData = await localAuthLoad;
+  return localAuthData;
+}
+
+async function writeLocalAuthData() {
+  const filePath = getLocalAuthPath();
+  const data = await readLocalAuthData();
+  localAuthWrite = localAuthWrite.then(async () => {
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, JSON.stringify(data, null, 2));
+  });
+  return localAuthWrite;
+}
+
+function getLocalAuthStore(): AuthStore {
+  return {
+    async get<T>(key: string) {
+      const data = await readLocalAuthData();
+      return (data[key] as T | undefined) ?? null;
+    },
+    async set(key: string, value: unknown) {
+      const data = await readLocalAuthData();
+      data[key] = value;
+      await writeLocalAuthData();
+    },
+    async delete(key: string) {
+      const data = await readLocalAuthData();
+      delete data[key];
+      await writeLocalAuthData();
+    },
+  };
+}
+
+function getAuthStore(event: NetlifyEvent): AuthStore | null {
+  if (event.blobs) {
+    try {
+      connectLambda({
+        blobs: event.blobs,
+        headers: normalizeLambdaHeaders(event.headers),
+      });
+
+      const store = getStore("ai-advantage-auth");
+      return {
+        async get<T>(key: string) {
+          return (await store.get(key, { type: "json" })) as T | null;
+        },
+        async set(key: string, value: unknown) {
+          await store.setJSON(key, value);
+        },
+        async delete(key: string) {
+          await store.delete(key);
+        },
+      };
+    } catch (error) {
+      console.warn("Netlify Blobs auth store is unavailable; checking fallback store.", error);
+    }
+  }
+
+  const redis = getRedis();
+  if (!redis) {
+    return canUseLocalAuthStore() ? getLocalAuthStore() : null;
+  }
+
+  return {
+    async get<T>(key: string) {
+      return (await redis.get<T>(key)) ?? null;
+    },
+    async set(key: string, value: unknown, options?: { ex?: number }) {
+      if (options?.ex) {
+        await redis.set(key, value, { ex: options.ex });
+      } else {
+        await redis.set(key, value);
+      }
+    },
+    async delete(key: string) {
+      await redis.del(key);
+    },
+  };
 }
 
 function normalizeEmail(value: string) {
@@ -94,6 +220,12 @@ function getCookie(headers: NetlifyEvent["headers"], name: string) {
   return target ? decodeURIComponent(target.slice(name.length + 1)) : null;
 }
 
+function getHeader(headers: NetlifyEvent["headers"], name: string) {
+  const lowerName = name.toLowerCase();
+  const match = Object.entries(headers).find(([key, value]) => key.toLowerCase() === lowerName && value);
+  return match?.[1] ?? null;
+}
+
 function sessionKey(token: string) {
   const hash = createHash("sha256").update(token).digest("hex");
   return `${ACCOUNT_PREFIX}:session:${hash}`;
@@ -111,7 +243,17 @@ function usernameKey(username: string) {
   return `${ACCOUNT_PREFIX}:username:${username}`;
 }
 
-function setSessionCookie(token: string) {
+function shouldUseSecureCookie(event: NetlifyEvent) {
+  const host = getHeader(event.headers, "host") ?? "";
+  const forwardedProto = getHeader(event.headers, "x-forwarded-proto") ?? "";
+  if (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?)(:|$)/.test(host)) {
+    return false;
+  }
+
+  return forwardedProto === "https" || process.env.NODE_ENV !== "development";
+}
+
+function setSessionCookie(event: NetlifyEvent, token: string) {
   const parts = [
     `${COOKIE_NAME}=${encodeURIComponent(token)}`,
     "Path=/",
@@ -120,15 +262,20 @@ function setSessionCookie(token: string) {
     "SameSite=Lax",
   ];
 
-  if (process.env.NODE_ENV !== "development") {
+  if (shouldUseSecureCookie(event)) {
     parts.push("Secure");
   }
 
   return parts.join("; ");
 }
 
-function clearSessionCookie() {
-  return `${COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax; Secure`;
+function clearSessionCookie(event: NetlifyEvent) {
+  const parts = [`${COOKIE_NAME}=`, "Path=/", "Max-Age=0", "HttpOnly", "SameSite=Lax"];
+  if (shouldUseSecureCookie(event)) {
+    parts.push("Secure");
+  }
+
+  return parts.join("; ");
 }
 
 function validationError(input: { email: string; username: string; password: string }) {
@@ -167,36 +314,52 @@ async function verifyPassword(password: string, user: StoredSiteUser) {
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
-async function getCurrentUser(redis: Redis, event: NetlifyEvent) {
+async function getCurrentUser(store: AuthStore, event: NetlifyEvent) {
   const token = getCookie(event.headers, COOKIE_NAME);
   if (!token) return null;
 
-  const userId = await redis.get<string>(sessionKey(token));
+  const session = await store.get<string | SessionRecord>(sessionKey(token));
+  const userId = typeof session === "string" ? session : session?.userId;
   if (!userId) return null;
+  if (typeof session === "object" && new Date(session.expiresAt).getTime() <= Date.now()) {
+    await store.delete(sessionKey(token));
+    return null;
+  }
 
-  const user = await redis.get<StoredSiteUser>(userKey(userId));
+  const user = await store.get<StoredSiteUser>(userKey(userId));
   return user ? sanitizeUser(user) : null;
 }
 
-async function createSession(redis: Redis, userId: string) {
+async function createSession(store: AuthStore, userId: string) {
   const token = randomBytes(32).toString("base64url");
-  await redis.set(sessionKey(token), userId, { ex: SESSION_TTL_SECONDS });
+  await store.set(
+    sessionKey(token),
+    {
+      userId,
+      expiresAt: new Date(Date.now() + SESSION_TTL_SECONDS * 1000).toISOString(),
+    } satisfies SessionRecord,
+    { ex: SESSION_TTL_SECONDS },
+  );
   return token;
 }
 
 export const handler = async (event: NetlifyEvent) => {
-  const redis = getRedis();
-  if (!redis) {
+  const route = getRoute(event);
+  const store = getAuthStore(event);
+
+  if (!store) {
+    if (event.httpMethod === "GET" && route === "me") {
+      return response(200, { user: null });
+    }
+
     return response(503, {
       success: false,
-      message: "Account backend is not configured. Add Upstash Redis env vars on Netlify.",
+      message: "Account backend is not configured. Add Netlify Blobs or Upstash Redis env support.",
     });
   }
 
-  const route = getRoute(event);
-
   if (event.httpMethod === "GET" && route === "me") {
-    const user = await getCurrentUser(redis, event);
+    const user = await getCurrentUser(store, event);
     return response(200, { user });
   }
 
@@ -207,10 +370,10 @@ export const handler = async (event: NetlifyEvent) => {
   if (route === "logout") {
     const token = getCookie(event.headers, COOKIE_NAME);
     if (token) {
-      await redis.del(sessionKey(token));
+      await store.delete(sessionKey(token));
     }
 
-    return response(200, { success: true, message: "Logged out." }, { "Set-Cookie": clearSessionCookie() });
+    return response(200, { success: true, message: "Logged out." }, { "Set-Cookie": clearSessionCookie(event) });
   }
 
   const body = parseBody(event);
@@ -224,8 +387,8 @@ export const handler = async (event: NetlifyEvent) => {
     if (invalid) return response(400, { success: false, message: invalid });
 
     const [existingEmail, existingUsername] = await Promise.all([
-      redis.get<string>(emailKey(email)),
-      redis.get<string>(usernameKey(username)),
+      store.get<string>(emailKey(email)),
+      store.get<string>(usernameKey(username)),
     ]);
     if (existingEmail) {
       return response(409, { success: false, message: "That email already has an account. Log in instead." });
@@ -248,16 +411,16 @@ export const handler = async (event: NetlifyEvent) => {
     };
 
     await Promise.all([
-      redis.set(userKey(user.id), user),
-      redis.set(emailKey(email), user.id),
-      redis.set(usernameKey(username), user.id),
+      store.set(userKey(user.id), user),
+      store.set(emailKey(email), user.id),
+      store.set(usernameKey(username), user.id),
     ]);
 
-    const token = await createSession(redis, user.id);
+    const token = await createSession(store, user.id);
     return response(
       200,
       { success: true, message: "Account created. You are now logged in.", user: sanitizeUser(user) },
-      { "Set-Cookie": setSessionCookie(token) },
+      { "Set-Cookie": setSessionCookie(event, token) },
     );
   }
 
@@ -271,23 +434,23 @@ export const handler = async (event: NetlifyEvent) => {
     const normalizedEmail = normalizeEmail(login);
     const normalizedUsername = normalizeUsername(login);
     const userId =
-      (await redis.get<string>(emailKey(normalizedEmail))) ??
-      (await redis.get<string>(usernameKey(normalizedUsername)));
+      (await store.get<string>(emailKey(normalizedEmail))) ??
+      (await store.get<string>(usernameKey(normalizedUsername)));
 
     if (!userId) {
       return response(404, { success: false, message: "We could not find an account with that email or username." });
     }
 
-    const user = await redis.get<StoredSiteUser>(userKey(userId));
+    const user = await store.get<StoredSiteUser>(userKey(userId));
     if (!user || !(await verifyPassword(password, user))) {
       return response(401, { success: false, message: "That password does not match this account." });
     }
 
-    const token = await createSession(redis, user.id);
+    const token = await createSession(store, user.id);
     return response(
       200,
       { success: true, message: "Logged in successfully.", user: sanitizeUser(user) },
-      { "Set-Cookie": setSessionCookie(token) },
+      { "Set-Cookie": setSessionCookie(event, token) },
     );
   }
 
