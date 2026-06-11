@@ -33,7 +33,8 @@ function getStripeClient() {
 
 function getSessionId(req: RequestLike) {
   const value = req.query?.session_id;
-  return Array.isArray(value) ? value[0] : value;
+  const sessionId = Array.isArray(value) ? value[0] : value;
+  return sessionId?.trim();
 }
 
 export default async function handler(req: RequestLike, res: ResponseLike) {
@@ -45,8 +46,8 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   }
 
   const sessionId = getSessionId(req);
-  if (!sessionId) {
-    res.status(400).send("Missing session_id.");
+  if (!sessionId || !/^cs_(test|live)_[A-Za-z0-9]+/.test(sessionId)) {
+    res.status(400).send("Missing or invalid session_id.");
     return;
   }
 

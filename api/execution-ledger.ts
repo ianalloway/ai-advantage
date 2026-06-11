@@ -37,6 +37,8 @@ interface HistoricalExecutionLedgerEntry extends ExecutionLedgerEntryInput {
 
 const LEDGER_KEY = process.env.EXECUTION_LEDGER_KEY || "ai-advantage:execution-ledger";
 const MAX_ROWS = 500;
+const MAX_POST_ROWS = 50;
+const MAX_TEXT_LENGTH = 160;
 
 function getRedis() {
   if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
@@ -54,6 +56,17 @@ function parseLimit(query: RequestLike["query"]) {
   }
 
   return Math.min(Math.floor(value), MAX_ROWS);
+}
+
+function clampText(value: unknown) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().replace(/\s+/g, " ");
+  if (!normalized) return null;
+  return normalized.slice(0, MAX_TEXT_LENGTH);
+}
+
+function finiteNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function sortRows(rows: HistoricalExecutionLedgerEntry[]) {
@@ -93,23 +106,46 @@ function isAccessTier(value: unknown): value is AccessTier {
   return value === "free" || value === "event" || value === "premium";
 }
 
-function isExecutionLedgerEntryInput(value: unknown): value is ExecutionLedgerEntryInput {
-  if (!value || typeof value !== "object") return false;
+function normalizeExecutionLedgerEntry(value: unknown): ExecutionLedgerEntryInput | null {
+  if (!value || typeof value !== "object") return null;
 
   const row = value as Partial<ExecutionLedgerEntryInput>;
-  return (
-    typeof row.id === "string" &&
-    typeof row.eventLabel === "string" &&
-    typeof row.sportLabel === "string" &&
-    typeof row.recommendedSide === "string" &&
-    typeof row.executionWindow === "string" &&
-    typeof row.entryOdds === "number" &&
-    typeof row.executionAdjustedEdge === "number" &&
-    (row.ledgerOutcome === "pending" ||
-      row.ledgerOutcome === "won" ||
-      row.ledgerOutcome === "lost" ||
-      row.ledgerOutcome === "push")
-  );
+  const id = clampText(row.id);
+  const eventLabel = clampText(row.eventLabel);
+  const sportLabel = clampText(row.sportLabel);
+  const recommendedSide = clampText(row.recommendedSide);
+  const executionWindow = clampText(row.executionWindow);
+  const entryOdds = finiteNumber(row.entryOdds);
+  const executionAdjustedEdge = finiteNumber(row.executionAdjustedEdge);
+  const bookmaker = clampText(row.bookmaker);
+
+  if (
+    !id ||
+    !eventLabel ||
+    !sportLabel ||
+    !recommendedSide ||
+    !executionWindow ||
+    entryOdds === null ||
+    executionAdjustedEdge === null ||
+    (row.ledgerOutcome !== "pending" &&
+      row.ledgerOutcome !== "won" &&
+      row.ledgerOutcome !== "lost" &&
+      row.ledgerOutcome !== "push")
+  ) {
+    return null;
+  }
+
+  return {
+    id,
+    eventLabel,
+    sportLabel,
+    recommendedSide,
+    executionWindow,
+    entryOdds,
+    executionAdjustedEdge,
+    ledgerOutcome: row.ledgerOutcome,
+    ...(bookmaker ? { bookmaker } : {}),
+  };
 }
 
 export default async function handler(req: RequestLike, res: ResponseLike) {
@@ -128,8 +164,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   if (req.method === "GET") {
     try {
       const limit = parseLimit(req.query);
-      const rows =
-        ((await redis.get<HistoricalExecutionLedgerEntry[]>(LEDGER_KEY)) ?? []).slice(0, limit);
+      const rows = sortRows((await redis.get<HistoricalExecutionLedgerEntry[]>(LEDGER_KEY)) ?? []).slice(0, limit);
       res.status(200).json({ configured: true, rows });
     } catch (error) {
       const message =
@@ -143,13 +178,16 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     try {
       const payload =
         req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
-      const rows = Array.isArray(payload.entries)
-        ? payload.entries.filter(isExecutionLedgerEntryInput)
+      const submittedRows = Array.isArray(payload.entries)
+        ? payload.entries.slice(0, MAX_POST_ROWS)
         : [];
+      const rows = submittedRows
+        .map(normalizeExecutionLedgerEntry)
+        .filter((row): row is ExecutionLedgerEntryInput => Boolean(row));
       const accessTier = isAccessTier(payload.accessTier) ? payload.accessTier : "free";
 
       if (rows.length === 0) {
-        res.status(400).send("Missing execution ledger entries.");
+        res.status(400).send("Missing valid execution ledger entries.");
         return;
       }
 

@@ -17,6 +17,8 @@ export interface NewsletterResult {
 
 const NOTION_VERSION = "2022-06-28";
 const DEFAULT_SUBSTACK_URL = "https://allowayai.substack.com";
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_FIELD_LENGTH = 300;
 
 function getHeader(headers: HeaderMap, name: string) {
   const value = headers[name];
@@ -41,18 +43,29 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#39;");
 }
 
-function normalizeText(value?: string) {
-  return value?.trim() || undefined;
+function normalizeText(value?: unknown, maxLength = MAX_FIELD_LENGTH) {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().replace(/\s+/g, " ");
+  return normalized ? normalized.slice(0, maxLength) : undefined;
+}
+
+function parseBody(body: unknown): Partial<SubscriberPayload> {
+  if (typeof body !== "string") {
+    return (body || {}) as Partial<SubscriberPayload>;
+  }
+
+  try {
+    return JSON.parse(body) as Partial<SubscriberPayload>;
+  } catch {
+    throw new Error("Invalid request body.");
+  }
 }
 
 export function parseSubscriberPayload(body: unknown, headers: HeaderMap): SubscriberPayload {
-  const raw =
-    typeof body === "string"
-      ? (JSON.parse(body) as SubscriberPayload)
-      : ((body || {}) as SubscriberPayload);
+  const raw = parseBody(body);
 
-  const email = raw.email?.trim().toLowerCase();
-  if (!email || !email.includes("@")) {
+  const email = normalizeText(raw.email, 254)?.toLowerCase();
+  if (!email || !EMAIL_PATTERN.test(email)) {
     throw new Error("Please enter a valid email address.");
   }
 
@@ -61,9 +74,9 @@ export function parseSubscriberPayload(body: unknown, headers: HeaderMap): Subsc
     name: normalizeText(raw.name),
     site: normalizeText(raw.site) || "unknown-site",
     source: normalizeText(raw.source) || "unknown-source",
-    pageUrl: normalizeText(raw.pageUrl),
-    referrer: normalizeText(raw.referrer),
-    userAgent: normalizeText(raw.userAgent) || getHeader(headers, "user-agent"),
+    pageUrl: normalizeText(raw.pageUrl, 500),
+    referrer: normalizeText(raw.referrer, 500),
+    userAgent: normalizeText(raw.userAgent, 500) || normalizeText(getHeader(headers, "user-agent"), 500),
   };
 }
 

@@ -16,6 +16,7 @@ type ResponseLike = {
 };
 
 const API_VERSION = "2026-03-25.dahlia";
+const LOCAL_ORIGIN = "http://localhost:5173";
 
 let stripeClient: Stripe | null = null;
 
@@ -35,12 +36,27 @@ function getStripeClient() {
 }
 
 function getHeader(headers: RequestLike["headers"], name: string) {
-  const value = headers[name];
+  const match = Object.entries(headers).find(([key]) => key.toLowerCase() === name.toLowerCase());
+  const value = match?.[1];
   return Array.isArray(value) ? value[0] : value;
 }
 
+function normalizeOrigin(value?: string) {
+  if (!value) return null;
+
+  try {
+    const origin = new URL(value);
+    if (origin.protocol !== "https:" && origin.protocol !== "http:") {
+      return null;
+    }
+    return origin.origin;
+  } catch {
+    return null;
+  }
+}
+
 function getOrigin(req: RequestLike) {
-  const configuredOrigin = process.env.PUBLIC_APP_URL;
+  const configuredOrigin = normalizeOrigin(process.env.PUBLIC_APP_URL);
   if (configuredOrigin) {
     return configuredOrigin;
   }
@@ -51,11 +67,12 @@ function getOrigin(req: RequestLike) {
     process.env.VERCEL_URL;
   const protocol = getHeader(req.headers, "x-forwarded-proto") || "https";
 
-  if (!host) {
-    return "http://localhost:5173";
-  }
+  if (!host) return LOCAL_ORIGIN;
 
-  return `${protocol}://${host}`;
+  const normalizedProtocol = protocol === "http" || protocol === "https" ? protocol : "https";
+  const candidate = normalizeOrigin(`${normalizedProtocol}://${host}`);
+
+  return candidate ?? LOCAL_ORIGIN;
 }
 
 function getPriceId(mode: CheckoutMode) {

@@ -27,6 +27,10 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unable to process newsletter signup.";
-    res.status(500).json({ message });
+    const status =
+      message === "Invalid request body." || message === "Please enter a valid email address."
+        ? 400
+        : 500;
+    res.status(status).json({ message });
   }
 }
