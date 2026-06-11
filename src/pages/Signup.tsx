@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
-import { getCurrentSiteUser, signUpSiteUser } from "@/lib/auth";
+import { getAuthChangeEventName, getCurrentSiteUser, signUpSiteUser, syncSiteUserSession } from "@/lib/auth";
 import { getAccessState, getCurrentCryptoAccount } from "@/lib/stripe";
 import { Check, Sparkles, UserPlus } from "lucide-react";
 import BrandedHeader from "@/components/BrandedHeader";
@@ -22,12 +22,19 @@ export default function Signup() {
   const cryptoAccount = getCurrentCryptoAccount();
 
   useEffect(() => {
-    const nextUser = getCurrentSiteUser();
-    setCurrentUser(nextUser);
+    const sync = () => {
+      const nextUser = getCurrentSiteUser();
+      setCurrentUser(nextUser);
+      return nextUser;
+    };
+    const nextUser = sync();
+    void syncSiteUserSession();
     if (cryptoAccount && !nextUser) {
       setEmail(cryptoAccount.email);
       setDisplayName(cryptoAccount.email.split("@")[0]);
     }
+    window.addEventListener(getAuthChangeEventName(), sync);
+    return () => window.removeEventListener(getAuthChangeEventName(), sync);
   }, [cryptoAccount]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {

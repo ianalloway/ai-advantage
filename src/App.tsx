@@ -5,6 +5,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Index from "./pages/Index";
 import { syncAccessFromUrl } from "./lib/stripe";
+import { syncSiteUserSession } from "./lib/auth";
 
 const DailyPicks = lazy(() => import("./pages/DailyPicks"));
 const Leaderboard = lazy(() => import("./pages/Leaderboard"));
@@ -15,6 +16,7 @@ const Signup = lazy(() => import("./pages/Signup"));
 function App() {
   useEffect(() => {
     void syncAccessFromUrl();
+    void syncSiteUserSession();
   }, []);
 
   return (
