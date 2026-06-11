@@ -44,7 +44,7 @@ const ACCOUNT_PREFIX = "ai-advantage:auth";
 const PASSWORD_ITERATIONS = 150_000;
 const PASSWORD_KEY_LENGTH = 32;
 const PASSWORD_DIGEST = "sha256";
-const STORE_READ_ATTEMPTS = 7;
+const STORE_READ_ATTEMPTS = 13;
 const STORE_READ_RETRY_MS = 500;
 
 let redisClient: Redis | null | undefined;
@@ -332,6 +332,19 @@ async function getEventually<T>(store: AuthStore, key: string) {
   return null;
 }
 
+async function getFirstEventually<T>(store: AuthStore, keys: string[]) {
+  for (let attempt = 0; attempt < STORE_READ_ATTEMPTS; attempt += 1) {
+    const values = await Promise.all(keys.map((key) => store.get<T>(key)));
+    const value = values.find((candidate): candidate is T => candidate !== null);
+    if (value !== undefined) return value;
+    if (attempt < STORE_READ_ATTEMPTS - 1) {
+      await wait(STORE_READ_RETRY_MS);
+    }
+  }
+
+  return null;
+}
+
 async function getCurrentUser(store: AuthStore, event: NetlifyEvent) {
   const token = getCookie(event.headers, COOKIE_NAME);
   if (!token) return null;
@@ -457,9 +470,7 @@ export const handler = async (event: NetlifyEvent) => {
 
     const normalizedEmail = normalizeEmail(login);
     const normalizedUsername = normalizeUsername(login);
-    const userId =
-      (await getEventually<string>(store, emailKey(normalizedEmail))) ??
-      (await getEventually<string>(store, usernameKey(normalizedUsername)));
+    const userId = await getFirstEventually<string>(store, [emailKey(normalizedEmail), usernameKey(normalizedUsername)]);
 
     if (!userId) {
       return response(404, { success: false, message: "We could not find an account with that email or username." });
