@@ -44,6 +44,8 @@ const ACCOUNT_PREFIX = "ai-advantage:auth";
 const PASSWORD_ITERATIONS = 150_000;
 const PASSWORD_KEY_LENGTH = 32;
 const PASSWORD_DIGEST = "sha256";
+const STORE_READ_ATTEMPTS = 7;
+const STORE_READ_RETRY_MS = 500;
 
 let redisClient: Redis | null | undefined;
 let localAuthData: Record<string, unknown> | null = null;
@@ -60,6 +62,10 @@ function response(statusCode: number, body: unknown, headers: Record<string, str
     },
     body: JSON.stringify(body),
   };
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function getRedis() {
@@ -314,11 +320,23 @@ async function verifyPassword(password: string, user: StoredSiteUser) {
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
+async function getEventually<T>(store: AuthStore, key: string) {
+  for (let attempt = 0; attempt < STORE_READ_ATTEMPTS; attempt += 1) {
+    const value = await store.get<T>(key);
+    if (value !== null) return value;
+    if (attempt < STORE_READ_ATTEMPTS - 1) {
+      await wait(STORE_READ_RETRY_MS);
+    }
+  }
+
+  return null;
+}
+
 async function getCurrentUser(store: AuthStore, event: NetlifyEvent) {
   const token = getCookie(event.headers, COOKIE_NAME);
   if (!token) return null;
 
-  const session = await store.get<string | SessionRecord>(sessionKey(token));
+  const session = await getEventually<string | SessionRecord>(store, sessionKey(token));
   const userId = typeof session === "string" ? session : session?.userId;
   if (!userId) return null;
   if (typeof session === "object" && new Date(session.expiresAt).getTime() <= Date.now()) {
@@ -326,7 +344,7 @@ async function getCurrentUser(store: AuthStore, event: NetlifyEvent) {
     return null;
   }
 
-  const user = await store.get<StoredSiteUser>(userKey(userId));
+  const user = await getEventually<StoredSiteUser>(store, userKey(userId));
   return user ? sanitizeUser(user) : null;
 }
 
@@ -340,6 +358,7 @@ async function createSession(store: AuthStore, userId: string) {
     } satisfies SessionRecord,
     { ex: SESSION_TTL_SECONDS },
   );
+  await getEventually<string | SessionRecord>(store, sessionKey(token));
   return token;
 }
 
@@ -415,6 +434,11 @@ export const handler = async (event: NetlifyEvent) => {
       store.set(emailKey(email), user.id),
       store.set(usernameKey(username), user.id),
     ]);
+    await Promise.all([
+      getEventually<StoredSiteUser>(store, userKey(user.id)),
+      getEventually<string>(store, emailKey(email)),
+      getEventually<string>(store, usernameKey(username)),
+    ]);
 
     const token = await createSession(store, user.id);
     return response(
@@ -434,14 +458,14 @@ export const handler = async (event: NetlifyEvent) => {
     const normalizedEmail = normalizeEmail(login);
     const normalizedUsername = normalizeUsername(login);
     const userId =
-      (await store.get<string>(emailKey(normalizedEmail))) ??
-      (await store.get<string>(usernameKey(normalizedUsername)));
+      (await getEventually<string>(store, emailKey(normalizedEmail))) ??
+      (await getEventually<string>(store, usernameKey(normalizedUsername)));
 
     if (!userId) {
       return response(404, { success: false, message: "We could not find an account with that email or username." });
     }
 
-    const user = await store.get<StoredSiteUser>(userKey(userId));
+    const user = await getEventually<StoredSiteUser>(store, userKey(userId));
     if (!user || !(await verifyPassword(password, user))) {
       return response(401, { success: false, message: "That password does not match this account." });
     }
