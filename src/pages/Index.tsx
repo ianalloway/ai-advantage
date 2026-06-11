@@ -67,11 +67,13 @@ import {
 import {
   FREE_FEATURES,
   PREMIUM_FEATURES,
+  getBillingStatus,
   getAccessChangeEventName,
   getAccessState,
   getCurrentCryptoAccount,
   redirectToCheckout,
   signOutAccessSession,
+  type BillingStatus,
 } from "@/lib/stripe";
 import CryptoPaymentModal, { type UnlockType } from "@/components/CryptoPaymentModal";
 import AccessSessionDialog from "@/components/AccessSessionDialog";
@@ -266,6 +268,7 @@ function Index() {
   const [access, setAccess] = useState(getAccessState());
   const [cryptoAccount, setCryptoAccount] = useState(getCurrentCryptoAccount());
   const [siteUser, setSiteUser] = useState<SiteUser | null>(getCurrentSiteUser());
+  const [billingStatus, setBillingStatus] = useState<BillingStatus | null>(null);
   const [showCryptoModal, setShowCryptoModal] = useState(false);
   const [showAccessDialog, setShowAccessDialog] = useState(false);
   const [cryptoUnlockType, setCryptoUnlockType] = useState<UnlockType>("big-game");
@@ -289,6 +292,22 @@ function Index() {
     return () => {
       window.removeEventListener(getAuthChangeEventName(), handleAccessChange);
       window.removeEventListener(getAccessChangeEventName(), handleAccessChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getBillingStatus()
+      .then((status) => {
+        if (!cancelled) setBillingStatus(status);
+      })
+      .catch(() => {
+        if (!cancelled) setBillingStatus(null);
+      });
+
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -1342,6 +1361,51 @@ The report will show:
                     <Bitcoin className="mr-2 h-4 w-4" />
                     Pay with crypto
                   </Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-xl border border-white/10 bg-slate-950/60 p-5">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-2 text-cyan-200">
+                    <Activity className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-white">Payment rail status</div>
+                    <div className="mt-1 text-sm text-slate-400">
+                      {billingStatus
+                        ? billingStatus.premiumCheckoutReady && billingStatus.oneTimeCheckoutReady
+                          ? "Stripe Checkout is ready for Pro Monthly and Event Pass."
+                          : billingStatus.stripeSecretConfigured
+                            ? "Card checkout is waiting on Stripe Price IDs in Netlify. Crypto unlock remains available."
+                            : "Card checkout is waiting on the Stripe secret key in Netlify. Crypto unlock remains available."
+                        : "Checking Stripe readiness from the backend."}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge
+                    className={
+                      billingStatus?.premiumCheckoutReady
+                        ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-100"
+                        : "border-amber-300/30 bg-amber-300/10 text-amber-100"
+                    }
+                  >
+                    Pro {billingStatus?.premiumCheckoutReady ? "ready" : "pending"}
+                  </Badge>
+                  <Badge
+                    className={
+                      billingStatus?.oneTimeCheckoutReady
+                        ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-100"
+                        : "border-amber-300/30 bg-amber-300/10 text-amber-100"
+                    }
+                  >
+                    Event {billingStatus?.oneTimeCheckoutReady ? "ready" : "pending"}
+                  </Badge>
+                  {billingStatus?.automaticTaxEnabled ? (
+                    <Badge className="border-cyan-300/30 bg-cyan-300/10 text-cyan-100">Tax enabled</Badge>
+                  ) : null}
                 </div>
               </div>
             </div>
