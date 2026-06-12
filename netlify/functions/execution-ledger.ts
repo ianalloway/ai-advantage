@@ -70,7 +70,7 @@ function getLedgerStore(event: NetlifyEvent): LedgerStore | null {
         headers: normalizeLambdaHeaders(event.headers),
       });
 
-      const store = getStore({ name: "ai-advantage-ledger", consistency: "strong" });
+      const store = getStore("ai-advantage-ledger");
       return {
         async get() {
           const value = (await store.get(LEDGER_KEY, { type: "json" })) as unknown;

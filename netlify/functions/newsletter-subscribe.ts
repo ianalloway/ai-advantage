@@ -100,7 +100,7 @@ export const handler = async (event: NetlifyEvent) => {
         headers: normalizeLambdaHeaders(event.headers),
       });
 
-      const store = getStore({ name: "ai-advantage-newsletter", consistency: "strong" });
+      const store = getStore("ai-advantage-newsletter");
       await store.setJSON(`subscriber:${email}`, record);
 
       return response(200, {

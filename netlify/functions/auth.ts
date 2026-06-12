@@ -44,7 +44,7 @@ const ACCOUNT_PREFIX = "ai-advantage:auth";
 const PASSWORD_ITERATIONS = 150_000;
 const PASSWORD_KEY_LENGTH = 32;
 const PASSWORD_DIGEST = "sha256";
-const STORE_READ_ATTEMPTS = 3;
+const STORE_READ_ATTEMPTS = 8;
 const STORE_READ_RETRY_MS = 250;
 const LOCAL_AUTH_SECRET = "ai-advantage-local-development-auth-secret";
 
@@ -149,7 +149,7 @@ function getAuthStore(event: NetlifyEvent): AuthStore | null {
         headers: normalizeLambdaHeaders(event.headers),
       });
 
-      const store = getStore({ name: "ai-advantage-auth", consistency: "strong" });
+      const store = getStore("ai-advantage-auth");
       return {
         async get<T>(key: string) {
           return (await store.get(key, { type: "json" })) as T | null;
