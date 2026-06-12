@@ -44,8 +44,8 @@ const ACCOUNT_PREFIX = "ai-advantage:auth";
 const PASSWORD_ITERATIONS = 150_000;
 const PASSWORD_KEY_LENGTH = 32;
 const PASSWORD_DIGEST = "sha256";
-const STORE_READ_ATTEMPTS = 13;
-const STORE_READ_RETRY_MS = 500;
+const STORE_READ_ATTEMPTS = 3;
+const STORE_READ_RETRY_MS = 250;
 const LOCAL_AUTH_SECRET = "ai-advantage-local-development-auth-secret";
 
 let redisClient: Redis | null | undefined;
@@ -149,7 +149,7 @@ function getAuthStore(event: NetlifyEvent): AuthStore | null {
         headers: normalizeLambdaHeaders(event.headers),
       });
 
-      const store = getStore("ai-advantage-auth");
+      const store = getStore({ name: "ai-advantage-auth", consistency: "strong" });
       return {
         async get<T>(key: string) {
           return (await store.get(key, { type: "json" })) as T | null;
@@ -352,15 +352,15 @@ async function getCurrentUser(store: AuthStore, event: NetlifyEvent) {
   const token = getCookie(event.headers, COOKIE_NAME);
   if (!token) return null;
 
-  const session = await getEventually<string | SessionRecord>(store, sessionKey(token));
+  const session = await store.get<string | SessionRecord>(sessionKey(token));
   const userId = typeof session === "string" ? session : session?.userId;
   if (!userId) return null;
-  if (typeof session === "object" && new Date(session.expiresAt).getTime() <= Date.now()) {
+  if (typeof session === "object" && session !== null && new Date(session.expiresAt).getTime() <= Date.now()) {
     await store.delete(sessionKey(token));
     return null;
   }
 
-  const user = await getEventually<StoredSiteUser>(store, userKey(userId));
+  const user = await store.get<StoredSiteUser>(userKey(userId));
   return user ? sanitizeUser(user) : null;
 }
 
