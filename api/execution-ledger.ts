@@ -1,9 +1,11 @@
 import { Redis } from "@upstash/redis";
+import { timingSafeEqual } from "node:crypto";
 
 type RequestLike = {
   method?: string;
   body?: unknown;
   query?: Record<string, string | string[] | undefined>;
+  headers?: Record<string, string | string[] | undefined>;
 };
 
 type ResponseLike = {
@@ -37,6 +39,36 @@ interface HistoricalExecutionLedgerEntry extends ExecutionLedgerEntryInput {
 
 const LEDGER_KEY = process.env.EXECUTION_LEDGER_KEY || "ai-advantage:execution-ledger";
 const MAX_ROWS = 500;
+
+function getHeader(headers: RequestLike["headers"], name: string) {
+  if (!headers) return undefined;
+  const direct = headers[name];
+  const lower = headers[name.toLowerCase()];
+  const value = direct ?? lower;
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function safeTokenEquals(actual: string, expected: string) {
+  const actualBuffer = Buffer.from(actual);
+  const expectedBuffer = Buffer.from(expected);
+  return (
+    actualBuffer.length === expectedBuffer.length &&
+    timingSafeEqual(actualBuffer, expectedBuffer)
+  );
+}
+
+function isWriteAuthorized(req: RequestLike) {
+  const expectedToken = process.env.EXECUTION_LEDGER_WRITE_TOKEN;
+  if (!expectedToken) {
+    return false;
+  }
+
+  const authHeader = getHeader(req.headers, "authorization");
+  const bearerToken = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1];
+  const token = bearerToken ?? getHeader(req.headers, "x-execution-ledger-token");
+
+  return Boolean(token && safeTokenEquals(token, expectedToken));
+}
 
 function getRedis() {
   if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
@@ -140,6 +172,11 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   }
 
   if (req.method === "POST") {
+    if (!isWriteAuthorized(req)) {
+      res.status(403).send("Shared execution ledger writes require a server-side write token.");
+      return;
+    }
+
     try {
       const payload =
         req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
