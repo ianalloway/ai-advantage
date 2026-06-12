@@ -56,8 +56,7 @@ export default function AccessSessionDialog({
     if (!open) return;
     setAccess(getAccessState());
     setCurrentAccount(getCurrentCryptoAccount());
-    onSessionChange?.();
-  }, [open, onSessionChange]);
+  }, [open]);
 
   const handleSignIn = async () => {
     setIsSubmitting(true);
