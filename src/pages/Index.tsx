@@ -19,6 +19,7 @@ import {
   Crown,
   DollarSign,
   Flame,
+  GitBranch,
   LineChart as LineChartIcon,
   Loader2,
   LogOut,
@@ -66,11 +67,13 @@ import {
 import {
   FREE_FEATURES,
   PREMIUM_FEATURES,
+  getBillingStatus,
   getAccessChangeEventName,
   getAccessState,
   getCurrentCryptoAccount,
   redirectToCheckout,
   signOutAccessSession,
+  type BillingStatus,
 } from "@/lib/stripe";
 import CryptoPaymentModal, { type UnlockType } from "@/components/CryptoPaymentModal";
 import AccessSessionDialog from "@/components/AccessSessionDialog";
@@ -78,42 +81,6 @@ import SubstackEmbed from "@/components/SubstackEmbed";
 import { createExecutionBoardEntry } from "@/lib/executionBoard";
 
 const ETH_DONATION_ADDRESS = "0x6f278ce76ba5ed31fd9be646d074863e126836e9";
-
-const demoRows = [
-  {
-    id: "demo-1",
-    sportLabel: "NBA",
-    eventLabel: "Celtics @ Knicks",
-    recommendedSide: "Boston ML",
-    line: "-118",
-    model: "58.6%",
-    edge: "+4.8%",
-    stake: "$72",
-    status: "CLV watch",
-  },
-  {
-    id: "demo-2",
-    sportLabel: "NFL",
-    eventLabel: "Bills @ Chiefs",
-    recommendedSide: "Buffalo +2.5",
-    line: "-108",
-    model: "54.1%",
-    edge: "+3.6%",
-    stake: "$44",
-    status: "Steam early",
-  },
-  {
-    id: "demo-3",
-    sportLabel: "MLB",
-    eventLabel: "Dodgers @ Padres",
-    recommendedSide: "Under 8.5",
-    line: "-105",
-    model: "56.8%",
-    edge: "+4.1%",
-    stake: "$51",
-    status: "Hold price",
-  },
-];
 
 const productProof = [
   {
@@ -135,6 +102,58 @@ const workflowSteps = [
   "Compare model probability to implied odds.",
   "Discount signals for timing, stale prices, and volatility.",
   "Track outcomes against CLV and proof history.",
+];
+
+function getDefaultSport(): Sport {
+  const month = new Date().getMonth();
+  if (month >= 2 && month <= 9) return "mlb";
+  if (month >= 8 || month <= 1) return "nfl";
+  return "nba";
+}
+
+const sportsStackRepos = [
+  {
+    name: "sports-betting-ml",
+    href: "https://github.com/ianalloway/sports-betting-ml",
+    role: "Model pipeline",
+    status: "Active",
+    description: "Training, feature engineering, and model-serving demos for the sports prediction layer.",
+  },
+  {
+    name: "kelly-js",
+    href: "https://github.com/ianalloway/kelly-js",
+    role: "Sizing library",
+    status: "Active",
+    description: "TypeScript Kelly, CLV, bankroll, and odds-conversion utilities.",
+  },
+  {
+    name: "nba-ratings",
+    href: "https://github.com/ianalloway/nba-ratings",
+    role: "Ratings core",
+    status: "Active",
+    description: "Elo, logistic win probability, and Kelly helpers for NBA-style models.",
+  },
+  {
+    name: "nba-clv-dashboard",
+    href: "https://github.com/ianalloway/nba-clv-dashboard",
+    role: "Analytics archive",
+    status: "Archived",
+    description: "Calibration, rolling accuracy, and CLV dashboard reference implementation.",
+  },
+  {
+    name: "backtest-report-gen",
+    href: "https://github.com/ianalloway/backtest-report-gen",
+    role: "Report archive",
+    status: "Archived",
+    description: "Static HTML evaluation reports for calibration, Brier score, CLV, and bet ledgers.",
+  },
+  {
+    name: "metric-regression-gate",
+    href: "https://github.com/ianalloway/metric-regression-gate",
+    role: "CI archive",
+    status: "Archived",
+    description: "A GitHub Action pattern for blocking metric regressions against a baseline.",
+  },
 ];
 
 function SectionHeader({
@@ -242,13 +261,14 @@ function Index() {
   const [bankroll, setBankroll] = useState(1000);
   const [minEdge, setMinEdge] = useState(3);
   const [kellyFraction, setKellyFraction] = useState(0.25);
-  const [selectedSport, setSelectedSport] = useState<Sport>("nba");
+  const [selectedSport, setSelectedSport] = useState<Sport>(() => getDefaultSport());
   const [backtestSummary, setBacktestSummary] = useState<BacktestSummary | null>(null);
   const [isBacktesting, setIsBacktesting] = useState(false);
   const [performanceData, setPerformanceData] = useState<PerformanceData | null>(null);
   const [access, setAccess] = useState(getAccessState());
   const [cryptoAccount, setCryptoAccount] = useState(getCurrentCryptoAccount());
   const [siteUser, setSiteUser] = useState<SiteUser | null>(getCurrentSiteUser());
+  const [billingStatus, setBillingStatus] = useState<BillingStatus | null>(null);
   const [showCryptoModal, setShowCryptoModal] = useState(false);
   const [showAccessDialog, setShowAccessDialog] = useState(false);
   const [cryptoUnlockType, setCryptoUnlockType] = useState<UnlockType>("big-game");
@@ -272,6 +292,22 @@ function Index() {
     return () => {
       window.removeEventListener(getAuthChangeEventName(), handleAccessChange);
       window.removeEventListener(getAccessChangeEventName(), handleAccessChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getBillingStatus()
+      .then((status) => {
+        if (!cancelled) setBillingStatus(status);
+      })
+      .catch(() => {
+        if (!cancelled) setBillingStatus(null);
+      });
+
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -353,12 +389,12 @@ function Index() {
         line: entry.summary.line,
         model: entry.summary.model,
         edge: entry.summary.execution,
-        stake: entry.summary.stake,
+        stake: formatMoney(entry.suggestedStake),
         status: entry.executionWindow,
       }));
     }
 
-    return demoRows;
+    return [];
   }, [topExecutionEntries]);
 
   const liveCount = liveGames.filter((game) => game.status.state === "in").length;
@@ -371,9 +407,10 @@ function Index() {
   const chartData = useMemo(() => {
     const source = performanceData?.weeklyData?.slice(-8);
     if (source?.length) {
+      let cumulativeBankroll = 1000;
       return source.map((row, index) => ({
         name: row.week || `W${index + 1}`,
-        value: Number((row.bankroll ?? 1000) / 10),
+        value: Number(((cumulativeBankroll += row.profit / 100) / 10).toFixed(2)),
       }));
     }
 
@@ -531,6 +568,9 @@ Bet responsibly. This is model output, not a guarantee.`);
             <a href="#model-lab" className="transition-colors hover:text-white">
               Model
             </a>
+            <a href="#sports-stack" className="transition-colors hover:text-white">
+              Stack
+            </a>
             <a href="#pricing" className="transition-colors hover:text-white">
               Pricing
             </a>
@@ -648,7 +688,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                 <StatTile
                   label="Posted lines"
                   value={String(postedLineCount)}
-                  detail="Current ESPN market rows on desk"
+                  detail="Current market rows on desk"
                   accent="text-cyan-200"
                 />
                 <StatTile
@@ -698,24 +738,32 @@ Bet responsibly. This is model output, not a guarantee.`);
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/8">
-                    {boardPreviewRows.map((row) => (
-                      <tr key={row.id} className="transition-colors hover:bg-white/[0.035]">
-                        <td className="px-5 py-4">
-                          <div className="font-medium text-white">{row.eventLabel}</div>
-                          <div className="mt-1 text-xs text-slate-500">{row.sportLabel}</div>
-                        </td>
-                        <td className="px-5 py-4 text-slate-200">{row.recommendedSide}</td>
-                        <td className="px-5 py-4 font-mono text-cyan-200">{row.line}</td>
-                        <td className="px-5 py-4 text-slate-300">{row.model}</td>
-                        <td className="px-5 py-4 font-semibold text-emerald-300">{row.edge}</td>
-                        <td className="px-5 py-4 text-slate-300">{row.stake}</td>
-                        <td className="px-5 py-4">
-                          <span className="rounded-md border border-amber-300/20 bg-amber-300/10 px-2.5 py-1 text-xs text-amber-100">
-                            {row.status}
-                          </span>
+                    {boardPreviewRows.length ? (
+                      boardPreviewRows.map((row) => (
+                        <tr key={row.id} className="transition-colors hover:bg-white/[0.035]">
+                          <td className="px-5 py-4">
+                            <div className="font-medium text-white">{row.eventLabel}</div>
+                            <div className="mt-1 text-xs text-slate-500">{row.sportLabel}</div>
+                          </td>
+                          <td className="px-5 py-4 text-slate-200">{row.recommendedSide}</td>
+                          <td className="px-5 py-4 font-mono text-cyan-200">{row.line}</td>
+                          <td className="px-5 py-4 text-slate-300">{row.model}</td>
+                          <td className="px-5 py-4 font-semibold text-emerald-300">{row.edge}</td>
+                          <td className="px-5 py-4 text-slate-300">{row.stake}</td>
+                          <td className="px-5 py-4">
+                            <span className="rounded-md border border-amber-300/20 bg-amber-300/10 px-2.5 py-1 text-xs text-amber-100">
+                              {row.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={7} className="px-5 py-10 text-center text-sm leading-6 text-slate-500">
+                          No execution-qualified entries on the current {selectedSport.toUpperCase()} board. The desk is passing instead of inventing a signal.
                         </td>
                       </tr>
-                    ))}
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1074,6 +1122,55 @@ Bet responsibly. This is model output, not a guarantee.`);
           </div>
         </section>
 
+        <section id="sports-stack" className="border-b border-white/10 px-5 py-16">
+          <div className="mx-auto max-w-7xl">
+            <SectionHeader
+              eyebrow="Sports Stack"
+              title="The repo ecosystem is labeled honestly."
+              description="The live product points to the active model and Kelly repos first, with older analytics tools marked as archives instead of pretending every support repo is production-live."
+            />
+
+            <div className="mt-8 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {sportsStackRepos.map((repo) => (
+                <a
+                  key={repo.name}
+                  href={repo.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="group rounded-xl border border-white/10 bg-white/[0.035] p-5 transition-colors hover:border-cyan-300/30 hover:bg-white/[0.055]"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/10 bg-slate-950/70 text-slate-300 group-hover:text-cyan-200">
+                        <GitBranch className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="truncate text-base font-semibold text-white">{repo.name}</div>
+                        <div className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-500">{repo.role}</div>
+                      </div>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={
+                        repo.status === "Active"
+                          ? "border-emerald-300/25 bg-emerald-300/10 text-emerald-200"
+                          : "border-amber-300/25 bg-amber-300/10 text-amber-100"
+                      }
+                    >
+                      {repo.status}
+                    </Badge>
+                  </div>
+                  <p className="mt-4 text-sm leading-6 text-slate-400">{repo.description}</p>
+                  <div className="mt-5 inline-flex items-center text-sm font-semibold text-cyan-200">
+                    Open repo
+                    <ChevronRight className="ml-1 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                  </div>
+                </a>
+              ))}
+            </div>
+          </div>
+        </section>
+
         <section id="model-lab" className="border-b border-white/10 px-5 py-16">
           <div className="mx-auto max-w-7xl">
             <SectionHeader
@@ -1264,6 +1361,51 @@ The report will show:
                     <Bitcoin className="mr-2 h-4 w-4" />
                     Pay with crypto
                   </Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-xl border border-white/10 bg-slate-950/60 p-5">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-2 text-cyan-200">
+                    <Activity className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-white">Payment rail status</div>
+                    <div className="mt-1 text-sm text-slate-400">
+                      {billingStatus
+                        ? billingStatus.premiumCheckoutReady && billingStatus.oneTimeCheckoutReady
+                          ? "Stripe Checkout is ready for Pro Monthly and Event Pass."
+                          : billingStatus.stripeSecretConfigured
+                            ? "Card checkout is waiting on Stripe Price IDs in Netlify. Crypto unlock remains available."
+                            : "Card checkout is waiting on the Stripe secret key in Netlify. Crypto unlock remains available."
+                        : "Checking Stripe readiness from the backend."}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge
+                    className={
+                      billingStatus?.premiumCheckoutReady
+                        ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-100"
+                        : "border-amber-300/30 bg-amber-300/10 text-amber-100"
+                    }
+                  >
+                    Pro {billingStatus?.premiumCheckoutReady ? "ready" : "pending"}
+                  </Badge>
+                  <Badge
+                    className={
+                      billingStatus?.oneTimeCheckoutReady
+                        ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-100"
+                        : "border-amber-300/30 bg-amber-300/10 text-amber-100"
+                    }
+                  >
+                    Event {billingStatus?.oneTimeCheckoutReady ? "ready" : "pending"}
+                  </Badge>
+                  {billingStatus?.automaticTaxEnabled ? (
+                    <Badge className="border-cyan-300/30 bg-cyan-300/10 text-cyan-100">Tax enabled</Badge>
+                  ) : null}
                 </div>
               </div>
             </div>

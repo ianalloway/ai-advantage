@@ -1,0 +1,24 @@
+{
+  "name": "AI Advantage Sports",
+  "short_name": "AI Advantage",
+  "description": "Execution-first sports betting intelligence with live lines, model edge, Kelly sizing, and proof-led analysis.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "64x64",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/og-image.png",
+      "sizes": "1200x630",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

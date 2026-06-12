@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
-import { getCurrentSiteUser, signInSiteUser } from "@/lib/auth";
+import { getAuthChangeEventName, getCurrentSiteUser, signInSiteUser, syncSiteUserSession } from "@/lib/auth";
 import { getAccessState, getCurrentCryptoAccount } from "@/lib/stripe";
 import { KeyRound, LockOpen, UserCircle2 } from "lucide-react";
 import BrandedHeader from "@/components/BrandedHeader";
@@ -20,7 +20,11 @@ export default function Login() {
   const cryptoAccount = getCurrentCryptoAccount();
 
   useEffect(() => {
-    setCurrentUser(getCurrentSiteUser());
+    const sync = () => setCurrentUser(getCurrentSiteUser());
+    sync();
+    void syncSiteUserSession();
+    window.addEventListener(getAuthChangeEventName(), sync);
+    return () => window.removeEventListener(getAuthChangeEventName(), sync);
   }, []);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {

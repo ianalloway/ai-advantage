@@ -1,3 +1,5 @@
+import { getCurrentSiteUser } from "@/lib/auth";
+
 export type AccessTier = "free" | "event" | "premium";
 export type AccessSource = "stripe" | "crypto" | "legacy" | "manual";
 export type AccessFeature =
@@ -30,12 +32,32 @@ type CheckoutMode = "premium" | "one-time";
 
 interface CheckoutSessionResponse {
   url?: string;
+  id?: string;
+  mode?: "payment" | "subscription";
 }
 
 interface CheckoutSessionStatusResponse {
   paid: boolean;
   mode: "payment" | "subscription";
+  status?: string | null;
+  paymentStatus?: string | null;
   customerEmail?: string | null;
+  customerId?: string | null;
+}
+
+interface ApiErrorResponse {
+  message?: string;
+  code?: string;
+  missing?: string;
+}
+
+export interface BillingStatus {
+  stripeSecretConfigured: boolean;
+  premiumPriceConfigured: boolean;
+  oneTimePriceConfigured: boolean;
+  premiumCheckoutReady: boolean;
+  oneTimeCheckoutReady: boolean;
+  automaticTaxEnabled: boolean;
 }
 
 const STORAGE_KEY = "ai_advantage_access_v2";
@@ -154,7 +176,35 @@ function buildAccessLabel(mode: CheckoutSessionStatusResponse["mode"]): AccessSt
   };
 }
 
+async function readApiError(response: Response, fallback: string): Promise<string> {
+  const contentType = response.headers.get("content-type") ?? "";
+
+  if (contentType.includes("application/json")) {
+    try {
+      const payload = (await response.json()) as ApiErrorResponse;
+      return payload.message || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  const message = await response.text();
+  return message || fallback;
+}
+
+function isConfiguredPaymentLink(url: string): boolean {
+  if (!url || /your_|placeholder/i.test(url)) return false;
+
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === "buy.stripe.com";
+  } catch {
+    return false;
+  }
+}
+
 async function createCheckoutSession(type: CheckoutMode): Promise<string> {
+  const siteUser = getCurrentSiteUser();
   const response = await fetch("/api/create-checkout-session", {
     method: "POST",
     headers: {
@@ -162,11 +212,13 @@ async function createCheckoutSession(type: CheckoutMode): Promise<string> {
     },
     body: JSON.stringify({
       mode: type,
+      customerEmail: siteUser?.email,
+      clientReferenceId: siteUser?.id,
     }),
   });
 
   if (!response.ok) {
-    const message = await response.text();
+    const message = await readApiError(response, "Unable to start Stripe checkout.");
     throw new Error(message || "Unable to start Stripe checkout.");
   }
 
@@ -182,7 +234,7 @@ async function verifyCheckoutSession(sessionId: string): Promise<CheckoutSession
   const response = await fetch(`/api/checkout-session?session_id=${encodeURIComponent(sessionId)}`);
 
   if (!response.ok) {
-    const message = await response.text();
+    const message = await readApiError(response, "Unable to verify Stripe checkout.");
     throw new Error(message || "Unable to verify Stripe checkout.");
   }
 
@@ -389,7 +441,23 @@ export async function syncAccessFromUrl(): Promise<AccessState | null> {
 }
 
 export function getCheckoutUrl(type: CheckoutMode = "premium"): string {
-  return type === "premium" ? MONTHLY_PAYMENT_LINK : ONE_TIME_PAYMENT_LINK;
+  const url = type === "premium" ? MONTHLY_PAYMENT_LINK : ONE_TIME_PAYMENT_LINK;
+  return isConfiguredPaymentLink(url) ? url : "";
+}
+
+export async function getBillingStatus(): Promise<BillingStatus> {
+  const response = await fetch("/api/billing-status", {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    const message = await readApiError(response, "Unable to load billing status.");
+    throw new Error(message);
+  }
+
+  return (await response.json()) as BillingStatus;
 }
 
 export const redirectToCheckout = async (type: CheckoutMode = "premium"): Promise<void> => {

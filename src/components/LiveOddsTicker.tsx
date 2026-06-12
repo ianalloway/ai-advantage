@@ -116,6 +116,14 @@ export default function LiveOddsTicker({ speed = 40, pauseOnHover = true }: Live
         </span>
       </div>
 
+      <div className="sr-only" aria-live="polite">
+        {hasError
+          ? "Live market feed unavailable"
+          : updatedAt
+            ? `Live market feed updated at ${updatedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+            : "Live market feed syncing"}
+      </div>
+
       {hasError ? (
         <div className="flex items-center justify-center gap-2 px-4 py-3 text-xs text-zinc-500">
           <AlertCircle className="h-3.5 w-3.5" />
@@ -125,7 +133,7 @@ export default function LiveOddsTicker({ speed = 40, pauseOnHover = true }: Live
         <div className="px-4 py-3 text-xs text-zinc-500">No current lines available right now.</div>
       ) : (
         <div
-          className="flex py-2.5"
+          className="live-odds-ticker-track flex py-2.5"
           style={{
             animation: `ticker-scroll ${duration}s linear infinite`,
             animationPlayState: paused ? "paused" : "running",
@@ -144,6 +152,12 @@ export default function LiveOddsTicker({ speed = 40, pauseOnHover = true }: Live
         @keyframes ticker-scroll {
           0% { transform: translateX(0); }
           100% { transform: translateX(-50%); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .live-odds-ticker-track {
+            animation: none !important;
+            transform: none !important;
+          }
         }
       `}</style>
     </div>

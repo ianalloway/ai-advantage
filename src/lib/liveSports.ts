@@ -36,6 +36,7 @@ export interface LiveMarketGame {
   awayScore?: number;
   broadcast?: string;
   bookmaker?: string;
+  marketSource?: "odds-api" | "espn-fallback";
   odds: null | {
     homeMoneyline: number;
     awayMoneyline: number;
@@ -150,6 +151,10 @@ function parseNumber(value: unknown): number | undefined {
   return undefined;
 }
 
+function validMoneyline(value: number | undefined): value is number {
+  return value !== undefined && value !== 0 && Math.abs(value) >= 100 && Math.abs(value) <= 100000;
+}
+
 function formatTipoff(date: string, statusState: "pre" | "in" | "post"): string {
   const parsed = new Date(date);
 
@@ -205,7 +210,7 @@ function parseOdds(summary: SummaryResponse | null) {
     parseNumber(oddsCollection?.moneyline?.away?.live?.odds) ??
     parseNumber(oddsCollection?.moneyline?.away?.close?.odds);
 
-  if (homeMoneyline === undefined || awayMoneyline === undefined) {
+  if (!validMoneyline(homeMoneyline) || !validMoneyline(awayMoneyline)) {
     return null;
   }
 
@@ -267,6 +272,7 @@ function toLiveMarketGame(event: EspnScoreboardEvent, sport: Sport, summary: Sum
     awayScore: parseNumber(away.score),
     broadcast: nationalBroadcast ?? localBroadcast,
     bookmaker: parsedOdds?.bookmaker,
+    marketSource: parsedOdds ? "espn-fallback" : undefined,
     odds: parsedOdds
       ? {
           homeMoneyline: parsedOdds.homeMoneyline,
@@ -284,7 +290,7 @@ function toLiveMarketGame(event: EspnScoreboardEvent, sport: Sport, summary: Sum
   };
 }
 
-export async function fetchLiveGamesForSport(sport: Sport, date = new Date()): Promise<LiveMarketGame[]> {
+async function fetchEspnLiveGamesForSport(sport: Sport, date = new Date()): Promise<LiveMarketGame[]> {
   const path = ESPN_PATHS[sport];
   const dateKey = toDateKey(date);
   const scoreboardUrl = `https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard?dates=${dateKey}`;
@@ -310,7 +316,35 @@ export async function fetchLiveGamesForSport(sport: Sport, date = new Date()): P
     });
 }
 
+export async function fetchLiveGamesForSport(sport: Sport, date = new Date()): Promise<LiveMarketGame[]> {
+  return fetchLiveGamesForSports([sport], date);
+}
+
 export async function fetchLiveGamesForSports(sports: Sport[], date = new Date()): Promise<LiveMarketGame[]> {
-  const slates = await Promise.allSettled(sports.map((sport) => fetchLiveGamesForSport(sport, date)));
+  const dateKey = toDateKey(date);
+  const params = new URLSearchParams({
+    sports: sports.join(","),
+    date: dateKey,
+  });
+
+  try {
+    const response = await fetch(`/api/sports-lines?${params.toString()}`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(9000),
+    });
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!response.ok || !contentType.includes("application/json")) {
+      throw new Error(`Sports lines API returned ${response.status}.`);
+    }
+
+    const payload = (await response.json()) as { games?: LiveMarketGame[] };
+    if (Array.isArray(payload.games)) {
+      return payload.games;
+    }
+  } catch {
+    // Keep local Vite development useful when Netlify functions are not running.
+  }
+
+  const slates = await Promise.allSettled(sports.map((sport) => fetchEspnLiveGamesForSport(sport, date)));
   return slates.flatMap((slate) => (slate.status === "fulfilled" ? slate.value : []));
 }

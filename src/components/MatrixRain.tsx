@@ -55,7 +55,7 @@ const MatrixRain = () => {
       }
     };
 
-    const interval = setInterval(draw, 33);
+    const interval = setInterval(draw, 50);
 
     return () => {
       clearInterval(interval);
@@ -66,7 +66,7 @@ const MatrixRain = () => {
   return (
     <canvas
       ref={canvasRef}
-      className="fixed inset-0 z-0 pointer-events-none opacity-20"
+      className="fixed inset-0 z-0 pointer-events-none opacity-[0.06]"
       style={{
         background: 'transparent',
       }}

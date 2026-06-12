@@ -355,7 +355,7 @@ export default function DailyPicks() {
               Actual games. Actual lines. No made-up Tuesday-night masterpiece.
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-400 sm:text-lg">
-              This board refreshes from the current ESPN slate and market data, then overlays your model lean, edge, and bankroll sizing where a real line exists.
+              This board refreshes from the backend market feed, merges live scoreboard context, and overlays your model lean, edge, and bankroll sizing where a real line exists.
             </p>
           </div>
 
