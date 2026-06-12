@@ -233,12 +233,10 @@ export async function syncSiteUserSession(): Promise<SiteUser | null> {
     emitAuthChange();
     return user;
   } catch (error) {
-    if (!shouldUseLegacyFallback(error)) {
-      setCachedUser(null);
-      localStorage.removeItem(SESSION_STORAGE_KEY);
-      emitAuthChange();
-    }
+    if (shouldUseLegacyFallback(error)) return getCachedUser();
 
+    // A failed `/me` request is not an authoritative logout. Keep the last
+    // known user until the backend returns a real `user: null` response.
     return getCachedUser();
   }
 }

@@ -46,6 +46,7 @@ const PASSWORD_KEY_LENGTH = 32;
 const PASSWORD_DIGEST = "sha256";
 const STORE_READ_ATTEMPTS = 13;
 const STORE_READ_RETRY_MS = 500;
+const LOCAL_AUTH_SECRET = "ai-advantage-local-development-auth-secret";
 
 let redisClient: Redis | null | undefined;
 let localAuthData: Record<string, unknown> | null = null;
@@ -294,17 +295,19 @@ function validationError(input: { email: string; username: string; password: str
 }
 
 function getAuthSecret() {
-  return (
-    process.env.AUTH_SECRET ||
-    process.env.SESSION_SECRET ||
-    process.env.UPSTASH_REDIS_REST_TOKEN ||
-    "ai-advantage-local-development-auth-secret"
-  );
+  const secret = process.env.AUTH_SECRET || process.env.SESSION_SECRET || process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (secret) return secret;
+  return canUseLocalAuthStore() ? LOCAL_AUTH_SECRET : null;
 }
 
 async function hashPassword(password: string, salt: string) {
+  const secret = getAuthSecret();
+  if (!secret) {
+    throw new Error("AUTH_SECRET or SESSION_SECRET must be configured for production auth.");
+  }
+
   const derived = await pbkdf2(
-    `${password}:${getAuthSecret()}`,
+    `${password}:${secret}`,
     salt,
     PASSWORD_ITERATIONS,
     PASSWORD_KEY_LENGTH,
@@ -411,6 +414,13 @@ export const handler = async (event: NetlifyEvent) => {
   const body = parseBody(event);
 
   if (route === "signup") {
+    if (!getAuthSecret()) {
+      return response(503, {
+        success: false,
+        message: "Account backend secret is not configured. Add AUTH_SECRET or SESSION_SECRET.",
+      });
+    }
+
     const email = normalizeEmail(String(body.email ?? ""));
     const username = normalizeUsername(String(body.username ?? ""));
     const displayName = String(body.displayName ?? "").trim() || username;
@@ -462,6 +472,13 @@ export const handler = async (event: NetlifyEvent) => {
   }
 
   if (route === "login") {
+    if (!getAuthSecret()) {
+      return response(503, {
+        success: false,
+        message: "Account backend secret is not configured. Add AUTH_SECRET or SESSION_SECRET.",
+      });
+    }
+
     const login = String(body.login ?? "").trim();
     const password = String(body.password ?? "").trim();
     if (!login || !password) {
