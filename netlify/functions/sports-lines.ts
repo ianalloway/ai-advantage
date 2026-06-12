@@ -208,15 +208,35 @@ function validMoneyline(value: number | undefined): value is number {
   return value !== undefined && value !== 0 && Math.abs(value) >= 100 && Math.abs(value) <= 100000;
 }
 
+function easternDayKey(date: Date) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .format(date)
+    .replaceAll("-", "");
+}
+
 function formatTipoff(date: string, statusState: "pre" | "in" | "post"): string {
   const parsed = new Date(date);
 
   if (statusState === "pre") {
-    return parsed.toLocaleTimeString("en-US", {
+    const time = parsed.toLocaleTimeString("en-US", {
       hour: "numeric",
       minute: "2-digit",
       timeZone: "America/New_York",
     });
+    if (easternDayKey(parsed) !== easternDayKey(new Date())) {
+      const day = parsed.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        timeZone: "America/New_York",
+      });
+      return `${day}, ${time}`;
+    }
+    return time;
   }
 
   return parsed.toLocaleDateString("en-US", {
@@ -243,6 +263,35 @@ async function fetchEspnScoreboard(sport: Sport, dateKey: string) {
   return data.events ?? [];
 }
 
+function addDaysToDateKey(dateKey: string, days: number) {
+  const year = Number(dateKey.slice(0, 4));
+  const month = Number(dateKey.slice(4, 6));
+  const day = Number(dateKey.slice(6, 8));
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, "0")}${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+const UPCOMING_LOOKAHEAD_DAYS = 7;
+const UPCOMING_GAME_LIMIT = 8;
+
+// Off-days (NBA Finals rest days, NFL offseason weeks) should surface the next slate
+// instead of an empty board.
+async function fetchEspnScoreboardWithLookahead(sport: Sport, dateKey: string) {
+  const todayEvents = await fetchEspnScoreboard(sport, dateKey);
+  if (todayEvents.length > 0) return todayEvents;
+
+  const rangeKey = `${addDaysToDateKey(dateKey, 1)}-${addDaysToDateKey(dateKey, UPCOMING_LOOKAHEAD_DAYS)}`;
+  try {
+    const upcoming = await fetchEspnScoreboard(sport, rangeKey);
+    return upcoming
+      .filter((event) => event.competitions?.[0]?.status?.type?.state === "pre")
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .slice(0, UPCOMING_GAME_LIMIT);
+  } catch {
+    return [];
+  }
+}
+
 async function fetchEspnSummary(sport: Sport, eventId: string): Promise<SummaryResponse | null> {
   const path = ESPN_PATHS[sport];
   const url = `https://site.api.espn.com/apis/site/v2/sports/${path}/summary?event=${eventId}`;
@@ -256,7 +305,16 @@ async function fetchEspnSummary(sport: Sport, eventId: string): Promise<SummaryR
 function parseEspnOdds(summary: SummaryResponse | null) {
   if (!summary) return null;
 
-  const pickcenter = Array.isArray(summary.pickcenter) ? summary.pickcenter[0] : null;
+  const pickcenterEntries = Array.isArray(summary.pickcenter) ? summary.pickcenter : [];
+  // Some events list stale/partial providers first; prefer an entry with a complete two-way moneyline.
+  const pickcenter =
+    pickcenterEntries.find(
+      (entry) =>
+        validMoneyline(parseNumber(entry.homeTeamOdds?.moneyLine)) &&
+        validMoneyline(parseNumber(entry.awayTeamOdds?.moneyLine)),
+    ) ??
+    pickcenterEntries[0] ??
+    null;
   const oddsCollection = Array.isArray(summary.odds) ? summary.odds[0] : null;
 
   const homeMoneyline =
@@ -437,7 +495,7 @@ async function toLiveMarketGame(
 
 async function fetchSportSlate(sport: Sport, dateKey: string) {
   const [events, oddsProvider] = await Promise.all([
-    fetchEspnScoreboard(sport, dateKey),
+    fetchEspnScoreboardWithLookahead(sport, dateKey),
     fetchOddsApiMarkets(sport),
   ]);
   const summaries = await Promise.allSettled(events.map((event) => fetchEspnSummary(sport, event.id)));

@@ -2,7 +2,7 @@ import { randomBytes, pbkdf2 as pbkdf2Callback, timingSafeEqual, createHash } fr
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
-import { connectLambda, getStore } from "@netlify/blobs";
+import { getStore, setEnvironmentContext } from "@netlify/blobs";
 import { Redis } from "@upstash/redis";
 
 type NetlifyEvent = {
@@ -35,6 +35,8 @@ interface AuthStore {
   delete: (key: string) => Promise<void>;
   get: <T>(key: string) => Promise<T | null>;
   set: (key: string, value: unknown, options?: { ex?: number }) => Promise<void>;
+  // True when reads are strongly consistent, so read-after-write retry loops can be skipped.
+  consistentReads: boolean;
 }
 
 const pbkdf2 = promisify(pbkdf2Callback);
@@ -49,6 +51,7 @@ const STORE_READ_RETRY_MS = 250;
 const LOCAL_AUTH_SECRET = "ai-advantage-local-development-auth-secret";
 
 let redisClient: Redis | null | undefined;
+let activeStoreMode = "none";
 let localAuthData: Record<string, unknown> | null = null;
 let localAuthLoad: Promise<Record<string, unknown>> | null = null;
 let localAuthWrite: Promise<void> = Promise.resolve();
@@ -59,6 +62,7 @@ function response(statusCode: number, body: unknown, headers: Record<string, str
     headers: {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
+      "X-Auth-Store": activeStoreMode,
       ...headers,
     },
     body: JSON.stringify(body),
@@ -124,6 +128,7 @@ async function writeLocalAuthData() {
 
 function getLocalAuthStore(): AuthStore {
   return {
+    consistentReads: true,
     async get<T>(key: string) {
       const data = await readLocalAuthData();
       return (data[key] as T | undefined) ?? null;
@@ -144,13 +149,30 @@ function getLocalAuthStore(): AuthStore {
 function getAuthStore(event: NetlifyEvent): AuthStore | null {
   if (event.blobs) {
     try {
-      connectLambda({
-        blobs: event.blobs,
-        headers: normalizeLambdaHeaders(event.headers),
+      // connectLambda() drops the uncached edge URL from the event payload, which is what
+      // strong consistency needs. Wire the context manually so reads can be strong; without
+      // it, login right after signup misses the new account until blobs propagate.
+      const blobsPayload = JSON.parse(Buffer.from(event.blobs, "base64").toString()) as {
+        url?: string;
+        url_uncached?: string;
+        token?: string;
+      };
+      const headers = normalizeLambdaHeaders(event.headers);
+      setEnvironmentContext({
+        deployID: headers["x-nf-deploy-id"],
+        edgeURL: blobsPayload.url,
+        uncachedEdgeURL: blobsPayload.url_uncached,
+        siteID: headers["x-nf-site-id"],
+        token: blobsPayload.token,
       });
 
-      const store = getStore("ai-advantage-auth");
+      const strongReads = Boolean(blobsPayload.url_uncached);
+      const store = strongReads
+        ? getStore({ name: "ai-advantage-auth", consistency: "strong" })
+        : getStore("ai-advantage-auth");
+      activeStoreMode = strongReads ? "blobs-strong" : "blobs-eventual";
       return {
+        consistentReads: strongReads,
         async get<T>(key: string) {
           return (await store.get(key, { type: "json" })) as T | null;
         },
@@ -168,10 +190,17 @@ function getAuthStore(event: NetlifyEvent): AuthStore | null {
 
   const redis = getRedis();
   if (!redis) {
-    return canUseLocalAuthStore() ? getLocalAuthStore() : null;
+    if (canUseLocalAuthStore()) {
+      activeStoreMode = "local";
+      return getLocalAuthStore();
+    }
+    activeStoreMode = "none";
+    return null;
   }
 
+  activeStoreMode = "redis";
   return {
+    consistentReads: true,
     async get<T>(key: string) {
       return (await redis.get<T>(key)) ?? null;
     },
@@ -324,6 +353,8 @@ async function verifyPassword(password: string, user: StoredSiteUser) {
 }
 
 async function getEventually<T>(store: AuthStore, key: string) {
+  if (store.consistentReads) return store.get<T>(key);
+
   for (let attempt = 0; attempt < STORE_READ_ATTEMPTS; attempt += 1) {
     const value = await store.get<T>(key);
     if (value !== null) return value;
@@ -340,6 +371,7 @@ async function getFirstEventually<T>(store: AuthStore, keys: string[]) {
     const values = await Promise.all(keys.map((key) => store.get<T>(key)));
     const value = values.find((candidate): candidate is T => candidate !== null);
     if (value !== undefined) return value;
+    if (store.consistentReads) return null;
     if (attempt < STORE_READ_ATTEMPTS - 1) {
       await wait(STORE_READ_RETRY_MS);
     }
