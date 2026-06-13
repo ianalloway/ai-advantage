@@ -329,12 +329,7 @@ function getAuthSecret() {
   return canUseLocalAuthStore() ? LOCAL_AUTH_SECRET : null;
 }
 
-async function hashPassword(password: string, salt: string) {
-  const secret = getAuthSecret();
-  if (!secret) {
-    throw new Error("AUTH_SECRET or SESSION_SECRET must be configured for production auth.");
-  }
-
+async function hashPasswordWith(secret: string, password: string, salt: string) {
   const derived = await pbkdf2(
     `${password}:${secret}`,
     salt,
@@ -345,11 +340,38 @@ async function hashPassword(password: string, salt: string) {
   return derived.toString("hex");
 }
 
+async function hashPassword(password: string, salt: string) {
+  const secret = getAuthSecret();
+  if (!secret) {
+    throw new Error("AUTH_SECRET or SESSION_SECRET must be configured for production auth.");
+  }
+
+  return hashPasswordWith(secret, password, salt);
+}
+
+function hashesMatch(storedHash: string, candidateHash: string) {
+  const expected = Buffer.from(storedHash, "hex");
+  const actual = Buffer.from(candidateHash, "hex");
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
+
 async function verifyPassword(password: string, user: StoredSiteUser) {
   const nextHash = await hashPassword(password, user.passwordSalt);
-  const expected = Buffer.from(user.passwordHash, "hex");
-  const actual = Buffer.from(nextHash, "hex");
-  return expected.length === actual.length && timingSafeEqual(expected, actual);
+  if (hashesMatch(user.passwordHash, nextHash)) {
+    return { ok: true, needsRehash: false };
+  }
+
+  // Migration: accounts created before AUTH_SECRET was configured were hashed with the
+  // public local-dev constant. Accept those once and re-hash with the active secret.
+  const activeSecret = getAuthSecret();
+  if (activeSecret && activeSecret !== LOCAL_AUTH_SECRET) {
+    const legacyHash = await hashPasswordWith(LOCAL_AUTH_SECRET, password, user.passwordSalt);
+    if (hashesMatch(user.passwordHash, legacyHash)) {
+      return { ok: true, needsRehash: true };
+    }
+  }
+
+  return { ok: false, needsRehash: false };
 }
 
 async function getEventually<T>(store: AuthStore, key: string) {
@@ -526,8 +548,26 @@ export const handler = async (event: NetlifyEvent) => {
     }
 
     const user = await getEventually<StoredSiteUser>(store, userKey(userId));
-    if (!user || !(await verifyPassword(password, user))) {
+    if (!user) {
       return response(401, { success: false, message: "That password does not match this account." });
+    }
+
+    const verification = await verifyPassword(password, user);
+    if (!verification.ok) {
+      return response(401, { success: false, message: "That password does not match this account." });
+    }
+
+    if (verification.needsRehash) {
+      try {
+        const migrated: StoredSiteUser = {
+          ...user,
+          passwordHash: await hashPassword(password, user.passwordSalt),
+          updatedAt: new Date().toISOString(),
+        };
+        await store.set(userKey(user.id), migrated);
+      } catch (error) {
+        console.warn("Password rehash after secret rotation failed; login still allowed.", error);
+      }
     }
 
     const token = await createSession(store, user.id);
