@@ -1,6 +1,10 @@
+import { getStore, setEnvironmentContext } from "@netlify/blobs";
+
 type Sport = "nba" | "nfl" | "mlb";
 
 type NetlifyEvent = {
+  blobs?: string;
+  headers?: Record<string, string | undefined>;
   httpMethod: string;
   queryStringParameters?: Record<string, string | undefined> | null;
 };
@@ -406,10 +410,88 @@ function parseOddsApiEvent(event: OddsApiEvent) {
   };
 }
 
-async function fetchOddsApiMarkets(sport: Sport) {
+// The Odds API free tier is ~500 requests/month, so upstream responses are cached
+// aggressively (memory + Netlify Blobs) instead of being fetched per page view.
+const ODDS_CACHE_MINUTES = Number(process.env.ODDS_API_CACHE_MINUTES) || 180;
+
+interface OddsCacheEntry {
+  fetchedAt: number;
+  events: OddsApiEvent[];
+}
+
+const oddsMemoryCache = new Map<Sport, OddsCacheEntry>();
+
+function initBlobsContext(event: NetlifyEvent) {
+  if (!event.blobs) return false;
+  try {
+    const payload = JSON.parse(Buffer.from(event.blobs, "base64").toString()) as {
+      url?: string;
+      url_uncached?: string;
+      token?: string;
+    };
+    const headers = Object.fromEntries(
+      Object.entries(event.headers ?? {}).flatMap(([key, value]) =>
+        typeof value === "string" ? [[key.toLowerCase(), value]] : [],
+      ),
+    );
+    setEnvironmentContext({
+      deployID: headers["x-nf-deploy-id"],
+      edgeURL: payload.url,
+      uncachedEdgeURL: payload.url_uncached,
+      siteID: headers["x-nf-site-id"],
+      token: payload.token,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getOddsCacheStore(blobsReady: boolean) {
+  if (!blobsReady) return null;
+  try {
+    return getStore("ai-advantage-cache");
+  } catch {
+    return null;
+  }
+}
+
+function isFresh(entry: OddsCacheEntry | null | undefined): entry is OddsCacheEntry {
+  return Boolean(entry && Date.now() - entry.fetchedAt < ODDS_CACHE_MINUTES * 60_000);
+}
+
+function toMarkets(events: OddsApiEvent[]) {
+  const markets = new Map<string, ReturnType<typeof parseOddsApiEvent>>();
+  events.forEach((event) => {
+    const parsed = parseOddsApiEvent(event);
+    if (parsed) markets.set(parsed.key, parsed);
+  });
+  return markets;
+}
+
+async function fetchOddsApiMarkets(sport: Sport, blobsReady: boolean) {
   const apiKey = process.env.THE_ODDS_API_KEY || process.env.ODDS_API_KEY;
   if (!apiKey) {
     return { configured: false, markets: new Map<string, ReturnType<typeof parseOddsApiEvent>>(), error: null };
+  }
+
+  const memoryHit = oddsMemoryCache.get(sport);
+  if (isFresh(memoryHit)) {
+    return { configured: true, markets: toMarkets(memoryHit.events), error: null };
+  }
+
+  const cacheStore = getOddsCacheStore(blobsReady);
+  const cacheKey = `odds-api:${sport}`;
+  if (cacheStore) {
+    try {
+      const cached = (await cacheStore.get(cacheKey, { type: "json" })) as OddsCacheEntry | null;
+      if (isFresh(cached)) {
+        oddsMemoryCache.set(sport, cached);
+        return { configured: true, markets: toMarkets(cached.events), error: null };
+      }
+    } catch {
+      // Cache miss/unavailable; fall through to the upstream fetch.
+    }
   }
 
   const sportKey = ODDS_API_SPORTS[sport];
@@ -423,14 +505,23 @@ async function fetchOddsApiMarkets(sport: Sport) {
 
   try {
     const events = await fetchJson<OddsApiEvent[]>(url);
-    const markets = new Map<string, ReturnType<typeof parseOddsApiEvent>>();
-    events.forEach((event) => {
-      const parsed = parseOddsApiEvent(event);
-      if (parsed) markets.set(parsed.key, parsed);
-    });
-    return { configured: true, markets, error: null };
+    const entry: OddsCacheEntry = { fetchedAt: Date.now(), events };
+    oddsMemoryCache.set(sport, entry);
+    if (cacheStore) {
+      try {
+        await cacheStore.setJSON(cacheKey, entry);
+      } catch {
+        // Memory cache still applies for this container.
+      }
+    }
+    return { configured: true, markets: toMarkets(events), error: null };
   } catch (error) {
+    // Quota exhaustion or upstream failure: serve stale cache if any exists.
+    const stale = memoryHit ?? null;
     const message = error instanceof Error ? error.message : "Unable to fetch odds provider.";
+    if (stale) {
+      return { configured: true, markets: toMarkets(stale.events), error: null };
+    }
     return { configured: true, markets: new Map<string, ReturnType<typeof parseOddsApiEvent>>(), error: message };
   }
 }
@@ -493,10 +584,10 @@ async function toLiveMarketGame(
   };
 }
 
-async function fetchSportSlate(sport: Sport, dateKey: string) {
+async function fetchSportSlate(sport: Sport, dateKey: string, blobsReady: boolean) {
   const [events, oddsProvider] = await Promise.all([
     fetchEspnScoreboardWithLookahead(sport, dateKey),
-    fetchOddsApiMarkets(sport),
+    fetchOddsApiMarkets(sport, blobsReady),
   ]);
   const summaries = await Promise.allSettled(events.map((event) => fetchEspnSummary(sport, event.id)));
 
@@ -539,7 +630,8 @@ export const handler = async (event: NetlifyEvent) => {
 
   const sports = getSports(event.queryStringParameters);
   const dateKey = getDateKey(event.queryStringParameters);
-  const slates = await Promise.allSettled(sports.map((sport) => fetchSportSlate(sport, dateKey)));
+  const blobsReady = initBlobsContext(event);
+  const slates = await Promise.allSettled(sports.map((sport) => fetchSportSlate(sport, dateKey, blobsReady)));
   const fulfilled = slates.flatMap((slate) => (slate.status === "fulfilled" ? [slate.value] : []));
   const games = fulfilled.flatMap((slate) => slate.games);
 
