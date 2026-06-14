@@ -456,8 +456,18 @@ function getOddsCacheStore(blobsReady: boolean) {
   }
 }
 
+function isCacheEntry(entry: unknown): entry is OddsCacheEntry {
+  return Boolean(
+    entry &&
+      typeof entry === "object" &&
+      !Array.isArray(entry) &&
+      typeof (entry as OddsCacheEntry).fetchedAt === "number" &&
+      Array.isArray((entry as OddsCacheEntry).events),
+  );
+}
+
 function isFresh(entry: OddsCacheEntry | null | undefined): entry is OddsCacheEntry {
-  return Boolean(entry && Date.now() - entry.fetchedAt < ODDS_CACHE_MINUTES * 60_000);
+  return Boolean(isCacheEntry(entry) && Date.now() - entry.fetchedAt < ODDS_CACHE_MINUTES * 60_000);
 }
 
 function toMarkets(events: OddsApiEvent[]) {
@@ -479,15 +489,19 @@ async function fetchOddsApiMarkets(sport: Sport, blobsReady: boolean) {
   if (isFresh(memoryHit)) {
     return { configured: true, markets: toMarkets(memoryHit.events), error: null };
   }
+  let staleCache = isCacheEntry(memoryHit) ? memoryHit : null;
 
   const cacheStore = getOddsCacheStore(blobsReady);
   const cacheKey = `odds-api:${sport}`;
   if (cacheStore) {
     try {
-      const cached = (await cacheStore.get(cacheKey, { type: "json" })) as OddsCacheEntry | null;
-      if (isFresh(cached)) {
+      const cached = await cacheStore.get(cacheKey, { type: "json" });
+      if (isCacheEntry(cached)) {
         oddsMemoryCache.set(sport, cached);
-        return { configured: true, markets: toMarkets(cached.events), error: null };
+        if (isFresh(cached)) {
+          return { configured: true, markets: toMarkets(cached.events), error: null };
+        }
+        staleCache = cached;
       }
     } catch {
       // Cache miss/unavailable; fall through to the upstream fetch.
@@ -517,10 +531,9 @@ async function fetchOddsApiMarkets(sport: Sport, blobsReady: boolean) {
     return { configured: true, markets: toMarkets(events), error: null };
   } catch (error) {
     // Quota exhaustion or upstream failure: serve stale cache if any exists.
-    const stale = memoryHit ?? null;
     const message = error instanceof Error ? error.message : "Unable to fetch odds provider.";
-    if (stale) {
-      return { configured: true, markets: toMarkets(stale.events), error: null };
+    if (staleCache) {
+      return { configured: true, markets: toMarkets(staleCache.events), error: null };
     }
     return { configured: true, markets: new Map<string, ReturnType<typeof parseOddsApiEvent>>(), error: message };
   }
