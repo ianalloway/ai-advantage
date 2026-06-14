@@ -46,8 +46,14 @@ function OddsChip({ game }: { game: LiveMarketGame }) {
       </div>
 
       <div className="flex items-center gap-2 border-x border-white/10 px-3 text-[11px] text-zinc-500">
-        <span>{game.odds.spread !== undefined ? `${game.odds.spread > 0 ? "+" : ""}${game.odds.spread}` : "ML"}</span>
-        <span>{game.odds.overUnder !== undefined ? `O/U ${game.odds.overUnder}` : game.bookmaker ?? "Live"}</span>
+        {game.odds.drawMoneyline !== undefined ? (
+          <span>Draw <span className="font-mono tabular-nums text-zinc-400">{formatOdds(game.odds.drawMoneyline)}</span></span>
+        ) : (
+          <>
+            <span>{game.odds.spread !== undefined ? `${game.odds.spread > 0 ? "+" : ""}${game.odds.spread}` : "ML"}</span>
+            <span>{game.odds.overUnder !== undefined ? `O/U ${game.odds.overUnder}` : game.bookmaker ?? "Live"}</span>
+          </>
+        )}
       </div>
 
       <div className="flex items-center gap-1.5 text-sm text-zinc-200">
@@ -77,7 +83,7 @@ export default function LiveOddsTicker({ speed = 40, pauseOnHover = true }: Live
 
     const load = async () => {
       try {
-        const slate = await fetchLiveGamesForSports(["nba", "mlb", "nfl"]);
+        const slate = await fetchLiveGamesForSports(["nba", "mlb", "nfl", "wc"]);
         if (cancelled) return;
         setGames(slate.filter((game) => game.odds));
         setUpdatedAt(new Date());

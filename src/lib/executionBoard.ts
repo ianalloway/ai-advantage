@@ -3,6 +3,7 @@ import {
   formatEdge,
   formatOdds,
   formatProb,
+  isThreeWaySport,
   type ExecutionFactors,
   type GamePrediction,
 } from "@/lib/predictions";
@@ -19,7 +20,7 @@ export interface ExecutionBoardEntry {
   eventLabel: string;
   recommendedSide: string;
   opposingSide: string;
-  sideLocation: "Home" | "Away";
+  sideLocation: "Home" | "Away" | "Draw";
   status: ExecutionBoardStatus;
   ledgerOutcome: ExecutionLedgerOutcome;
   marketState: LiveMarketGame["status"]["state"];
@@ -77,17 +78,37 @@ function getCloseLineValue(entryOdds: number, closeOdds?: number) {
   return (americanToImpliedProb(closeOdds) - americanToImpliedProb(entryOdds)) * 100;
 }
 
-function getLedgerOutcome(game: LiveMarketGame, recommendedSide: string): ExecutionLedgerOutcome {
+// Grade a recommended side against a final score. Soccer is a 3-way market:
+// a Draw bet wins on level scores, and a Home/Away moneyline LOSES on a draw
+// (it does not push the way a 2-way NBA/NFL/MLB tie would).
+export function gradeOutcome(
+  sport: LiveMarketGame["sport"],
+  homeScore: number,
+  awayScore: number,
+  recommendedSide: string,
+  sideLocation: "Home" | "Away" | "Draw",
+): Exclude<ExecutionLedgerOutcome, "pending"> {
+  const level = homeScore === awayScore;
+  if (sideLocation === "Draw") {
+    return level ? "won" : "lost";
+  }
+  if (level) {
+    return isThreeWaySport(sport) ? "lost" : "push";
+  }
+  const winner = homeScore > awayScore ? "Home" : "Away";
+  return winner === sideLocation ? "won" : "lost";
+}
+
+function getLedgerOutcome(
+  game: LiveMarketGame,
+  recommendedSide: string,
+  sideLocation: "Home" | "Away" | "Draw",
+): ExecutionLedgerOutcome {
   if (game.status.state !== "post" || game.homeScore === undefined || game.awayScore === undefined) {
     return "pending";
   }
 
-  if (game.homeScore === game.awayScore) {
-    return "push";
-  }
-
-  const winner = game.homeScore > game.awayScore ? game.homeTeam : game.awayTeam;
-  return winner === recommendedSide ? "won" : "lost";
+  return gradeOutcome(game.sport, game.homeScore, game.awayScore, recommendedSide, sideLocation);
 }
 
 export function scoreExecutionBoardEntry({
@@ -142,8 +163,9 @@ export function createExecutionBoardEntry(game: LiveMarketGame, prediction: Game
   const recommendedSide = prediction.valueBet.team;
   const sideLocation = prediction.valueBet.location;
   const entryOdds = prediction.valueBet.odds;
-  const openOdds = sideLocation === "Home" ? game.odds.homeMoneylineOpen : game.odds.awayMoneylineOpen;
-  const closeOdds = sideLocation === "Home" ? game.odds.homeMoneylineClose : game.odds.awayMoneylineClose;
+  // The draw outcome has no open/close history in the feed.
+  const openOdds = sideLocation === "Home" ? game.odds.homeMoneylineOpen : sideLocation === "Away" ? game.odds.awayMoneylineOpen : undefined;
+  const closeOdds = sideLocation === "Home" ? game.odds.homeMoneylineClose : sideLocation === "Away" ? game.odds.awayMoneylineClose : undefined;
   const closeLineValue = getCloseLineValue(entryOdds, closeOdds);
   const score = scoreExecutionBoardEntry({
     rawEdge: prediction.valueBet.rawEdge,
@@ -165,7 +187,7 @@ export function createExecutionBoardEntry(game: LiveMarketGame, prediction: Game
     opposingSide: recommendedSide === game.homeTeam ? game.awayTeam : game.homeTeam,
     sideLocation,
     status: "tracked",
-    ledgerOutcome: getLedgerOutcome(game, recommendedSide),
+    ledgerOutcome: getLedgerOutcome(game, recommendedSide, sideLocation),
     marketState: game.status.state,
     displayTime: game.displayTime,
     commenceTime: game.date,

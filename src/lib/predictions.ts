@@ -4,13 +4,19 @@
  */
 
 // Sport types
-export type Sport = 'nba' | 'nfl' | 'mlb';
+export type Sport = 'nba' | 'nfl' | 'mlb' | 'wc';
 
 export const SPORT_CONFIG: Record<Sport, { name: string; apiKey: string; homeAdvantage: number }> = {
   nba: { name: 'NBA Basketball', apiKey: 'basketball_nba', homeAdvantage: 0.03 },
   nfl: { name: 'NFL Football', apiKey: 'americanfootball_nfl', homeAdvantage: 0.025 },
   mlb: { name: 'MLB Baseball', apiKey: 'baseball_mlb', homeAdvantage: 0.04 },
+  wc: { name: 'FIFA World Cup', apiKey: 'soccer_fifa_world_cup', homeAdvantage: 0.015 },
 };
+
+// Three-way markets (home / draw / away) for soccer.
+export function isThreeWaySport(sport: Sport): boolean {
+  return sport === 'wc';
+}
 
 // NBA Teams (2025-26 season data)
 export const NBA_TEAMS: Record<string, TeamStats> = {
@@ -122,6 +128,7 @@ export function getTeamStats(sport: Sport): Record<string, TeamStats> {
     case 'nba': return NBA_TEAMS;
     case 'nfl': return NFL_TEAMS;
     case 'mlb': return MLB_TEAMS;
+    case 'wc': return WC_TEAMS;
     default: return NBA_TEAMS;
   }
 }
@@ -136,6 +143,10 @@ const TEAM_NAME_ALIASES: Record<Sport, Record<string, string>> = {
   nfl: {},
   mlb: {
     Athletics: "Oakland Athletics",
+  },
+  wc: {
+    USA: "United States",
+    "Korea Republic": "South Korea",
   },
 };
 
@@ -165,7 +176,19 @@ export interface GamePrediction {
   awayEdge: number;
   homeExecutionEdge: number;
   awayExecutionEdge: number;
+  // Soccer (3-way) draw outcome — undefined for 2-way sports.
+  drawProb?: number;
+  drawOdds?: number;
+  drawImpliedProb?: number;
+  drawEdge?: number;
+  drawExecutionEdge?: number;
   predictedWinner: string;
+  // Convenience fields for whichever outcome the model leans to (home, away, or draw),
+  // so renderers don't have to re-derive across 2-way vs 3-way markets.
+  predictedWinnerOdds: number;
+  predictedWinnerProb: number;
+  predictedWinnerEdge: number;
+  predictedWinnerExecutionEdge: number;
   confidence: number;
   executionAdjustedEdge: number;
   executionFactors: ExecutionFactors;
@@ -230,7 +253,7 @@ export interface ExecutionFactors {
 
 export interface ValueBet {
   team: string;
-  location: 'Home' | 'Away';
+  location: 'Home' | 'Away' | 'Draw';
   modelProb: number;
   impliedProb: number;
   odds: number;
@@ -391,6 +414,125 @@ export function getDefaultStats(): TeamStats {
   };
 }
 
+// ---------------------------------------------------------------------------
+// World Cup (soccer) — national-team strength ratings + 3-way Poisson model
+// ---------------------------------------------------------------------------
+// Elo-style power ratings (~1500 weakest qualifier, ~2070 top seed) approximated
+// from FIFA / SPI strength for the 2026 field. Unknown teams default to 1500,
+// which yields a near-pick'em model with no fabricated edge.
+const WC_DEFAULT_RATING = 1500;
+
+// Single source of truth, keyed by display name. Aliases (USA/United States,
+// South Korea/Korea Republic, etc.) are handled by normalized lookup below.
+const WC_TEAM_RATINGS: Record<string, number> = {
+  Argentina: 2070, France: 2060, Spain: 2050, Brazil: 2030, England: 2010,
+  Portugal: 1990, Netherlands: 1980, Germany: 1965, Belgium: 1955, Italy: 1930,
+  Croatia: 1905, Uruguay: 1900, Colombia: 1885, Morocco: 1875, Norway: 1850,
+  Switzerland: 1845, Denmark: 1840, Japan: 1830, Senegal: 1825, 'United States': 1820,
+  Nigeria: 1815, Austria: 1810, Mexico: 1810, Serbia: 1805, Turkey: 1805,
+  Ecuador: 1795, Ukraine: 1790, Sweden: 1790, 'South Korea': 1790, Peru: 1785,
+  Poland: 1785, Chile: 1780, Czechia: 1780, Egypt: 1775, Algeria: 1775,
+  Greece: 1775, Cameroon: 1775, 'Ivory Coast': 1790, Mali: 1770, Hungary: 1770,
+  Wales: 1770, Iran: 1770, Australia: 1765, Scotland: 1760, Slovakia: 1760,
+  Ghana: 1760, Tunisia: 1755, Romania: 1755, Paraguay: 1745, 'Burkina Faso': 1740,
+  'DR Congo': 1740, Slovenia: 1740, 'South Africa': 1735, 'Republic of Ireland': 1730,
+  Venezuela: 1730, Canada: 1785, 'Costa Rica': 1720, 'Saudi Arabia': 1715, Panama: 1710,
+  Jamaica: 1700, 'Cape Verde': 1695, Uzbekistan: 1695, Iraq: 1680, Qatar: 1655,
+  UAE: 1665, Jordan: 1655, Honduras: 1650, Oman: 1645, Bolivia: 1645,
+  'New Zealand': 1620, 'El Salvador': 1610, Curacao: 1590, Bahrain: 1575, Kuwait: 1555,
+  Haiti: 1520,
+};
+
+// Aliases → canonical display name, applied after normalization.
+const WC_NAME_ALIASES: Record<string, string> = {
+  usa: 'United States', 'usmnt': 'United States', 'korea republic': 'South Korea',
+  'south korea': 'South Korea', turkiye: 'Turkey', "cote d'ivoire": 'Ivory Coast',
+  'czech republic': 'Czechia', 'dr congo': 'DR Congo', 'democratic republic of congo': 'DR Congo',
+  'republic of ireland': 'Republic of Ireland', ireland: 'Republic of Ireland',
+};
+
+function normalizeWcName(value: string): string {
+  return value.trim().toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ');
+}
+
+// Normalized index so lookups tolerate casing, punctuation, and common aliases.
+const WC_RATING_INDEX: Record<string, number> = (() => {
+  const index: Record<string, number> = {};
+  for (const [name, rating] of Object.entries(WC_TEAM_RATINGS)) {
+    index[normalizeWcName(name)] = rating;
+  }
+  for (const [alias, canonical] of Object.entries(WC_NAME_ALIASES)) {
+    const rating = WC_TEAM_RATINGS[canonical];
+    if (rating !== undefined) index[normalizeWcName(alias)] = rating;
+  }
+  return index;
+})();
+
+export function getWorldCupRating(team: string): number {
+  return WC_RATING_INDEX[normalizeWcName(team)] ?? WC_DEFAULT_RATING;
+}
+
+// Synthesized TeamStats (win_pct ~ rating percentile) so the Model Lab input
+// parser and demo helpers work for World Cup; the live 3-way model uses ratings
+// directly via predictSoccer, not these stats.
+export const WC_TEAMS: Record<string, TeamStats> = Object.fromEntries(
+  Object.entries(WC_TEAM_RATINGS).map(([name, rating]) => {
+    const winPct = clampValue(0.5 + (rating - 1700) / 1200, 0.2, 0.85);
+    return [name, { win_pct: winPct, avg_points_for: 1.4, avg_points_against: 1.4, point_diff: (rating - 1700) / 200 }];
+  }),
+);
+
+const WC_FACTORIALS = [1, 1, 2, 6, 24, 120, 720, 5040, 40320, 362880];
+
+function poissonPmf(k: number, lambda: number): number {
+  return (Math.exp(-lambda) * Math.pow(lambda, k)) / WC_FACTORIALS[k];
+}
+
+export interface SoccerModel {
+  homeProb: number;
+  drawProb: number;
+  awayProb: number;
+  lambdaHome: number;
+  lambdaAway: number;
+}
+
+// Bivariate-Poisson-lite: ratings drive each side's expected goals, then the
+// score grid is summed into home-win / draw / away-win probabilities.
+export function predictSoccer(homeRating: number, awayRating: number): SoccerModel {
+  const baseGoals = 1.35; // avg goals per side in modern World Cups
+  const strength = (rating: number) => (rating - 1700) / 300;
+  const homeAdvantage = 0.18; // mostly neutral venues, so a small log edge
+
+  const attackHome = 0.6 * strength(homeRating);
+  const attackAway = 0.6 * strength(awayRating);
+  const defenseHome = 0.6 * strength(homeRating);
+  const defenseAway = 0.6 * strength(awayRating);
+
+  const lambdaHome = clampValue(baseGoals * Math.exp(attackHome - defenseAway + homeAdvantage), 0.2, 4.5);
+  const lambdaAway = clampValue(baseGoals * Math.exp(attackAway - defenseHome), 0.2, 4.5);
+
+  let pHome = 0;
+  let pDraw = 0;
+  let pAway = 0;
+  for (let i = 0; i <= 9; i += 1) {
+    for (let j = 0; j <= 9; j += 1) {
+      const p = poissonPmf(i, lambdaHome) * poissonPmf(j, lambdaAway);
+      if (i > j) pHome += p;
+      else if (i === j) pDraw += p;
+      else pAway += p;
+    }
+  }
+
+  const total = pHome + pDraw + pAway || 1;
+  return {
+    homeProb: pHome / total,
+    drawProb: pDraw / total,
+    awayProb: pAway / total,
+    lambdaHome,
+    lambdaAway,
+  };
+}
+
 // Generate sample odds based on probability
 function generateOdds(prob: number): number {
   // Convert probability to American odds with some juice
@@ -432,6 +574,14 @@ export function getDemoGames(sport: Sport): Array<{ homeTeam: string; awayTeam: 
         { homeTeam: 'Houston Astros', awayTeam: 'Texas Rangers' },
         { homeTeam: 'Atlanta Braves', awayTeam: 'Philadelphia Phillies' },
         { homeTeam: 'Chicago Cubs', awayTeam: 'St. Louis Cardinals' },
+      ];
+    case 'wc':
+      return [
+        { homeTeam: 'Brazil', awayTeam: 'Morocco' },
+        { homeTeam: 'Spain', awayTeam: 'Switzerland' },
+        { homeTeam: 'Argentina', awayTeam: 'Mexico' },
+        { homeTeam: 'France', awayTeam: 'Senegal' },
+        { homeTeam: 'England', awayTeam: 'United States' },
       ];
     default:
       return [];
@@ -505,6 +655,7 @@ export function analyzeGame(
   liveOdds?: {
     homeOdds: number;
     awayOdds: number;
+    drawOdds?: number;
     homeOpenOdds?: number;
     awayOpenOdds?: number;
     bookmaker?: string;
@@ -513,6 +664,10 @@ export function analyzeGame(
     isLive?: boolean;
   }
 ): GamePrediction {
+  if (isThreeWaySport(sport)) {
+    return analyzeSoccerGame(homeTeam, awayTeam, sport, bankroll, minEdge, kellyFraction, liveOdds);
+  }
+
   const teamStats = getTeamStats(sport);
   const resolvedHomeTeam = resolveTeamName(sport, homeTeam);
   const resolvedAwayTeam = resolveTeamName(sport, awayTeam);
@@ -549,10 +704,11 @@ export function analyzeGame(
     isLive: liveOdds?.isLive,
   });
   
-  const predictedWinner = homeProb > 0.5 ? homeTeam : awayTeam;
+  const leansHome = homeProb > 0.5;
+  const predictedWinner = leansHome ? homeTeam : awayTeam;
   const confidence = Math.max(homeProb, awayProb);
-  const executionAdjustedEdge = homeProb > 0.5 ? homeExecution.adjustedEdge : awayExecution.adjustedEdge;
-  const executionFactors = homeProb > 0.5 ? homeExecution.factors : awayExecution.factors;
+  const executionAdjustedEdge = leansHome ? homeExecution.adjustedEdge : awayExecution.adjustedEdge;
+  const executionFactors = leansHome ? homeExecution.factors : awayExecution.factors;
   
   let valueBet: ValueBet | null = null;
   
@@ -604,9 +760,151 @@ export function analyzeGame(
     homeExecutionEdge: homeExecution.adjustedEdge,
     awayExecutionEdge: awayExecution.adjustedEdge,
     predictedWinner,
+    predictedWinnerOdds: leansHome ? homeOdds : awayOdds,
+    predictedWinnerProb: leansHome ? homeProb : awayProb,
+    predictedWinnerEdge: leansHome ? homeEdge : awayEdge,
+    predictedWinnerExecutionEdge: leansHome ? homeExecution.adjustedEdge : awayExecution.adjustedEdge,
     confidence,
     executionAdjustedEdge,
     executionFactors,
+    valueBet,
+    commenceTime: liveOdds?.commenceTime,
+    bookmaker: liveOdds?.bookmaker,
+    isLive: !!liveOdds,
+  };
+}
+
+// Analyze a 3-way soccer match (World Cup): national-team Poisson model vs the
+// de-vigged market, with Kelly sizing on the best of home / draw / away.
+function analyzeSoccerGame(
+  homeTeam: string,
+  awayTeam: string,
+  sport: Sport,
+  bankroll: number,
+  minEdge: number,
+  kellyFraction: number,
+  liveOdds?: {
+    homeOdds: number;
+    awayOdds: number;
+    drawOdds?: number;
+    homeOpenOdds?: number;
+    awayOpenOdds?: number;
+    bookmaker?: string;
+    commenceTime?: string;
+    id?: string;
+    isLive?: boolean;
+  },
+): GamePrediction {
+  const model = predictSoccer(getWorldCupRating(homeTeam), getWorldCupRating(awayTeam));
+  const { homeProb, drawProb, awayProb } = model;
+
+  const homeOdds = liveOdds?.homeOdds ?? generateOdds(homeProb);
+  const awayOdds = liveOdds?.awayOdds ?? generateOdds(awayProb);
+  const drawOdds = liveOdds?.drawOdds ?? generateOdds(drawProb);
+
+  // De-vig the three-way market so model edges are measured against fair prices.
+  const rawHome = americanToImpliedProb(homeOdds);
+  const rawAway = americanToImpliedProb(awayOdds);
+  const rawDraw = americanToImpliedProb(drawOdds);
+  const overround = rawHome + rawAway + rawDraw || 1;
+  const homeImpliedProb = rawHome / overround;
+  const awayImpliedProb = rawAway / overround;
+  const drawImpliedProb = rawDraw / overround;
+
+  const homeEdge = calculateEdge(homeProb, homeImpliedProb);
+  const awayEdge = calculateEdge(awayProb, awayImpliedProb);
+  const drawEdge = calculateEdge(drawProb, drawImpliedProb);
+
+  const homeExecution = calculateExecutionAdjustedEdge({
+    sport,
+    modelProb: homeProb,
+    rawEdge: homeEdge,
+    currentOdds: homeOdds,
+    openOdds: liveOdds?.homeOpenOdds,
+    commenceTime: liveOdds?.commenceTime,
+    isLive: liveOdds?.isLive,
+  });
+  const awayExecution = calculateExecutionAdjustedEdge({
+    sport,
+    modelProb: awayProb,
+    rawEdge: awayEdge,
+    currentOdds: awayOdds,
+    openOdds: liveOdds?.awayOpenOdds,
+    commenceTime: liveOdds?.commenceTime,
+    isLive: liveOdds?.isLive,
+  });
+  const drawExecution = calculateExecutionAdjustedEdge({
+    sport,
+    modelProb: drawProb,
+    rawEdge: drawEdge,
+    currentOdds: drawOdds,
+    commenceTime: liveOdds?.commenceTime,
+    isLive: liveOdds?.isLive,
+  });
+
+  const outcomes = [
+    { location: 'Home' as const, team: homeTeam, prob: homeProb, odds: homeOdds, implied: homeImpliedProb, edge: homeEdge, exec: homeExecution },
+    { location: 'Draw' as const, team: 'Draw', prob: drawProb, odds: drawOdds, implied: drawImpliedProb, edge: drawEdge, exec: drawExecution },
+    { location: 'Away' as const, team: awayTeam, prob: awayProb, odds: awayOdds, implied: awayImpliedProb, edge: awayEdge, exec: awayExecution },
+  ];
+
+  const lean = outcomes.reduce((best, current) => (current.prob > best.prob ? current : best));
+
+  // The World Cup market is sharp and liquid; a ratings-Poisson model has no real
+  // edge on outcomes the market prices as heavy longshots, where naive models
+  // overrate the underdog. Only consider value on reasonably-priced outcomes so
+  // the board stays quiet instead of inventing a pick.
+  const WC_LONGSHOT_FLOOR = 0.15;
+  const eligible = outcomes.filter((outcome) => outcome.implied >= WC_LONGSHOT_FLOOR);
+  const bestValue = (eligible.length ? eligible : outcomes).reduce((best, current) =>
+    current.exec.adjustedEdge > best.exec.adjustedEdge ? current : best,
+  );
+
+  let valueBet: ValueBet | null = null;
+  if (bestValue.implied >= WC_LONGSHOT_FLOOR && bestValue.exec.adjustedEdge >= minEdge) {
+    const kellyPct = kellyCriterion(bestValue.prob, americanToDecimal(bestValue.odds), kellyFraction);
+    valueBet = {
+      team: bestValue.team,
+      location: bestValue.location,
+      modelProb: bestValue.prob,
+      impliedProb: bestValue.implied,
+      odds: bestValue.odds,
+      edge: bestValue.edge,
+      executionAdjustedEdge: bestValue.exec.adjustedEdge,
+      rawEdge: bestValue.edge,
+      kellyPct,
+      suggestedBet: kellyPct * bankroll,
+    };
+  }
+
+  return {
+    id: liveOdds?.id,
+    sport,
+    homeTeam,
+    awayTeam,
+    homeProb,
+    awayProb,
+    homeOdds,
+    awayOdds,
+    homeImpliedProb,
+    awayImpliedProb,
+    homeEdge,
+    awayEdge,
+    homeExecutionEdge: homeExecution.adjustedEdge,
+    awayExecutionEdge: awayExecution.adjustedEdge,
+    drawProb,
+    drawOdds,
+    drawImpliedProb,
+    drawEdge,
+    drawExecutionEdge: drawExecution.adjustedEdge,
+    predictedWinner: lean.location === 'Draw' ? 'Draw' : lean.team,
+    predictedWinnerOdds: lean.odds,
+    predictedWinnerProb: lean.prob,
+    predictedWinnerEdge: lean.edge,
+    predictedWinnerExecutionEdge: lean.exec.adjustedEdge,
+    confidence: lean.prob,
+    executionAdjustedEdge: lean.exec.adjustedEdge,
+    executionFactors: lean.exec.factors,
     valueBet,
     commenceTime: liveOdds?.commenceTime,
     bookmaker: liveOdds?.bookmaker,

@@ -48,6 +48,17 @@ function getStatusClasses(state: LiveMarketGame["status"]["state"]) {
   return "border-sky-400/30 bg-sky-400/10 text-sky-300";
 }
 
+function getMarketAuditLabel(game: LiveMarketGame) {
+  const audit = game.marketAudit;
+  if (!audit) return game.marketSource === "odds-api" ? "Provider confirmed" : "Fallback line";
+  if (audit.source === "odds-api") {
+    const age = audit.cacheAgeSeconds !== undefined ? ` · cache ${Math.round(audit.cacheAgeSeconds / 60)}m` : "";
+    return `${audit.stale ? "Stale provider line" : "Provider confirmed"}${age}`;
+  }
+  if (audit.source === "espn-fallback") return "ESPN fallback line";
+  return "No verified line";
+}
+
 function PickCard({
   entry,
   locked,
@@ -58,11 +69,11 @@ function PickCard({
   onUnlock: () => void;
 }) {
   const { game, prediction } = entry;
-  const winnerIsHome = prediction.predictedWinner === game.homeTeam;
-  const winnerOdds = winnerIsHome ? prediction.homeOdds : prediction.awayOdds;
-  const winnerEdge = winnerIsHome ? prediction.homeEdge : prediction.awayEdge;
-  const winnerExecutionEdge = winnerIsHome ? prediction.homeExecutionEdge : prediction.awayExecutionEdge;
-  const winnerProb = winnerIsHome ? prediction.homeProb : prediction.awayProb;
+  const winnerOdds = prediction.predictedWinnerOdds;
+  const winnerEdge = prediction.predictedWinnerEdge;
+  const winnerExecutionEdge = prediction.predictedWinnerExecutionEdge;
+  const winnerProb = prediction.predictedWinnerProb;
+  const isThreeWay = game.odds?.drawMoneyline !== undefined;
 
   return (
     <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_42%),linear-gradient(180deg,rgba(9,13,24,0.98),rgba(5,8,18,0.98))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
@@ -74,9 +85,24 @@ function PickCard({
           <div className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${getStatusClasses(game.status.state)}`}>
             {game.status.shortDetail}
           </div>
+          {isThreeWay ? (
+            <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-amber-300">
+              Experimental model
+            </span>
+          ) : null}
           {game.bookmaker ? (
             <span className="text-xs text-zinc-500">via {game.bookmaker}</span>
           ) : null}
+          <span
+            className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] ${
+              game.marketAudit?.source === "odds-api" && !game.marketAudit.stale
+                ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200"
+                : "border-amber-400/20 bg-amber-400/10 text-amber-200"
+            }`}
+            title={game.marketAudit?.fallbackReason}
+          >
+            {getMarketAuditLabel(game)}
+          </span>
         </div>
         <div className="text-xs text-zinc-500">
           {game.displayTime}
@@ -123,6 +149,22 @@ function PickCard({
                 </div>
               </div>
             ))}
+            {isThreeWay ? (
+              <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 sm:col-span-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Draw</div>
+                    <div className="text-base font-semibold text-white">Match drawn</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-mono text-xs text-sky-300">{formatOdds(game.odds!.drawMoneyline!)}</div>
+                    {prediction.drawProb !== undefined ? (
+                      <div className="text-xs text-zinc-500">{formatProb(prediction.drawProb)} model</div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="grid gap-3 sm:grid-cols-3">
@@ -241,7 +283,7 @@ export default function DailyPicks() {
 
     const load = async () => {
       try {
-        const slate = await fetchLiveGamesForSports(["nba", "mlb", "nfl"]);
+        const slate = await fetchLiveGamesForSports(["nba", "mlb", "nfl", "wc"]);
         if (cancelled) return;
         setGames(slate);
         setUpdatedAt(new Date());
@@ -294,6 +336,7 @@ export default function DailyPicks() {
             commenceTime: game.date,
             homeOdds: game.odds!.homeMoneyline,
             awayOdds: game.odds!.awayMoneyline,
+            drawOdds: game.odds!.drawMoneyline,
             homeOpenOdds: game.odds!.homeMoneylineOpen,
             awayOpenOdds: game.odds!.awayMoneylineOpen,
             isLive: game.status.state === "in",

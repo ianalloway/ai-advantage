@@ -4,6 +4,7 @@ const ESPN_PATHS: Record<Sport, string> = {
   nba: "basketball/nba",
   nfl: "football/nfl",
   mlb: "baseball/mlb",
+  wc: "soccer/fifa.world",
 };
 
 const STATUS_ORDER: Record<string, number> = {
@@ -37,9 +38,21 @@ export interface LiveMarketGame {
   broadcast?: string;
   bookmaker?: string;
   marketSource?: "odds-api" | "espn-fallback";
+  marketAudit?: {
+    source: "odds-api" | "espn-fallback" | "none";
+    bookmaker?: string;
+    providerLastUpdate?: string;
+    cacheFetchedAt?: string;
+    cacheAgeSeconds?: number;
+    cacheTtlSeconds?: number;
+    stale: boolean;
+    matchConfidence: number;
+    fallbackReason?: string;
+  };
   odds: null | {
     homeMoneyline: number;
     awayMoneyline: number;
+    drawMoneyline?: number;
     homeMoneylineOpen?: number;
     awayMoneylineOpen?: number;
     homeMoneylineClose?: number;
@@ -273,6 +286,20 @@ function toLiveMarketGame(event: EspnScoreboardEvent, sport: Sport, summary: Sum
     broadcast: nationalBroadcast ?? localBroadcast,
     bookmaker: parsedOdds?.bookmaker,
     marketSource: parsedOdds ? "espn-fallback" : undefined,
+    marketAudit: parsedOdds
+      ? {
+          source: "espn-fallback",
+          bookmaker: parsedOdds.bookmaker,
+          stale: false,
+          matchConfidence: 0.55,
+          fallbackReason: "Local fallback is using ESPN PickCenter because the Netlify sports-lines function is unavailable.",
+        }
+      : {
+          source: "none",
+          stale: true,
+          matchConfidence: 0,
+          fallbackReason: "No local fallback line was available.",
+        },
     odds: parsedOdds
       ? {
           homeMoneyline: parsedOdds.homeMoneyline,

@@ -104,8 +104,19 @@ const workflowSteps = [
   "Track outcomes against CLV and proof history.",
 ];
 
+const LIVE_DESK_SPORTS: Sport[] = ["nba", "nfl", "mlb", "wc"];
+
+function sportShortLabel(sport: Sport): string {
+  return sport === "wc" ? "World Cup" : sport.toUpperCase();
+}
+
 function getDefaultSport(): Sport {
-  const month = new Date().getMonth();
+  const now = new Date();
+  // Lead with the World Cup while the 2026 tournament is running.
+  if (now >= new Date("2026-06-11T00:00:00Z") && now <= new Date("2026-07-20T00:00:00Z")) {
+    return "wc";
+  }
+  const month = now.getMonth();
   if (month >= 2 && month <= 9) return "mlb";
   if (month >= 8 || month <= 1) return "nfl";
   return "nba";
@@ -250,6 +261,17 @@ function formatLineDelta(delta?: number) {
   return `${delta > 0 ? "+" : ""}${delta.toFixed(2)}`;
 }
 
+function formatMarketAudit(game: LiveMarketGame) {
+  const audit = game.marketAudit;
+  if (!audit) return game.marketSource === "odds-api" ? "Provider confirmed" : "Fallback line";
+  if (audit.source === "odds-api") {
+    const age = audit.cacheAgeSeconds !== undefined ? ` · ${Math.round(audit.cacheAgeSeconds / 60)}m cache` : "";
+    return `${audit.stale ? "Stale provider" : "Provider confirmed"}${age}`;
+  }
+  if (audit.source === "espn-fallback") return "ESPN fallback";
+  return "No verified line";
+}
+
 function Index() {
   const [gameInput, setGameInput] = useState("");
   const [bettingAdvice, setBettingAdvice] = useState("");
@@ -354,6 +376,7 @@ function Index() {
               commenceTime: game.date,
               homeOdds: game.odds.homeMoneyline,
               awayOdds: game.odds.awayMoneyline,
+              drawOdds: game.odds.drawMoneyline,
               homeOpenOdds: game.odds.homeMoneylineOpen,
               awayOpenOdds: game.odds.awayMoneylineOpen,
               isLive: game.status.state === "in",
@@ -827,7 +850,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                 description="Pick a sport, inspect current games, and only act when the model and the execution filters agree."
               />
               <div className="flex rounded-lg border border-white/10 bg-white/[0.035] p-1">
-                {(["nba", "nfl", "mlb"] as Sport[]).map((sport) => (
+                {LIVE_DESK_SPORTS.map((sport) => (
                   <Button
                     key={sport}
                     type="button"
@@ -843,7 +866,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                       setBacktestSummary(null);
                     }}
                   >
-                    {sport.toUpperCase()}
+                    {sportShortLabel(sport)}
                   </Button>
                 ))}
               </div>
@@ -871,7 +894,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                   <div className="p-10 text-center text-red-200">{liveSlateError}</div>
                 ) : analyzedGames.length === 0 ? (
                   <div className="p-10 text-center text-slate-400">
-                    No current {selectedSport.toUpperCase()} games are on the board right now. The app stays quiet instead of inventing a pick.
+                    No current {sportShortLabel(selectedSport)} games are on the board right now. The app stays quiet instead of inventing a pick.
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
@@ -903,18 +926,34 @@ Bet responsibly. This is model output, not a guarantee.`);
                                   <div className="font-medium text-white">
                                     {game.awayAbbr} @ {game.homeAbbr}
                                   </div>
-                                  <div className="mt-1 text-xs text-slate-500">
-                                    {game.status.shortDetail} · {game.displayTime}
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
+	                                  <div className="mt-1 text-xs text-slate-500">
+	                                    {game.status.shortDetail} · {game.displayTime}
+	                                  </div>
+                                    <div
+                                      className={`mt-2 inline-flex rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] ${
+                                        game.marketAudit?.source === "odds-api" && !game.marketAudit.stale
+                                          ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200"
+                                          : "border-amber-400/20 bg-amber-400/10 text-amber-200"
+                                      }`}
+                                      title={game.marketAudit?.fallbackReason}
+                                    >
+                                      {formatMarketAudit(game)}
+                                    </div>
+	                                </div>
+	                              </div>
+	                            </td>
                             <td className="px-5 py-4">
                               <div className="font-mono text-cyan-200">
-                                {game.odds ? `${formatOdds(game.odds.awayMoneyline)} / ${formatOdds(game.odds.homeMoneyline)}` : "Pending"}
+                                {game.odds
+                                  ? game.odds.drawMoneyline !== undefined
+                                    ? `${formatOdds(game.odds.awayMoneyline)} / ${formatOdds(game.odds.drawMoneyline)} / ${formatOdds(game.odds.homeMoneyline)}`
+                                    : `${formatOdds(game.odds.awayMoneyline)} / ${formatOdds(game.odds.homeMoneyline)}`
+                                  : "Pending"}
                               </div>
                               <div className="mt-1 text-xs text-slate-500">
-                                {game.odds?.spread !== undefined ? `Spread ${game.odds.spread}` : "Moneyline"} · O/U {game.odds?.overUnder ?? "Pending"}
+                                {game.odds?.drawMoneyline !== undefined
+                                  ? "Away / Draw / Home"
+                                  : `${game.odds?.spread !== undefined ? `Spread ${game.odds.spread}` : "Moneyline"} · O/U ${game.odds?.overUnder ?? "Pending"}`}
                               </div>
                             </td>
                             <td className="px-5 py-4">
@@ -930,7 +969,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                             <td className="px-5 py-4">
                               {prediction ? (
                                 <span className={prediction.executionAdjustedEdge >= 0 ? "font-semibold text-emerald-300" : "font-semibold text-red-300"}>
-                                  {formatEdge(Math.max(prediction.homeEdge, prediction.awayEdge))}
+                                  {formatEdge(prediction.predictedWinnerEdge)}
                                 </span>
                               ) : (
                                 <span className="text-slate-500">Pending</span>
@@ -1202,7 +1241,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                       id="game-input"
                       value={gameInput}
                       onChange={(event) => setGameInput(event.target.value)}
-                      placeholder={`Try "${selectedSport === "nba" ? "Lakers vs Warriors" : selectedSport === "nfl" ? "Bills vs Chiefs" : "Dodgers vs Padres"}"`}
+                      placeholder={`Try "${selectedSport === "nba" ? "Lakers vs Warriors" : selectedSport === "nfl" ? "Bills vs Chiefs" : selectedSport === "wc" ? "Brazil vs Morocco" : "Dodgers vs Padres"}"`}
                       className="min-h-28 border-white/10 bg-slate-950/70 text-white placeholder:text-slate-600"
                     />
                     <Button
@@ -1376,7 +1415,9 @@ The report will show:
                     <div className="mt-1 text-sm text-slate-400">
                       {billingStatus
                         ? billingStatus.premiumCheckoutReady && billingStatus.oneTimeCheckoutReady
-                          ? "Stripe Checkout is ready for Pro Monthly and Event Pass."
+                          ? billingStatus.stripeWebhookConfigured && billingStatus.entitlementStoreConfigured
+                            ? "Stripe Checkout, webhook fulfillment, and server entitlements are ready."
+                            : "Stripe Checkout is ready, but webhook fulfillment or entitlements still need production envs."
                           : billingStatus.stripeSecretConfigured
                             ? "Card checkout is waiting on Stripe Price IDs in Netlify. Crypto unlock remains available."
                             : "Card checkout is waiting on the Stripe secret key in Netlify. Crypto unlock remains available."
@@ -1406,6 +1447,24 @@ The report will show:
                   {billingStatus?.automaticTaxEnabled ? (
                     <Badge className="border-cyan-300/30 bg-cyan-300/10 text-cyan-100">Tax enabled</Badge>
                   ) : null}
+                  <Badge
+                    className={
+                      billingStatus?.stripeWebhookConfigured
+                        ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-100"
+                        : "border-amber-300/30 bg-amber-300/10 text-amber-100"
+                    }
+                  >
+                    Webhook {billingStatus?.stripeWebhookConfigured ? "ready" : "pending"}
+                  </Badge>
+                  <Badge
+                    className={
+                      billingStatus?.entitlementStoreConfigured
+                        ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-100"
+                        : "border-amber-300/30 bg-amber-300/10 text-amber-100"
+                    }
+                  >
+                    Entitlements {billingStatus?.entitlementStoreConfigured ? "ready" : "pending"}
+                  </Badge>
                 </div>
               </div>
             </div>

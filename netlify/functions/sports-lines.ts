@@ -1,6 +1,6 @@
 import { getStore, setEnvironmentContext } from "@netlify/blobs";
 
-type Sport = "nba" | "nfl" | "mlb";
+type Sport = "nba" | "nfl" | "mlb" | "wc";
 
 type NetlifyEvent = {
   blobs?: string;
@@ -34,12 +34,26 @@ interface LiveMarketGame {
   broadcast?: string;
   bookmaker?: string;
   marketSource?: "odds-api" | "espn-fallback";
+  marketAudit?: MarketAudit;
   odds: null | MarketOdds;
+}
+
+interface MarketAudit {
+  source: "odds-api" | "espn-fallback" | "none";
+  bookmaker?: string;
+  providerLastUpdate?: string;
+  cacheFetchedAt?: string;
+  cacheAgeSeconds?: number;
+  cacheTtlSeconds?: number;
+  stale: boolean;
+  matchConfidence: number;
+  fallbackReason?: string;
 }
 
 interface MarketOdds {
   homeMoneyline: number;
   awayMoneyline: number;
+  drawMoneyline?: number;
   homeMoneylineOpen?: number;
   awayMoneylineOpen?: number;
   homeMoneylineClose?: number;
@@ -138,13 +152,17 @@ const ESPN_PATHS: Record<Sport, string> = {
   nba: "basketball/nba",
   nfl: "football/nfl",
   mlb: "baseball/mlb",
+  wc: "soccer/fifa.world",
 };
 
 const ODDS_API_SPORTS: Record<Sport, string> = {
   nba: "basketball_nba",
   nfl: "americanfootball_nfl",
   mlb: "baseball_mlb",
+  wc: "soccer_fifa_world_cup",
 };
+
+const ALL_SPORTS: Sport[] = ["nba", "nfl", "mlb", "wc"];
 
 const STATUS_ORDER: Record<string, number> = {
   in: 0,
@@ -176,12 +194,12 @@ function json(statusCode: number, body: unknown, extraHeaders: Record<string, st
 }
 
 function getSports(query?: Record<string, string | undefined> | null): Sport[] {
-  const raw = query?.sports ?? "nba,mlb,nfl";
+  const raw = query?.sports ?? "nba,mlb,nfl,wc";
   const sports = raw
     .split(",")
     .map((item) => item.trim().toLowerCase())
-    .filter((item): item is Sport => item === "nba" || item === "nfl" || item === "mlb");
-  return sports.length ? Array.from(new Set(sports)) : ["nba", "mlb", "nfl"];
+    .filter((item): item is Sport => (ALL_SPORTS as string[]).includes(item));
+  return sports.length ? Array.from(new Set(sports)) : ["nba", "mlb", "nfl", "wc"];
 }
 
 function getDateKey(query?: Record<string, string | undefined> | null) {
@@ -389,6 +407,8 @@ function parseOddsApiEvent(event: OddsApiEvent) {
   const totals = book.markets?.find((market) => market.key === "totals");
   const homeMoneyline = h2h?.outcomes?.find((outcome) => outcome.name === event.home_team)?.price;
   const awayMoneyline = h2h?.outcomes?.find((outcome) => outcome.name === event.away_team)?.price;
+  // Soccer (World Cup) has a 3-way market with an explicit Draw outcome.
+  const drawMoneyline = h2h?.outcomes?.find((outcome) => outcome.name.toLowerCase() === "draw")?.price;
 
   if (!validMoneyline(homeMoneyline) || !validMoneyline(awayMoneyline)) return null;
 
@@ -399,9 +419,11 @@ function parseOddsApiEvent(event: OddsApiEvent) {
   return {
     key: marketKey(event.home_team, event.away_team),
     bookmaker: book.title || book.key,
+    providerLastUpdate: book.last_update,
     odds: {
       homeMoneyline,
       awayMoneyline,
+      drawMoneyline: validMoneyline(drawMoneyline) ? drawMoneyline : undefined,
       spread: homeSpread?.point,
       overUnder: total?.point,
       homeSpreadOdds: homeSpread?.price,
@@ -417,6 +439,17 @@ const ODDS_CACHE_MINUTES = Number(process.env.ODDS_API_CACHE_MINUTES) || 180;
 interface OddsCacheEntry {
   fetchedAt: number;
   events: OddsApiEvent[];
+}
+
+function cacheMeta(entry: OddsCacheEntry | null | undefined, stale = false) {
+  if (!entry) return null;
+  return {
+    fetchedAt: entry.fetchedAt,
+    fetchedAtIso: new Date(entry.fetchedAt).toISOString(),
+    ageSeconds: Math.max(0, Math.floor((Date.now() - entry.fetchedAt) / 1000)),
+    ttlSeconds: ODDS_CACHE_MINUTES * 60,
+    stale,
+  };
 }
 
 const oddsMemoryCache = new Map<Sport, OddsCacheEntry>();
@@ -472,12 +505,12 @@ function toMarkets(events: OddsApiEvent[]) {
 async function fetchOddsApiMarkets(sport: Sport, blobsReady: boolean) {
   const apiKey = process.env.THE_ODDS_API_KEY || process.env.ODDS_API_KEY;
   if (!apiKey) {
-    return { configured: false, markets: new Map<string, ReturnType<typeof parseOddsApiEvent>>(), error: null };
+    return { configured: false, markets: new Map<string, ReturnType<typeof parseOddsApiEvent>>(), cache: null, error: null };
   }
 
   const memoryHit = oddsMemoryCache.get(sport);
   if (isFresh(memoryHit)) {
-    return { configured: true, markets: toMarkets(memoryHit.events), error: null };
+    return { configured: true, markets: toMarkets(memoryHit.events), cache: cacheMeta(memoryHit), error: null };
   }
 
   const cacheStore = getOddsCacheStore(blobsReady);
@@ -487,7 +520,7 @@ async function fetchOddsApiMarkets(sport: Sport, blobsReady: boolean) {
       const cached = (await cacheStore.get(cacheKey, { type: "json" })) as OddsCacheEntry | null;
       if (isFresh(cached)) {
         oddsMemoryCache.set(sport, cached);
-        return { configured: true, markets: toMarkets(cached.events), error: null };
+        return { configured: true, markets: toMarkets(cached.events), cache: cacheMeta(cached), error: null };
       }
     } catch {
       // Cache miss/unavailable; fall through to the upstream fetch.
@@ -514,15 +547,15 @@ async function fetchOddsApiMarkets(sport: Sport, blobsReady: boolean) {
         // Memory cache still applies for this container.
       }
     }
-    return { configured: true, markets: toMarkets(events), error: null };
+    return { configured: true, markets: toMarkets(events), cache: cacheMeta(entry), error: null };
   } catch (error) {
     // Quota exhaustion or upstream failure: serve stale cache if any exists.
     const stale = memoryHit ?? null;
     const message = error instanceof Error ? error.message : "Unable to fetch odds provider.";
     if (stale) {
-      return { configured: true, markets: toMarkets(stale.events), error: null };
+      return { configured: true, markets: toMarkets(stale.events), cache: cacheMeta(stale, true), error: null };
     }
-    return { configured: true, markets: new Map<string, ReturnType<typeof parseOddsApiEvent>>(), error: message };
+    return { configured: true, markets: new Map<string, ReturnType<typeof parseOddsApiEvent>>(), cache: null, error: message };
   }
 }
 
@@ -531,6 +564,7 @@ async function toLiveMarketGame(
   sport: Sport,
   summary: SummaryResponse | null,
   oddsApiMarket: ReturnType<typeof parseOddsApiEvent> | null | undefined,
+  oddsProvider: Awaited<ReturnType<typeof fetchOddsApiMarkets>>,
 ): Promise<LiveMarketGame | null> {
   const competition = event.competitions?.[0];
   const competitors = competition?.competitors ?? [];
@@ -554,6 +588,35 @@ async function toLiveMarketGame(
         awayMoneylineClose: espnFallback?.odds.awayMoneylineClose,
       }
     : espnFallback?.odds ?? null;
+  const marketAudit: MarketAudit = oddsApiMarket
+    ? {
+        source: "odds-api",
+        bookmaker: oddsApiMarket.bookmaker,
+        providerLastUpdate: oddsApiMarket.providerLastUpdate,
+        cacheFetchedAt: oddsProvider.cache?.fetchedAtIso,
+        cacheAgeSeconds: oddsProvider.cache?.ageSeconds,
+        cacheTtlSeconds: oddsProvider.cache?.ttlSeconds,
+        stale: Boolean(oddsProvider.cache?.stale),
+        matchConfidence: 1,
+      }
+    : espnFallback
+      ? {
+          source: "espn-fallback",
+          bookmaker: espnFallback.bookmaker,
+          cacheTtlSeconds: ODDS_CACHE_MINUTES * 60,
+          stale: false,
+          matchConfidence: oddsProvider.configured ? 0.55 : 0.7,
+          fallbackReason: oddsProvider.configured
+            ? oddsProvider.error || "No matching Odds API event was found for this ESPN game."
+            : "The Odds API key is not configured; using ESPN PickCenter fallback lines.",
+        }
+      : {
+          source: "none",
+          cacheTtlSeconds: ODDS_CACHE_MINUTES * 60,
+          stale: Boolean(oddsProvider.error),
+          matchConfidence: 0,
+          fallbackReason: oddsProvider.error || "No verified market line is available for this game.",
+        };
 
   return {
     id: event.id,
@@ -580,6 +643,7 @@ async function toLiveMarketGame(
     broadcast: nationalBroadcast ?? localBroadcast,
     bookmaker: oddsApiMarket?.bookmaker ?? espnFallback?.bookmaker,
     marketSource: source,
+    marketAudit,
     odds,
   };
 }
@@ -600,7 +664,7 @@ async function fetchSportSlate(sport: Sport, dateKey: string, blobsReady: boolea
         const home = competition?.competitors?.find((team) => team.homeAway === "home")?.team?.displayName;
         const away = competition?.competitors?.find((team) => team.homeAway === "away")?.team?.displayName;
         const oddsApiMarket = home && away ? oddsProvider.markets.get(marketKey(home, away)) : null;
-        return toLiveMarketGame(event, sport, summary, oddsApiMarket);
+        return toLiveMarketGame(event, sport, summary, oddsApiMarket, oddsProvider);
       }),
     )
   )
@@ -618,6 +682,7 @@ async function fetchSportSlate(sport: Sport, dateKey: string, blobsReady: boolea
       oddsApiConfigured: oddsProvider.configured,
       oddsApiMatched: games.filter((game) => game.marketSource === "odds-api").length,
       espnFallbackMatched: games.filter((game) => game.marketSource === "espn-fallback").length,
+      cache: oddsProvider.cache,
       error: oddsProvider.error,
     },
   };
