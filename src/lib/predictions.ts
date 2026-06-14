@@ -332,7 +332,7 @@ function getTimingContext(commenceTime?: string, isLive?: boolean) {
   return { factor: 0.97, penalty: 0.04, window: 'Early look' };
 }
 
-function calculateExecutionAdjustedEdge({
+export function calculateExecutionAdjustedEdge({
   sport,
   modelProb,
   rawEdge,
