@@ -196,7 +196,7 @@ export interface SettlementResult {
 export async function runSettlement(existing: LedgerRow[], deps: SettlementDeps): Promise<SettlementResult> {
   const now = (deps.now ?? (() => new Date().toISOString()))();
 
-  let feedGames: FeedGame[] = [];
+  let feedGames: FeedGame[];
   try {
     feedGames = await deps.fetchFeed();
   } catch {
