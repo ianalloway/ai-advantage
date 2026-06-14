@@ -947,7 +947,35 @@ export function parseGameInput(input: string, sport: Sport = 'nba'): { homeTeam:
 }
 
 // Generate historical backtest data
+// Small deterministic PRNG so illustrative simulations are reproducible rather
+// than fabricated fresh on every call.
+function hashSeed(str: string): number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i += 1) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Deterministic, seeded illustrative backtest — NOT historical results.
+ * The same seed (sport + window) always yields the same output, so nothing is
+ * fabricated fresh on each click. Callers must label this as an illustrative
+ * simulation. The real, settled track record lives in the execution ledger.
+ */
 export function generateBacktestData(sport: Sport, months: number = 6): BacktestResult[] {
+  const rng = mulberry32(hashSeed(`backtest:${sport}:${months}`));
   const teamStats = getTeamStats(sport);
   const teams = Object.keys(teamStats);
   const results: BacktestResult[] = [];
@@ -961,10 +989,10 @@ export function generateBacktestData(sport: Sport, months: number = 6): Backtest
     monthDate.setMonth(monthDate.getMonth() + m);
     
     for (let g = 0; g < gamesPerMonth; g++) {
-      const homeIdx = Math.floor(Math.random() * teams.length);
-      let awayIdx = Math.floor(Math.random() * teams.length);
+      const homeIdx = Math.floor(rng() * teams.length);
+      let awayIdx = Math.floor(rng() * teams.length);
       while (awayIdx === homeIdx) {
-        awayIdx = Math.floor(Math.random() * teams.length);
+        awayIdx = Math.floor(rng() * teams.length);
       }
       
       const homeTeam = teams[homeIdx];
@@ -976,8 +1004,8 @@ export function generateBacktestData(sport: Sport, months: number = 6): Backtest
       const prediction = homeProb > 0.5 ? homeTeam : awayTeam;
       const modelProb = Math.max(homeProb, 1 - homeProb);
       
-      // Simulate actual outcome with some randomness
-      const actualHomeWin = Math.random() < (homeStats.win_pct * 0.6 + 0.2 + (homeStats.point_diff > awayStats.point_diff ? 0.1 : -0.1));
+      // Simulate actual outcome from the seeded stream (deterministic).
+      const actualHomeWin = rng() < (homeStats.win_pct * 0.6 + 0.2 + (homeStats.point_diff > awayStats.point_diff ? 0.1 : -0.1));
       const actualWinner = actualHomeWin ? homeTeam : awayTeam;
       const correct = prediction === actualWinner;
       
@@ -1147,19 +1175,25 @@ export interface PerformanceData {
 }
 
 // Generate simulated performance data for display
+/**
+ * Deterministic, seeded illustrative performance summary — NOT historical
+ * results. Stable across renders; surfaces must label it as an illustrative
+ * simulation. The real settled record lives in the execution ledger.
+ */
 export function generatePerformanceData(): PerformanceData {
+  const rng = mulberry32(hashSeed('performance:illustrative-v1'));
   const weeks: WeeklyPerformance[] = [];
   const sports: Sport[] = ['nba', 'nfl', 'mlb'];
-  
-  // Generate 12 weeks of historical data
+
+  // Generate 12 weeks of illustrative data
   for (let i = 11; i >= 0; i--) {
     const date = new Date();
     date.setDate(date.getDate() - (i * 7));
     const weekStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    
-    // Simulate picks with ~58% win rate (realistic for good model)
-    const picks = Math.floor(Math.random() * 15) + 20; // 20-35 picks per week
-    const baseWinRate = 0.55 + (Math.random() * 0.10); // 55-65% win rate
+
+    // Illustrative picks around a ~58% win rate (seeded, deterministic)
+    const picks = Math.floor(rng() * 15) + 20; // 20-35 picks per week
+    const baseWinRate = 0.55 + (rng() * 0.10); // 55-65% win rate
     const wins = Math.round(picks * baseWinRate);
     const losses = picks - wins;
     const winRate = wins / picks;
@@ -1184,9 +1218,9 @@ export function generatePerformanceData(): PerformanceData {
   
   // Generate sport breakdown
   const sportBreakdown: SportPerformance[] = sports.map(sport => {
-    const totalPicks = Math.floor(Math.random() * 50) + 80;
+    const totalPicks = Math.floor(rng() * 50) + 80;
     const baseWinRate = sport === 'nba' ? 0.60 : sport === 'nfl' ? 0.58 : 0.55;
-    const winRate = baseWinRate + (Math.random() * 0.08 - 0.04);
+    const winRate = baseWinRate + (rng() * 0.08 - 0.04);
     const wins = Math.round(totalPicks * winRate);
     const losses = totalPicks - wins;
     
@@ -1203,9 +1237,9 @@ export function generatePerformanceData(): PerformanceData {
       winRate,
       profit: Math.round(profit),
       roi: Math.round(roi * 10) / 10,
-      streak: Math.floor(Math.random() * 8) - 2,
-      bestWeek: Math.floor(Math.random() * 800) + 200,
-      worstWeek: -(Math.floor(Math.random() * 400) + 100),
+      streak: Math.floor(rng() * 8) - 2,
+      bestWeek: Math.floor(rng() * 800) + 200,
+      worstWeek: -(Math.floor(rng() * 400) + 100),
     };
   });
   
@@ -1216,9 +1250,9 @@ export function generatePerformanceData(): PerformanceData {
   const overallWinRate = totalWins / totalPicks;
   const overallROI = (totalProfit / (totalPicks * 100)) * 100;
   
-  // Simulate streaks
-  const currentStreak = Math.floor(Math.random() * 10) - 3;
-  const longestStreak = Math.floor(Math.random() * 8) + 5;
+  // Illustrative streaks (seeded, deterministic)
+  const currentStreak = Math.floor(rng() * 10) - 3;
+  const longestStreak = Math.floor(rng() * 8) + 5;
   
   return {
     weeklyData: weeks,

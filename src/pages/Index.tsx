@@ -286,7 +286,9 @@ function Index() {
   const [selectedSport, setSelectedSport] = useState<Sport>(() => getDefaultSport());
   const [backtestSummary, setBacktestSummary] = useState<BacktestSummary | null>(null);
   const [isBacktesting, setIsBacktesting] = useState(false);
-  const [performanceData, setPerformanceData] = useState<PerformanceData | null>(null);
+  // Seeded, deterministic illustrative data (clearly labeled in the UI) — not a
+  // fabricated-fresh-on-every-render curve. The real settled record is the ledger.
+  const [performanceData, setPerformanceData] = useState<PerformanceData | null>(() => generatePerformanceData());
   const [access, setAccess] = useState(getAccessState());
   const [cryptoAccount, setCryptoAccount] = useState(getCurrentCryptoAccount());
   const [siteUser, setSiteUser] = useState<SiteUser | null>(getCurrentSiteUser());
@@ -437,14 +439,8 @@ function Index() {
       }));
     }
 
-    return [
-      { name: "W1", value: 96 },
-      { name: "W2", value: 103 },
-      { name: "W3", value: 101 },
-      { name: "W4", value: 111 },
-      { name: "W5", value: 118 },
-      { name: "W6", value: 124 },
-    ];
+    // Flat baseline if no series is available — never a fabricated upward curve.
+    return Array.from({ length: 6 }, (_, index) => ({ name: `W${index + 1}`, value: 100 }));
   }, [performanceData]);
 
   const runBacktest = () => {
@@ -822,7 +818,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                       <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
                         Proof curve
                       </div>
-                      <div className="mt-1 text-sm text-slate-300">Bankroll trend preview</div>
+                      <div className="mt-1 text-sm text-slate-300">Bankroll trend · illustrative, not historical results</div>
                     </div>
                     <Button
                       type="button"
@@ -1110,20 +1106,25 @@ Bet responsibly. This is model output, not a guarantee.`);
 
               <div className="rounded-xl border border-white/10 bg-white/[0.035] p-6">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <h3 className="flex items-center gap-2 text-xl font-semibold text-white">
-                    <BarChart3 className="h-5 w-5 text-cyan-300" />
-                    Backtest console
-                  </h3>
+                  <div>
+                    <h3 className="flex items-center gap-2 text-xl font-semibold text-white">
+                      <BarChart3 className="h-5 w-5 text-cyan-300" />
+                      Backtest console
+                    </h3>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Deterministic illustrative simulation — not historical results. The real settled record is the execution ledger.
+                    </p>
+                  </div>
                   <Button onClick={runBacktest} disabled={isBacktesting} className="bg-cyan-300 text-slate-950 hover:bg-cyan-200">
                     {isBacktesting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Activity className="mr-2 h-4 w-4" />}
-                    {isBacktesting ? "Running..." : "Run 6-month backtest"}
+                    {isBacktesting ? "Running..." : "Run illustrative backtest"}
                   </Button>
                 </div>
 
                 {backtestSummary ? (
                   <div className="mt-6 space-y-5">
                     <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-                      <StatTile label="Games" value={String(backtestSummary.totalGames)} detail="Sampled history" />
+                      <StatTile label="Games" value={String(backtestSummary.totalGames)} detail="Illustrative" />
                       <StatTile label="Accuracy" value={`${(backtestSummary.accuracy * 100).toFixed(1)}%`} detail="Winner calls" accent="text-cyan-200" />
                       <StatTile label="Profit" value={formatMoney(backtestSummary.totalProfit)} detail="Simulated P/L" accent={backtestSummary.totalProfit >= 0 ? "text-emerald-300" : "text-red-300"} />
                       <StatTile label="ROI" value={`${backtestSummary.roi.toFixed(1)}%`} detail="Bet ROI" accent={backtestSummary.roi >= 0 ? "text-emerald-300" : "text-red-300"} />
