@@ -82,27 +82,8 @@ export async function syncExecutionLedgerEntries(
     return [];
   }
 
-  const response = await fetch("/api/execution-ledger", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      entries,
-      accessTier,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(await response.text());
-  }
-
-  const data = (await response.json()) as LedgerArchiveResponse;
-  if (data.rows.length > 0) {
-    await hydrateExecutionLedgerEntries(data.rows);
-  }
-
-  return data.rows;
+  await upsertExecutionLedgerEntries(entries, accessTier);
+  return listExecutionLedgerArchive(250);
 }
 
 export async function listExecutionLedgerArchive(limit = 100): Promise<HistoricalExecutionLedgerEntry[]> {

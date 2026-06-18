@@ -4,7 +4,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Index from "./pages/Index";
-import { syncAccessFromUrl } from "./lib/stripe";
+import { syncAccessFromUrl, syncEntitlementAccess } from "./lib/stripe";
 import { syncSiteUserSession } from "./lib/auth";
 
 const DailyPicks = lazy(() => import("./pages/DailyPicks"));
@@ -36,8 +36,15 @@ function RouteFallback() {
 
 function App() {
   useEffect(() => {
-    void syncAccessFromUrl();
-    void syncSiteUserSession();
+    void (async () => {
+      try {
+        await syncAccessFromUrl();
+        await syncSiteUserSession();
+        await syncEntitlementAccess();
+      } catch {
+        // Keep the last rendered state if the entitlement endpoint is briefly unavailable.
+      }
+    })();
   }, []);
 
   return (

@@ -59,6 +59,17 @@ function formatSeenAt(value: string) {
   return new Date(value).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+function formatMarketAudit(game: LiveMarketGame) {
+  const audit = game.marketAudit;
+  if (!audit) return game.bookmaker ?? "Market feed";
+  if (audit.source === "odds-api") {
+    const age = audit.cacheAgeSeconds !== undefined ? ` · ${Math.round(audit.cacheAgeSeconds / 60)}m cache` : "";
+    return `${audit.stale ? "Stale" : "Confirmed"} · ${audit.bookmaker ?? game.bookmaker ?? "Odds API"}${age}`;
+  }
+  if (audit.source === "espn-fallback") return `Fallback · ${audit.bookmaker ?? game.bookmaker ?? "ESPN"}`;
+  return "No verified line";
+}
+
 function HistoryTable({ rows }: { rows: HistoricalExecutionLedgerEntry[] }) {
   return (
     <div className="overflow-x-auto">
@@ -421,6 +432,12 @@ export default function Leaderboard() {
                             <>
                               <span>·</span>
                               <span>{entry.bookmaker}</span>
+                            </>
+                          ) : null}
+                          {games.find((game) => game.id === entry.gameId) ? (
+                            <>
+                              <span>·</span>
+                              <span>{formatMarketAudit(games.find((game) => game.id === entry.gameId)!)}</span>
                             </>
                           ) : null}
                         </div>

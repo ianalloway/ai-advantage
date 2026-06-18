@@ -95,7 +95,9 @@ function sortRows(rows: HistoricalExecutionLedgerEntry[]) {
 }
 
 function normalizeRows(rows: HistoricalExecutionLedgerEntry[]) {
-  return sortRows(rows).slice(0, MAX_ROWS);
+  return sortRows(rows)
+    .filter((row) => !/^probe-|^test-/i.test(row.id) && !/backend probe|test row/i.test(row.eventLabel))
+    .slice(0, MAX_ROWS);
 }
 
 function mergeRows(
@@ -161,7 +163,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     try {
       const limit = parseLimit(req.query);
       const rows =
-        ((await redis.get<HistoricalExecutionLedgerEntry[]>(LEDGER_KEY)) ?? []).slice(0, limit);
+        normalizeRows((await redis.get<HistoricalExecutionLedgerEntry[]>(LEDGER_KEY)) ?? []).slice(0, limit);
       res.status(200).json({ configured: true, rows });
     } catch (error) {
       const message =
