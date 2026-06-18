@@ -1,5 +1,6 @@
 import { connectLambda, getStore } from "@netlify/blobs";
 import { Redis } from "@upstash/redis";
+import { timingSafeEqual } from "node:crypto";
 
 type NetlifyEvent = {
   blobs?: string;
@@ -56,6 +57,29 @@ function normalizeLambdaHeaders(headers: NetlifyEvent["headers"]) {
   return Object.fromEntries(
     Object.entries(headers).flatMap(([key, value]) => (typeof value === "string" ? [[key.toLowerCase(), value]] : [])),
   );
+}
+
+function getHeader(headers: NetlifyEvent["headers"], name: string) {
+  const lowerName = name.toLowerCase();
+  const match = Object.entries(headers).find(([key, value]) => key.toLowerCase() === lowerName && value);
+  return match?.[1];
+}
+
+function safeTokenEquals(actual: string, expected: string) {
+  const actualBuffer = Buffer.from(actual);
+  const expectedBuffer = Buffer.from(expected);
+  return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+function isWriteAuthorized(event: NetlifyEvent) {
+  const expectedToken = process.env.EXECUTION_LEDGER_WRITE_TOKEN;
+  if (!expectedToken) return false;
+
+  const authHeader = getHeader(event.headers, "authorization");
+  const bearerToken = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1];
+  const token = bearerToken ?? getHeader(event.headers, "x-execution-ledger-token");
+
+  return Boolean(token && safeTokenEquals(token, expectedToken));
 }
 
 function isLedgerRows(value: unknown): value is HistoricalExecutionLedgerEntry[] {
@@ -120,6 +144,12 @@ function sortRows(rows: HistoricalExecutionLedgerEntry[]) {
   return [...rows].sort((a, b) => new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime());
 }
 
+function normalizeRows(rows: HistoricalExecutionLedgerEntry[]) {
+  return sortRows(rows)
+    .filter((row) => !/^probe-|^test-/i.test(row.id) && !/backend probe|test row/i.test(row.eventLabel))
+    .slice(0, MAX_ROWS);
+}
+
 function mergeRows(
   existingRows: HistoricalExecutionLedgerEntry[],
   nextRows: ExecutionLedgerEntryInput[],
@@ -140,7 +170,7 @@ function mergeRows(
     });
   });
 
-  return sortRows(Array.from(rowsById.values())).slice(0, MAX_ROWS);
+  return normalizeRows(Array.from(rowsById.values()));
 }
 
 function isAccessTier(value: unknown): value is AccessTier {
@@ -190,7 +220,7 @@ export const handler = async (event: NetlifyEvent) => {
   if (event.httpMethod === "GET") {
     try {
       const limit = parseLimit(event.queryStringParameters);
-      const rows = (await store.get()).slice(0, limit);
+      const rows = normalizeRows(await store.get()).slice(0, limit);
       return response(200, { configured: true, rows });
     } catch (error) {
       console.error("Unable to read the shared execution ledger.", error);
@@ -199,6 +229,14 @@ export const handler = async (event: NetlifyEvent) => {
   }
 
   if (event.httpMethod === "POST") {
+    if (!isWriteAuthorized(event)) {
+      return response(403, {
+        configured: true,
+        rows: [],
+        message: "Shared execution ledger writes require a server-side write token.",
+      });
+    }
+
     try {
       const payload = parseBody(event);
       const rows = Array.isArray(payload.entries) ? payload.entries.filter(isExecutionLedgerEntryInput) : [];

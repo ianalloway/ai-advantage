@@ -1,4 +1,5 @@
 type NetlifyEvent = {
+  blobs?: string;
   body: string | null;
   headers: Record<string, string | undefined>;
   httpMethod: string;
@@ -7,10 +8,12 @@ type NetlifyEvent = {
 };
 
 type ApiRequest = {
+  blobs?: string;
   method?: string;
   body?: unknown;
   headers: Record<string, string | string[] | undefined>;
   query?: Record<string, string | string[] | undefined>;
+  rawBody?: string;
 };
 
 type ApiResponse = {
@@ -41,6 +44,13 @@ function parseBody(event: NetlifyEvent): unknown {
   return rawBody;
 }
 
+function getRawBody(event: NetlifyEvent): string {
+  if (!event.body) return "";
+  return event.isBase64Encoded
+    ? Buffer.from(event.body, "base64").toString("utf8")
+    : event.body;
+}
+
 export async function runApiHandler(event: NetlifyEvent, handler: ApiHandler) {
   let statusCode = 200;
   let responseBody = "";
@@ -65,10 +75,12 @@ export async function runApiHandler(event: NetlifyEvent, handler: ApiHandler) {
 
   await handler(
     {
+      blobs: event.blobs,
       method: event.httpMethod,
       body: parseBody(event),
       headers: event.headers,
       query: event.queryStringParameters ?? {},
+      rawBody: getRawBody(event),
     },
     res,
   );

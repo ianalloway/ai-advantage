@@ -1,7 +1,15 @@
 import Stripe from "stripe";
+import {
+  createEntitlementSession,
+  entitlementSessionCookie,
+  getEntitlementStore,
+  upsertStripeCheckoutSessionEntitlement,
+} from "../netlify/functions/_lib/entitlements";
 
 type RequestLike = {
+  blobs?: string;
   method?: string;
+  headers?: Record<string, string | string[] | undefined>;
   query?: Record<string, string | string[] | undefined>;
 };
 
@@ -69,6 +77,19 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     const paid =
       session.status === "complete" &&
       (session.payment_status === "paid" || session.payment_status === "no_payment_required");
+    let entitlement = null;
+
+    if (paid) {
+      const store = getEntitlementStore({ blobs: req.blobs, headers: req.headers });
+      if (store) {
+        entitlement = await upsertStripeCheckoutSessionEntitlement(store, session);
+        const entitlementSession = await createEntitlementSession(store, entitlement);
+        res.setHeader(
+          "Set-Cookie",
+          entitlementSessionCookie(req.headers, entitlementSession.token, entitlementSession.maxAge),
+        );
+      }
+    }
 
     res.status(200).json({
       paid,
@@ -77,6 +98,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
       paymentStatus: session.payment_status,
       customerEmail: session.customer_details?.email ?? null,
       customerId: typeof session.customer === "string" ? session.customer : session.customer?.id ?? null,
+      entitlement,
     });
   } catch (error) {
     const message =

@@ -27,6 +27,11 @@
     Cache-Control = "public, max-age=86400"
 
 [[redirects]]
+  from = "/api/entitlements/me"
+  to = "/.netlify/functions/entitlements"
+  status = 200
+
+[[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/:splat"
   status = 200

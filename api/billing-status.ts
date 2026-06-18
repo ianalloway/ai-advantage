@@ -1,5 +1,9 @@
+import { getEntitlementStore } from "../netlify/functions/_lib/entitlements";
+
 type RequestLike = {
+  blobs?: string;
   method?: string;
+  headers?: Record<string, string | string[] | undefined>;
 };
 
 type ResponseLike = {
@@ -21,11 +25,15 @@ export default function handler(req: RequestLike, res: ResponseLike) {
   }
 
   const stripeSecretConfigured = isConfigured(process.env.STRIPE_SECRET_KEY, "sk_");
+  const stripeWebhookConfigured = isConfigured(process.env.STRIPE_WEBHOOK_SECRET, "whsec_");
   const premiumPriceConfigured = isConfigured(process.env.STRIPE_PREMIUM_PRICE_ID, "price_");
   const oneTimePriceConfigured = isConfigured(process.env.STRIPE_ONE_TIME_PRICE_ID, "price_");
+  const entitlementStoreConfigured = Boolean(getEntitlementStore({ blobs: req.blobs, headers: req.headers }));
 
   res.status(200).json({
     stripeSecretConfigured,
+    stripeWebhookConfigured,
+    entitlementStoreConfigured,
     premiumPriceConfigured,
     oneTimePriceConfigured,
     premiumCheckoutReady: stripeSecretConfigured && premiumPriceConfigured,

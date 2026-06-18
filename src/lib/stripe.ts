@@ -43,6 +43,7 @@ interface CheckoutSessionStatusResponse {
   paymentStatus?: string | null;
   customerEmail?: string | null;
   customerId?: string | null;
+  entitlement?: ServerEntitlement | null;
 }
 
 interface ApiErrorResponse {
@@ -53,11 +54,32 @@ interface ApiErrorResponse {
 
 export interface BillingStatus {
   stripeSecretConfigured: boolean;
+  stripeWebhookConfigured: boolean;
+  entitlementStoreConfigured: boolean;
   premiumPriceConfigured: boolean;
   oneTimePriceConfigured: boolean;
   premiumCheckoutReady: boolean;
   oneTimeCheckoutReady: boolean;
   automaticTaxEnabled: boolean;
+}
+
+export interface ServerEntitlement {
+  id: string;
+  tier: AccessTier;
+  source: AccessSource;
+  label: string;
+  status: "active" | "expired" | "cancelled" | "revoked" | "pending";
+  activatedAt: string;
+  updatedAt: string;
+  expiresAt?: string;
+  email?: string;
+}
+
+interface EntitlementStatusResponse {
+  configured: boolean;
+  entitlement: ServerEntitlement | null;
+  access: AccessState;
+  message?: string;
 }
 
 const STORAGE_KEY = "ai_advantage_access_v2";
@@ -176,6 +198,14 @@ function buildAccessLabel(mode: CheckoutSessionStatusResponse["mode"]): AccessSt
   };
 }
 
+function normalizeServerAccess(access: AccessState | null | undefined): AccessState {
+  if (!access || access.tier === "free" || isExpired(access)) {
+    return FREE_ACCESS;
+  }
+
+  return access;
+}
+
 async function readApiError(response: Response, fallback: string): Promise<string> {
   const contentType = response.headers.get("content-type") ?? "";
 
@@ -279,6 +309,33 @@ export function getAccessState(): AccessState {
   return FREE_ACCESS;
 }
 
+export async function syncEntitlementAccess(): Promise<AccessState> {
+  const response = await fetch("/api/entitlements/me", {
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error("Unable to load entitlement status.");
+  }
+
+  const status = (await response.json()) as EntitlementStatusResponse;
+  if (!status.configured) {
+    return getAccessState();
+  }
+
+  const access = normalizeServerAccess(status.access);
+  if (access.tier === "free") {
+    clearAccess();
+  } else {
+    activateAccess(access);
+  }
+
+  return access;
+}
+
 export function hasFeatureAccess(feature: AccessFeature, access = getAccessState()): boolean {
   if (isExpired(access)) {
     return false;
@@ -355,6 +412,7 @@ export function saveCryptoAccessAccount(input: {
 
 export function signOutAccessSession(): void {
   if (typeof window === "undefined") return;
+  void fetch("/api/entitlements/me", { method: "POST", credentials: "include" }).catch(() => undefined);
   localStorage.removeItem(CRYPTO_SESSION_KEY);
   clearAccess();
 }
@@ -427,7 +485,13 @@ export async function syncAccessFromUrl(): Promise<AccessState | null> {
         return null;
       }
 
-      const access = buildAccessLabel(session.mode);
+      const access = normalizeServerAccess(session.entitlement ? {
+        tier: session.entitlement.tier,
+        source: session.entitlement.source,
+        label: session.entitlement.label,
+        activatedAt: session.entitlement.activatedAt,
+        expiresAt: session.entitlement.expiresAt,
+      } : await syncEntitlementAccess().catch(() => buildAccessLabel(session.mode)));
       activateAccess(access);
       cleanupCheckoutParams(url);
       return access;

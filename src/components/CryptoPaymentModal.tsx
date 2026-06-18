@@ -15,7 +15,7 @@ import {
   Flame,
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
-import { getEventAccessExpiry, saveCryptoAccessAccount } from "@/lib/stripe";
+import { getEventAccessExpiry, saveCryptoAccessAccount, syncEntitlementAccess } from "@/lib/stripe";
 
 const ETH_ADDRESS = "0x6f278ce76ba5ed31fd9be646d074863e126836e9";
 const ETH_AMOUNT = "0.003";   // ≈ $10 at ~$3,300/ETH
@@ -138,7 +138,7 @@ export default function CryptoPaymentModal({
       const response = await fetch("/api/verify-crypto-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ txHash: hash, walletAddress: wallet }),
+        body: JSON.stringify({ txHash: hash, walletAddress: wallet, email, unlockType }),
       });
       const result = (await response.json()) as { verified?: boolean; reason?: string };
       if (!result.verified) {
@@ -168,6 +168,7 @@ export default function CryptoPaymentModal({
       activatedAt: new Date().toISOString(),
       expiresAt: unlockType === "knowledge-vault" ? undefined : getEventAccessExpiry(),
     });
+    await syncEntitlementAccess().catch(() => null);
     setStep("done");
     onSuccess();
   };

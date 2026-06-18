@@ -1,8 +1,10 @@
 import Stripe from "stripe";
+import { getCurrentSiteUserFromEvent } from "../netlify/functions/_lib/auth-session";
 
 type CheckoutMode = "premium" | "one-time";
 
 type RequestLike = {
+  blobs?: string;
   method?: string;
   body?: unknown;
   headers: Record<string, string | string[] | undefined>;
@@ -147,18 +149,22 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     const cancelUrl = new URL("/", origin);
     cancelUrl.searchParams.set("checkout", "cancelled");
 
-    const customerEmail = getCustomerEmail(req.body);
-    const clientReferenceId = getClientReferenceId(req.body);
+    const siteUser = await getCurrentSiteUserFromEvent({ blobs: req.blobs, headers: req.headers });
+    const customerEmail = siteUser?.email ?? getCustomerEmail(req.body);
+    const clientReferenceId = siteUser?.id ?? getClientReferenceId(req.body);
     const metadata = {
       product_surface: "ai-advantage",
       unlock_type: checkoutMode,
       plan_label: modeConfig.label,
+      ...(customerEmail ? { customer_email: customerEmail } : {}),
+      ...(clientReferenceId ? { client_reference_id: clientReferenceId } : {}),
     };
 
     const session = await stripe.checkout.sessions.create({
       mode: modeConfig.stripeMode,
       billing_address_collection: "auto",
       allow_promotion_codes: true,
+      ...(modeConfig.stripeMode === "payment" ? { customer_creation: "always" as const } : {}),
       automatic_tax: {
         enabled: process.env.STRIPE_AUTOMATIC_TAX === "true",
       },

@@ -1,10 +1,19 @@
 // Server-side crypto payment verification.
 // Verifies an Ethereum tx (ETH or USDC/USDT transfer) actually paid the app
 // wallet before any premium access is granted. See issue #36.
+import {
+  createEntitlementSession,
+  entitlementSessionCookie,
+  getEntitlementStore,
+  upsertCryptoEntitlement,
+  type AccessTier,
+} from "../netlify/functions/_lib/entitlements";
 
 type RequestLike = {
+  blobs?: string;
   method?: string;
   body?: unknown;
+  headers?: Record<string, string | string[] | undefined>;
 };
 
 type ResponseLike = {
@@ -28,6 +37,18 @@ const STABLE_TOKENS = new Set([
 ]);
 const TRANSFER_TOPIC =
   "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function getUnlockConfig(unlockType: string | undefined): { tier: AccessTier; label: string } {
+  if (unlockType === "knowledge-vault") {
+    return { tier: "premium", label: "Crypto Knowledge Vault" };
+  }
+
+  return { tier: "event", label: "Crypto Big Game Pass" };
+}
 
 async function rpc<T>(method: string, params: unknown[]): Promise<T> {
   const response = await fetch(RPC_URL, {
@@ -76,13 +97,23 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     return;
   }
 
-  const body = (typeof req.body === "string" ? JSON.parse(req.body) : req.body) as {
+  let body: {
     txHash?: string;
     walletAddress?: string;
+    email?: string;
+    unlockType?: string;
   };
+  try {
+    body = (typeof req.body === "string" ? JSON.parse(req.body) : req.body ?? {}) as typeof body;
+  } catch {
+    res.status(400).json({ verified: false, reason: "Invalid JSON body." });
+    return;
+  }
 
   const txHash = (body?.txHash || "").trim().toLowerCase();
   const walletAddress = (body?.walletAddress || "").trim().toLowerCase();
+  const email = (body?.email || "").trim().toLowerCase();
+  const unlockConfig = getUnlockConfig(body?.unlockType);
 
   if (!/^0x[a-f0-9]{64}$/.test(txHash)) {
     res.status(400).json({ verified: false, reason: "Invalid transaction hash." });
@@ -90,6 +121,10 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   }
   if (!/^0x[a-f0-9]{40}$/.test(walletAddress)) {
     res.status(400).json({ verified: false, reason: "Invalid wallet address." });
+    return;
+  }
+  if (!isValidEmail(email)) {
+    res.status(400).json({ verified: false, reason: "A valid access email is required." });
     return;
   }
 
@@ -126,7 +161,21 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     // Case 1: direct ETH payment to the app wallet.
     if (tx.to && tx.to.toLowerCase() === PAYMENT_ADDRESS) {
       if (BigInt(tx.value) >= MIN_ETH_WEI) {
-        res.status(200).json({ verified: true, method: "eth" });
+        const store = getEntitlementStore({ blobs: req.blobs, headers: req.headers });
+        if (!store) {
+          res.status(503).json({ verified: false, reason: "Entitlement backend is not configured." });
+          return;
+        }
+        const entitlement = await upsertCryptoEntitlement(store, {
+          email,
+          walletAddress,
+          txHash,
+          tier: unlockConfig.tier,
+          label: unlockConfig.label,
+        });
+        const session = await createEntitlementSession(store, entitlement);
+        res.setHeader("Set-Cookie", entitlementSessionCookie(req.headers, session.token, session.maxAge));
+        res.status(200).json({ verified: true, method: "eth", entitlement });
         return;
       }
       res.status(200).json({ verified: false, reason: "ETH amount below the required payment." });
@@ -142,7 +191,21 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     });
 
     if (paid) {
-      res.status(200).json({ verified: true, method: "stablecoin" });
+      const store = getEntitlementStore({ blobs: req.blobs, headers: req.headers });
+      if (!store) {
+        res.status(503).json({ verified: false, reason: "Entitlement backend is not configured." });
+        return;
+      }
+      const entitlement = await upsertCryptoEntitlement(store, {
+        email,
+        walletAddress,
+        txHash,
+        tier: unlockConfig.tier,
+        label: unlockConfig.label,
+      });
+      const session = await createEntitlementSession(store, entitlement);
+      res.setHeader("Set-Cookie", entitlementSessionCookie(req.headers, session.token, session.maxAge));
+      res.status(200).json({ verified: true, method: "stablecoin", entitlement });
       return;
     }
 

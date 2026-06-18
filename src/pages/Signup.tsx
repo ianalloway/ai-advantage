@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { getAuthChangeEventName, getCurrentSiteUser, signUpSiteUser, syncSiteUserSession } from "@/lib/auth";
-import { getAccessState, getCurrentCryptoAccount } from "@/lib/stripe";
+import { getAccessState, getCurrentCryptoAccount, syncEntitlementAccess } from "@/lib/stripe";
 import { Check, Sparkles, UserPlus } from "lucide-react";
 import BrandedHeader from "@/components/BrandedHeader";
 
@@ -51,6 +51,7 @@ export default function Signup() {
 
     if (!result.success) return;
 
+    await syncEntitlementAccess().catch(() => null);
     navigate("/profile");
   };
 
