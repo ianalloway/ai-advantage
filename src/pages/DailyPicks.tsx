@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import CryptoPaymentModal, { type UnlockType } from "@/components/CryptoPaymentModal";
 import AccessSessionDialog from "@/components/AccessSessionDialog";
+import PaymentOptionDialog from "@/components/PaymentOptionDialog";
+import { useToast } from "@/components/ui/use-toast";
 import {
   getAuthChangeEventName,
   getCurrentSiteUser,
@@ -267,15 +269,37 @@ export default function DailyPicks() {
   const [siteUser, setSiteUser] = useState<SiteUser | null>(getCurrentSiteUser());
   const [showCryptoModal, setShowCryptoModal] = useState(false);
   const [showAccessDialog, setShowAccessDialog] = useState(false);
+  const [showPaymentOptionModal, setShowPaymentOptionModal] = useState(false);
   const [cryptoUnlockType] = useState<UnlockType>("big-game");
   const [games, setGames] = useState<LiveMarketGame[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [hasError, setHasError] = useState(false);
+  const { toast } = useToast();
+
   const syncAccessUi = () => {
     setAccess(getAccessState());
     setCryptoAccount(getCurrentCryptoAccount());
     setSiteUser(getCurrentSiteUser());
+  };
+
+  const handleSelectStripe = async () => {
+    setShowPaymentOptionModal(false);
+    try {
+      await redirectToCheckout("one-time");
+    } catch (error) {
+      toast({
+        title: "Checkout unavailable",
+        description:
+          error instanceof Error ? error.message : "We could not start Stripe Checkout right now.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSelectCrypto = () => {
+    setShowPaymentOptionModal(false);
+    setShowCryptoModal(true);
   };
 
   useEffect(() => {
@@ -436,7 +460,7 @@ export default function DailyPicks() {
               <Button
                 size="sm"
                 className="bg-gradient-to-r from-yellow-400 to-orange-400 font-semibold text-black hover:from-yellow-300 hover:to-orange-300"
-                onClick={() => void redirectToCheckout("one-time")}
+                onClick={() => setShowPaymentOptionModal(true)}
               >
                 <Flame className="mr-1.5 h-3.5 w-3.5" />
                 Unlock event pass
@@ -552,7 +576,7 @@ export default function DailyPicks() {
                 </div>
                 <div className="space-y-5">
                   {premiumPicks.map((entry) => (
-                    <PickCard key={entry.game.id} entry={entry} locked={!hasPremiumBoard} onUnlock={() => void redirectToCheckout("one-time")} />
+                    <PickCard key={entry.game.id} entry={entry} locked={!hasPremiumBoard} onUnlock={() => setShowPaymentOptionModal(true)} />
                   ))}
                 </div>
               </section>
@@ -566,6 +590,12 @@ export default function DailyPicks() {
         onOpenChange={setShowCryptoModal}
         unlockType={cryptoUnlockType}
         onSuccess={syncAccessUi}
+      />
+      <PaymentOptionDialog
+        open={showPaymentOptionModal}
+        onOpenChange={setShowPaymentOptionModal}
+        onSelectStripe={handleSelectStripe}
+        onSelectCrypto={handleSelectCrypto}
       />
       <AccessSessionDialog
         open={showAccessDialog}
