@@ -21,6 +21,7 @@ import CryptoPaymentModal, { type UnlockType } from "@/components/CryptoPaymentM
 import AccessSessionDialog from "@/components/AccessSessionDialog";
 import PaymentOptionDialog from "@/components/PaymentOptionDialog";
 import { useToast } from "@/components/ui/use-toast";
+import KellySimulator from "@/components/KellySimulator";
 import {
   getAuthChangeEventName,
   getCurrentSiteUser,
@@ -59,6 +60,50 @@ function getMarketAuditLabel(game: LiveMarketGame) {
   }
   if (audit.source === "espn-fallback") return "ESPN fallback line";
   return "No verified line";
+}
+
+const getOddsDrift = (current: number | undefined, open: number | undefined) => {
+  if (current === undefined || open === undefined) return null;
+  const toDecimal = (american: number) => {
+    return american > 0 ? 1 + american / 100 : 1 + 100 / Math.abs(american);
+  };
+  const decCurrent = toDecimal(current);
+  const decOpen = toDecimal(open);
+  const diff = decCurrent - decOpen;
+  const pct = (diff / (decOpen - 1)) * 100;
+  return {
+    diff,
+    pct,
+    favorable: diff > 0,
+  };
+};
+
+function OddsSparkline({ open, current, favorable }: { open: number; current: number; favorable: boolean }) {
+  const color = favorable ? "#34d399" : "#f87171";
+  const mid = (open + current) / 2 + (Math.random() - 0.5) * (current - open) * 0.2;
+  const toHeight = (val: number, min: number, max: number) => {
+    const range = max - min || 1;
+    return 10 - ((val - min) / range) * 8;
+  };
+  const min = Math.min(open, current, mid);
+  const max = Math.max(open, current, mid);
+  
+  const y1 = toHeight(open, min, max);
+  const y2 = toHeight(mid, min, max);
+  const y3 = toHeight(current, min, max);
+
+  return (
+    <svg className="w-9 h-3 inline-block ml-1 overflow-visible" viewBox="0 0 30 12">
+      <path
+        d={`M 0,${y1} Q 15,${y2} 30,${y3}`}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      <circle cx="30" cy={y3} r="1.8" fill={color} />
+    </svg>
+  );
 }
 
 function PickCard({
@@ -123,6 +168,7 @@ function PickCard({
                 logo: game.awayLogo,
                 score: game.awayScore,
                 odds: game.odds?.awayMoneyline,
+                openOdds: game.odds?.awayMoneylineOpen,
               },
               {
                 side: "home",
@@ -131,26 +177,44 @@ function PickCard({
                 logo: game.homeLogo,
                 score: game.homeScore,
                 odds: game.odds?.homeMoneyline,
+                openOdds: game.odds?.homeMoneylineOpen,
               },
-            ].map((team) => (
-              <div key={team.side} className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    {team.logo ? (
-                      <img src={team.logo} alt={team.name} className="h-10 w-10 rounded-full bg-white/5 object-contain p-1" />
-                    ) : null}
-                    <div>
-                      <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">{team.side}</div>
-                      <div className="text-base font-semibold text-white">{team.name}</div>
+            ].map((team) => {
+              const drift = getOddsDrift(team.odds, team.openOdds);
+              return (
+                <div key={team.side} className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      {team.logo ? (
+                        <img src={team.logo} alt={team.name} className="h-10 w-10 rounded-full bg-white/5 object-contain p-1" />
+                      ) : null}
+                      <div>
+                        <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">{team.side}</div>
+                        <div className="text-base font-semibold text-white">{team.name}</div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-bold text-white">{team.score ?? "-"}</div>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <div className="font-mono text-xs text-sky-300">{team.odds !== undefined ? formatOdds(team.odds) : "No line"}</div>
+                        {team.odds !== undefined && team.openOdds !== undefined && team.odds !== team.openOdds && drift && (
+                          <span
+                            className={`text-[9px] font-bold flex items-center ${
+                              drift.favorable ? "text-emerald-400" : "text-red-400"
+                            }`}
+                            title={`Opening odds: ${formatOdds(team.openOdds)}`}
+                          >
+                            {drift.favorable ? "↑" : "↓"}
+                            {Math.abs(drift.pct).toFixed(0)}%
+                            <OddsSparkline open={team.openOdds} current={team.odds} favorable={drift.favorable} />
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-lg font-bold text-white">{team.score ?? "-"}</div>
-                    <div className="font-mono text-xs text-sky-300">{team.odds !== undefined ? formatOdds(team.odds) : "No line"}</div>
-                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {isThreeWay ? (
               <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 sm:col-span-2">
                 <div className="flex items-center justify-between gap-3">
@@ -539,48 +603,53 @@ export default function DailyPicks() {
             There are no current games with posted lines right now. The site is intentionally showing an empty board instead of inventing one.
           </div>
         ) : (
-          <div className="space-y-10">
-            <section>
-              <div className="mb-4 flex items-center gap-2">
-                <Star className="h-4 w-4 text-emerald-300" />
-                <h2 className="text-xl font-bold">Open board</h2>
-                <Badge variant="outline" className="border-emerald-400/30 bg-emerald-400/10 text-emerald-300">
-                  {freePicks.length} visible
-                </Badge>
-              </div>
-              <div className="space-y-5">
-                {freePicks.map((entry) => (
-                  <PickCard key={entry.game.id} entry={entry} locked={false} onUnlock={() => setShowCryptoModal(true)} />
-                ))}
-              </div>
-            </section>
-
-            {premiumPicks.length > 0 ? (
+          <div className="grid gap-8 lg:grid-cols-[1.3fr_0.7fr] items-start">
+            <div className="space-y-10">
               <section>
-                <div className="mb-4 flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-2">
-                    <Crown className="h-4 w-4 text-yellow-300" />
-                    <h2 className="text-xl font-bold">Premium board</h2>
-                    <Badge variant="outline" className="border-yellow-400/30 bg-yellow-400/10 text-yellow-300">
-                      {hasPremiumBoard ? `${premiumPicks.length} unlocked` : `${premiumPicks.length} locked`}
-                    </Badge>
-                  </div>
-                  {!hasPremiumBoard ? (
-                    <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-500">
-                      <span>Execution sizing, stronger spots, and the rest of the slate</span>
-                      <Button size="sm" variant="outline" className="border-white/10 text-zinc-300 hover:bg-white/[0.06]" onClick={() => void redirectToCheckout("premium")}>
-                        Pro monthly
-                      </Button>
-                    </div>
-                  ) : null}
+                <div className="mb-4 flex items-center gap-2">
+                  <Star className="h-4 w-4 text-emerald-300" />
+                  <h2 className="text-xl font-bold">Open board</h2>
+                  <Badge variant="outline" className="border-emerald-400/30 bg-emerald-400/10 text-emerald-300">
+                    {freePicks.length} visible
+                  </Badge>
                 </div>
                 <div className="space-y-5">
-                  {premiumPicks.map((entry) => (
-                    <PickCard key={entry.game.id} entry={entry} locked={!hasPremiumBoard} onUnlock={() => setShowPaymentOptionModal(true)} />
+                  {freePicks.map((entry) => (
+                    <PickCard key={entry.game.id} entry={entry} locked={false} onUnlock={() => setShowCryptoModal(true)} />
                   ))}
                 </div>
               </section>
-            ) : null}
+
+              {premiumPicks.length > 0 ? (
+                <section>
+                  <div className="mb-4 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                      <Crown className="h-4 w-4 text-yellow-300" />
+                      <h2 className="text-xl font-bold">Premium board</h2>
+                      <Badge variant="outline" className="border-yellow-400/30 bg-yellow-400/10 text-yellow-300">
+                        {hasPremiumBoard ? `${premiumPicks.length} unlocked` : `${premiumPicks.length} locked`}
+                      </Badge>
+                    </div>
+                    {!hasPremiumBoard ? (
+                      <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-500">
+                        <span>Execution sizing, stronger spots, and the rest of the slate</span>
+                        <Button size="sm" variant="outline" className="border-white/10 text-zinc-300 hover:bg-white/[0.06]" onClick={() => void redirectToCheckout("premium")}>
+                          Pro monthly
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="space-y-5">
+                    {premiumPicks.map((entry) => (
+                      <PickCard key={entry.game.id} entry={entry} locked={!hasPremiumBoard} onUnlock={() => setShowPaymentOptionModal(true)} />
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+            </div>
+            <div className="lg:sticky lg:top-6 space-y-6">
+              <KellySimulator />
+            </div>
           </div>
         )}
       </div>
