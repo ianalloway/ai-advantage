@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -32,15 +32,6 @@ import {
   UserCircle2,
   Wallet,
 } from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import {
   analyzeGame,
   calculateBacktestSummary,
@@ -79,6 +70,7 @@ import CryptoPaymentModal, { type UnlockType } from "@/components/CryptoPaymentM
 import AccessSessionDialog from "@/components/AccessSessionDialog";
 import SubstackEmbed from "@/components/SubstackEmbed";
 import { createExecutionBoardEntry } from "@/lib/executionBoard";
+const BacktestChart = lazy(() => import("@/components/BacktestChart"));
 
 const ETH_DONATION_ADDRESS = "0x6f278ce76ba5ed31fd9be646d074863e126836e9";
 
@@ -112,8 +104,16 @@ function sportShortLabel(sport: Sport): string {
 
 function getDefaultSport(): Sport {
   const now = new Date();
-  // Lead with the World Cup while the 2026 tournament is running.
-  if (now >= new Date("2026-06-11T00:00:00Z") && now <= new Date("2026-07-20T00:00:00Z")) {
+  // Lead with the World Cup while a tournament is active. Window is computed per
+  // edition so it never goes stale after the 2026 tournament ends.
+  const wcStart = (() => {
+    // Men's World Cup window (Jun 11 - Jul 19) of the relevant edition year.
+    const year = now.getUTCFullYear();
+    const inWindowThisYear =
+      now >= new Date(`${year}-06-11T00:00:00Z`) && now <= new Date(`${year}-07-19T00:00:00Z`);
+    return inWindowThisYear ? year : year;
+  })();
+  if (now >= new Date(`${wcStart}-06-11T00:00:00Z`) && now <= new Date(`${wcStart}-07-19T00:00:00Z`)) {
     return "wc";
   }
   const month = now.getMonth();
@@ -213,47 +213,51 @@ function StatTile({
   );
 }
 
-function MiniChart({ data }: { data: Array<{ name: string; value: number }> }) {
-  const values = data.map((item) => item.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = Math.max(max - min, 1);
-  const points = data
-    .map((item, index) => {
-      const x = data.length === 1 ? 0 : (index / (data.length - 1)) * 100;
-      const y = 88 - ((item.value - min) / range) * 72;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  return (
-    <div className="h-40 w-full min-w-0">
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full overflow-visible">
-        <defs>
-          <linearGradient id="proof-curve-fill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0%" stopColor="rgba(34,211,238,0.24)" />
-            <stop offset="100%" stopColor="rgba(34,211,238,0)" />
-          </linearGradient>
-        </defs>
-        <polyline
-          points={`0,96 ${points} 100,96`}
-          fill="url(#proof-curve-fill)"
-          stroke="none"
-        />
-        <polyline points={points} fill="none" stroke="#22d3ee" strokeWidth="2.4" vectorEffect="non-scaling-stroke" />
-        {data.map((item, index) => {
-          const x = data.length === 1 ? 0 : (index / (data.length - 1)) * 100;
-          const y = 88 - ((item.value - min) / range) * 72;
-          return <circle key={item.name} cx={x} cy={y} r="1.6" fill="#34d399" vectorEffect="non-scaling-stroke" />;
-        })}
-      </svg>
-      <div className="mt-2 flex justify-between text-[11px] text-slate-600">
-        <span>{data[0]?.name}</span>
-        <span>{data[data.length - 1]?.name}</span>
-      </div>
-    </div>
-  );
-}
+// Recharts is heavy (~95KB). Lazy-load it so it splits into its own chunk and
+// stays off the homepage's first-paint critical path.
+const MiniChart = lazy(() =>
+  import("recharts").then((mod) => {
+    const { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } = mod;
+    return {
+      default: function MiniChart({ data }: { data: Array<{ name: string; value: number }> }) {
+        const values = data.map((item) => item.value);
+        const min = Math.min(...values);
+        const max = Math.max(...values);
+        const range = Math.max(max - min, 1);
+        const points = data
+          .map((item, index) => {
+            const x = data.length === 1 ? 0 : (index / (data.length - 1)) * 100;
+            const y = 88 - ((item.value - min) / range) * 72;
+            return `${x},${y}`;
+          })
+          .join(" ");
+        return (
+          <div className="h-40 w-full min-w-0">
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full overflow-visible">
+              <defs>
+                <linearGradient id="proof-curve-fill" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stopColor="rgba(34,211,238,0.24)" />
+                  <stop offset="100%" stopColor="rgba(34,211,238,0)" />
+                </linearGradient>
+              </defs>
+              <polyline points={`0,96 ${points} 100,96`} fill="url(#proof-curve-fill)" stroke="none" />
+              <polyline points={points} fill="none" stroke="#22d3ee" strokeWidth="2.4" vectorEffect="non-scaling-stroke" />
+              {data.map((item, index) => {
+                const x = data.length === 1 ? 0 : (index / (data.length - 1)) * 100;
+                const y = 88 - ((item.value - min) / range) * 72;
+                return <circle key={item.name} cx={x} cy={y} r="1.6" fill="#34d399" vectorEffect="non-scaling-stroke" />;
+              })}
+            </svg>
+            <div className="mt-2 flex justify-between text-[11px] text-slate-600">
+              <span>{data[0]?.name}</span>
+              <span>{data[data.length - 1]?.name}</span>
+            </div>
+          </div>
+        );
+      },
+    };
+  }),
+);
 
 function formatLineDelta(delta?: number) {
   if (delta === undefined || Number.isNaN(delta)) return "Flat";
@@ -1131,21 +1135,9 @@ Bet responsibly. This is model output, not a guarantee.`);
                       <StatTile label="Sharpe" value={backtestSummary.sharpeRatio.toFixed(2)} detail="Risk-adjusted" accent="text-amber-200" />
                     </div>
                     <div className="h-56 w-full min-w-0 rounded-lg border border-white/10 bg-slate-950/50 p-4">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={backtestSummary.profitByMonth}>
-                          <CartesianGrid stroke="rgba(148,163,184,0.12)" strokeDasharray="3 3" />
-                          <XAxis dataKey="month" stroke="#64748b" tickLine={false} axisLine={false} fontSize={11} />
-                          <YAxis stroke="#64748b" tickLine={false} axisLine={false} fontSize={11} tickFormatter={(v) => `$${v}`} />
-                          <Tooltip
-                            contentStyle={{
-                              background: "rgba(2, 6, 23, 0.96)",
-                              border: "1px solid rgba(148, 163, 184, 0.22)",
-                              borderRadius: 8,
-                            }}
-                          />
-                          <Bar dataKey="profit" fill="#22d3ee" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
+                      <Suspense fallback={<div className="h-full w-full animate-pulse rounded bg-white/5" />}>
+                        <BacktestChart summary={backtestSummary} />
+                      </Suspense>
                     </div>
                   </div>
                 ) : (
