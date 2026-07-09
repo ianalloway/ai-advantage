@@ -38,6 +38,7 @@ import {
 } from "@/lib/stripe";
 import { analyzeGame, formatEdge, formatOdds, formatProb, type GamePrediction } from "@/lib/predictions";
 import { fetchLiveGamesForSports, type LiveMarketGame } from "@/lib/liveSports";
+import { getCurrentUserProfile } from "@/lib/profile";
 
 interface PickEntry {
   game: LiveMarketGame;
@@ -407,6 +408,18 @@ export default function DailyPicks() {
     };
   }, []);
 
+  const userProfile = useMemo(() => {
+    return getCurrentUserProfile(access, cryptoAccount, siteUser);
+  }, [access, cryptoAccount, siteUser]);
+
+  const userBankroll = userProfile?.bankroll ?? 1000;
+  const userKellyFraction = useMemo(() => {
+    if (!userProfile) return 0.25;
+    if (userProfile.riskProfile === "conservative") return 0.15;
+    if (userProfile.riskProfile === "aggressive") return 0.50;
+    return 0.25; // balanced
+  }, [userProfile]);
+
   const analyzedGames = useMemo<PickEntry[]>(() => {
     return games
       .filter((game) => game.odds)
@@ -415,9 +428,9 @@ export default function DailyPicks() {
           game.homeTeam,
           game.awayTeam,
           game.sport,
-          1000,
+          userBankroll,
           3,
-          0.25,
+          userKellyFraction,
           {
             id: game.id,
             bookmaker: game.bookmaker,
@@ -438,7 +451,7 @@ export default function DailyPicks() {
         };
       })
       .sort((a, b) => b.score - a.score);
-  }, [games]);
+  }, [games, userBankroll, userKellyFraction]);
 
   const freePicks = analyzedGames.slice(0, 3);
   const premiumPicks = analyzedGames.slice(3);
