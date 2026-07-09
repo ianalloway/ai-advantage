@@ -341,22 +341,22 @@ export default function Leaderboard() {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5 transition-all duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.05] hover:shadow-lg">
             <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Tracked entries</div>
             <div className="mt-2 text-3xl font-black text-white">{stats.tracked}</div>
             <div className="mt-1 text-sm text-zinc-400">Current board rows with real prices and model support.</div>
           </div>
-          <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5 transition-all duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.05] hover:shadow-lg">
             <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Average exec edge</div>
             <div className="mt-2 text-3xl font-black text-brand-300">{formatEdge(stats.avgExecEdge)}</div>
             <div className="mt-1 text-sm text-zinc-400">Adjusted for timing, price movement, and execution quality.</div>
           </div>
-          <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5 transition-all duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.05] hover:shadow-lg">
             <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Average board score</div>
             <div className="mt-2 text-3xl font-black text-yellow-300">{stats.avgScore.toFixed(1)}</div>
             <div className="mt-1 text-sm text-zinc-400">A higher score means stronger execution context, not louder marketing.</div>
           </div>
-          <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5">
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5 transition-all duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.05] hover:shadow-lg">
             <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Close-line proof</div>
             <div className="mt-2 text-3xl font-black text-emerald-300">{stats.avgClv !== undefined ? formatClv(stats.avgClv) : "Pending"}</div>
             <div className="mt-1 text-sm text-zinc-400">Settled rows: {stats.settled}. Wins: {stats.wins}. Tracked stake: {formatStake(stats.totalSuggestedStake)}.</div>

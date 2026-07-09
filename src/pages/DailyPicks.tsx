@@ -107,6 +107,34 @@ function OddsSparkline({ open, current, favorable }: { open: number; current: nu
   );
 }
 
+function PickCardSkeleton() {
+  return (
+    <div className="relative overflow-hidden rounded-[28px] border border-white/5 bg-white/[0.02] p-5 animate-pulse">
+      <div className="flex flex-wrap items-center justify-between border-b border-white/5 pb-4">
+        <div className="flex items-center gap-2">
+          <div className="h-5 w-16 rounded-full bg-white/10" />
+          <div className="h-5 w-24 rounded-full bg-white/10" />
+        </div>
+        <div className="h-4 w-32 rounded bg-white/10" />
+      </div>
+      <div className="grid gap-5 pt-5 lg:grid-cols-[1.4fr_1fr]">
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="h-20 rounded-2xl bg-white/5" />
+            <div className="h-20 rounded-2xl bg-white/5" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="h-14 rounded-2xl bg-white/5" />
+            <div className="h-14 rounded-2xl bg-white/5" />
+            <div className="h-14 rounded-2xl bg-white/5" />
+          </div>
+        </div>
+        <div className="h-full min-h-[160px] rounded-[24px] bg-white/5" />
+      </div>
+    </div>
+  );
+}
+
 function PickCard({
   entry,
   locked,
@@ -124,7 +152,7 @@ function PickCard({
   const isThreeWay = game.odds?.drawMoneyline !== undefined;
 
   return (
-    <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_42%),linear-gradient(180deg,rgba(9,13,24,0.98),rgba(5,8,18,0.98))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)]">
+    <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_42%),linear-gradient(180deg,rgba(9,13,24,0.98),rgba(5,8,18,0.98))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)] transition-all duration-300 hover:-translate-y-1 hover:border-brand-500/35 hover:shadow-[0_32px_96px_rgba(34,197,94,0.06)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 pb-4">
         <div className="flex items-center gap-2">
           <Badge variant="outline" className="border-brand-400/30 bg-brand-400/10 text-[11px] tracking-[0.24em] text-brand-300">
@@ -604,8 +632,17 @@ export default function DailyPicks() {
         </div>
 
         {isLoading ? (
-          <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-8 text-center text-zinc-400">
-            Syncing the live board...
+          <div className="grid gap-8 lg:grid-cols-[1.3fr_0.7fr] items-start">
+            <div className="space-y-5">
+              <div className="mb-4 flex items-center gap-2">
+                <Star className="h-4 w-4 text-emerald-300 animate-pulse" />
+                <h2 className="text-xl font-bold text-zinc-400">Syncing slate...</h2>
+              </div>
+              <PickCardSkeleton />
+              <PickCardSkeleton />
+              <PickCardSkeleton />
+            </div>
+            <div className="rounded-[24px] border border-white/5 bg-white/[0.01] p-5 h-[340px] animate-pulse" />
           </div>
         ) : hasError ? (
           <div className="rounded-[28px] border border-red-400/20 bg-red-400/10 p-8 text-center text-red-200">
