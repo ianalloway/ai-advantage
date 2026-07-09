@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { analyzeGame, formatEdge, formatOdds, type Sport } from "@/lib/predictions";
+import { analyzeGame, formatEdge, formatOdds, americanToDecimal, type Sport } from "@/lib/predictions";
 import { createExecutionBoardEntry, type ExecutionBoardEntry } from "@/lib/executionBoard";
 import { fetchLiveGamesForSports, type LiveMarketGame } from "@/lib/liveSports";
 import {
@@ -25,6 +25,15 @@ import {
   Target,
   Trophy,
 } from "lucide-react";
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip as ChartTooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 const SPORTS: Array<Sport> = ["nba", "nfl", "mlb"];
 const BANKROLL = 1000;
@@ -277,6 +286,42 @@ export default function Leaderboard() {
     };
   }, [historicalEntries]);
 
+  const chartData = useMemo(() => {
+    const filtered = sportFilter === "ALL"
+      ? historicalEntries
+      : historicalEntries.filter((entry) => entry.sportLabel === sportFilter);
+
+    // Sort oldest first to compute cumulative profit timeline correctly
+    const sorted = [...filtered]
+      .filter((entry) => entry.ledgerOutcome !== "pending")
+      .sort((a, b) => new Date(a.lastSeenAt).getTime() - new Date(b.lastSeenAt).getTime());
+
+    const result = [];
+    let runningTotal = 0;
+
+    for (let i = 0; i < sorted.length; i++) {
+      const entry = sorted[i];
+      let profit = 0;
+      if (entry.ledgerOutcome === "won") {
+        profit = entry.suggestedStake * (americanToDecimal(entry.entryOdds) - 1);
+      } else if (entry.ledgerOutcome === "lost") {
+        profit = -entry.suggestedStake;
+      }
+      runningTotal += profit;
+      result.push({
+        index: i + 1,
+        date: new Date(entry.lastSeenAt).toLocaleDateString([], { month: "short", day: "numeric" }),
+        game: entry.eventLabel,
+        side: entry.recommendedSide,
+        odds: entry.entryOdds,
+        profit: Number(profit.toFixed(2)),
+        cumulative: Number(runningTotal.toFixed(2)),
+      });
+    }
+
+    return result;
+  }, [historicalEntries, sportFilter]);
+
   const hasHistoricalLedger = hasFeatureAccess("historical_ledger", access);
 
   return (
@@ -362,6 +407,47 @@ export default function Leaderboard() {
             <div className="mt-1 text-sm text-zinc-400">Settled rows: {stats.settled}. Wins: {stats.wins}. Tracked stake: {formatStake(stats.totalSuggestedStake)}.</div>
           </div>
         </div>
+
+        {chartData.length > 0 ? (
+          <div className="mt-8 rounded-[28px] border border-white/10 bg-white/[0.02] p-6 shadow-xl backdrop-blur-md transition-all duration-300 hover:border-white/20">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
+              <Activity className="h-5 w-5 text-cyan-400" />
+              Cumulative Profit Performance Curve
+            </h2>
+            <div className="h-64 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="profitGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255, 255, 255, 0.05)" />
+                  <XAxis dataKey="date" stroke="#64748b" fontSize={11} tickLine={false} />
+                  <YAxis stroke="#64748b" fontSize={11} tickLine={false} tickFormatter={(v) => `$${v}`} />
+                  <ChartTooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload || !payload.length) return null;
+                      const data = payload[0].payload;
+                      return (
+                        <div className="rounded-xl border border-white/10 bg-slate-950/90 p-3 shadow-2xl backdrop-blur-md text-xs space-y-1 text-slate-200">
+                          <p className="font-semibold text-white">{data.game}</p>
+                          <p className="text-zinc-400">Recommendation: <span className="text-cyan-300 font-semibold">{data.side}</span> ({formatOdds(data.odds)})</p>
+                          <p className="text-zinc-400">Bet Profit: <span className={data.profit >= 0 ? "text-emerald-400 font-bold" : "text-red-400 font-bold"}>
+                            {data.profit >= 0 ? `+$${data.profit.toFixed(2)}` : `-$${Math.abs(data.profit).toFixed(2)}`}
+                          </span></p>
+                          <p className="text-zinc-300 font-medium border-t border-white/10 pt-1 mt-1">Cumulative Balance: <span className="text-white font-bold">${data.cumulative.toFixed(2)}</span></p>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Area type="monotone" dataKey="cumulative" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#profitGrad)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        ) : null}
 
         <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-2">
