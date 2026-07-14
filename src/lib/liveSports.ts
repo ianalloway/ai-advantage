@@ -112,9 +112,11 @@ interface SummaryMoneylineSide {
 }
 
 interface SummaryOddsEntry {
+  drawOdds?: { moneyLine?: number | string };
   moneyline?: {
     home?: SummaryMoneylineSide;
     away?: SummaryMoneylineSide;
+    draw?: SummaryMoneylineSide;
   };
 }
 
@@ -122,6 +124,7 @@ interface SummaryPickcenterEntry {
   provider?: SummaryProvider;
   spread?: number | string;
   overUnder?: number | string;
+  drawOdds?: { moneyLine?: number | string };
   homeTeamOdds?: {
     moneyLine?: number | string;
     spreadOdds?: number | string;
@@ -210,7 +213,15 @@ async function fetchSummaryData(sport: Sport, eventId: string): Promise<SummaryR
 function parseOdds(summary: SummaryResponse | null) {
   if (!summary) return null;
 
-  const pickcenter = Array.isArray(summary.pickcenter) ? summary.pickcenter[0] : null;
+  const pickcenterEntries = Array.isArray(summary.pickcenter) ? summary.pickcenter : [];
+  const pickcenter =
+    pickcenterEntries.find(
+      (entry) =>
+        validMoneyline(parseNumber(entry.homeTeamOdds?.moneyLine)) &&
+        validMoneyline(parseNumber(entry.awayTeamOdds?.moneyLine)),
+    ) ??
+    pickcenterEntries[0] ??
+    null;
   const oddsCollection = Array.isArray(summary.odds) ? summary.odds[0] : null;
 
   const homeMoneyline =
@@ -227,9 +238,16 @@ function parseOdds(summary: SummaryResponse | null) {
     return null;
   }
 
+  const drawMoneyline =
+    parseNumber(pickcenter?.drawOdds?.moneyLine) ??
+    parseNumber(oddsCollection?.drawOdds?.moneyLine) ??
+    parseNumber(oddsCollection?.moneyline?.draw?.live?.odds) ??
+    parseNumber(oddsCollection?.moneyline?.draw?.close?.odds);
+
   return {
     homeMoneyline,
     awayMoneyline,
+    ...(validMoneyline(drawMoneyline) ? { drawMoneyline } : {}),
     homeMoneylineOpen: parseNumber(oddsCollection?.moneyline?.home?.open?.odds),
     awayMoneylineOpen: parseNumber(oddsCollection?.moneyline?.away?.open?.odds),
     homeMoneylineClose: parseNumber(oddsCollection?.moneyline?.home?.close?.odds),
@@ -239,8 +257,8 @@ function parseOdds(summary: SummaryResponse | null) {
     homeSpreadOdds: parseNumber(pickcenter?.homeTeamOdds?.spreadOdds),
     awaySpreadOdds: parseNumber(pickcenter?.awayTeamOdds?.spreadOdds),
     bookmaker:
-      pickcenter?.provider?.name ??
       pickcenter?.provider?.displayName ??
+      pickcenter?.provider?.name ??
       summary.provider?.displayName,
   };
 }
@@ -304,6 +322,9 @@ function toLiveMarketGame(event: EspnScoreboardEvent, sport: Sport, summary: Sum
       ? {
           homeMoneyline: parsedOdds.homeMoneyline,
           awayMoneyline: parsedOdds.awayMoneyline,
+          ...(parsedOdds.drawMoneyline !== undefined
+            ? { drawMoneyline: parsedOdds.drawMoneyline }
+            : {}),
           homeMoneylineOpen: parsedOdds.homeMoneylineOpen,
           awayMoneylineOpen: parsedOdds.awayMoneylineOpen,
           homeMoneylineClose: parsedOdds.homeMoneylineClose,

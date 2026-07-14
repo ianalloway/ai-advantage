@@ -9,7 +9,9 @@
     "build:dev": "vite build --mode development && node scripts/prerender.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run --exclude 'tests/smoke/**'",
+    "test:smoke": "vitest run tests/smoke",
+    "test:all": "vitest run"
   },
   "dependencies": {
     "@netlify/blobs": "^10.7.9",

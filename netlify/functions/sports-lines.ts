@@ -109,6 +109,7 @@ interface SummaryResponse {
     provider?: { name?: string; displayName?: string };
     spread?: number | string;
     overUnder?: number | string;
+    drawOdds?: { moneyLine?: number | string };
     homeTeamOdds?: {
       moneyLine?: number | string;
       spreadOdds?: number | string;
@@ -119,9 +120,11 @@ interface SummaryResponse {
     };
   }>;
   odds?: Array<{
+    drawOdds?: { moneyLine?: number | string };
     moneyline?: {
       home?: SummaryMoneylineSide;
       away?: SummaryMoneylineSide;
+      draw?: SummaryMoneylineSide;
     };
   }>;
   provider?: { name?: string; displayName?: string };
@@ -351,9 +354,17 @@ function parseEspnOdds(summary: SummaryResponse | null) {
 
   if (!validMoneyline(homeMoneyline) || !validMoneyline(awayMoneyline)) return null;
 
+  // Soccer 3-way boards expose Draw on PickCenter (`drawOdds`) and open/close history.
+  const drawMoneyline =
+    parseNumber(pickcenter?.drawOdds?.moneyLine) ??
+    parseNumber(oddsCollection?.drawOdds?.moneyLine) ??
+    parseNumber(oddsCollection?.moneyline?.draw?.live?.odds) ??
+    parseNumber(oddsCollection?.moneyline?.draw?.close?.odds);
+
   const odds: MarketOdds = {
     homeMoneyline,
     awayMoneyline,
+    ...(validMoneyline(drawMoneyline) ? { drawMoneyline } : {}),
     homeMoneylineOpen: parseNumber(oddsCollection?.moneyline?.home?.open?.odds),
     awayMoneylineOpen: parseNumber(oddsCollection?.moneyline?.away?.open?.odds),
     homeMoneylineClose: parseNumber(oddsCollection?.moneyline?.home?.close?.odds),
