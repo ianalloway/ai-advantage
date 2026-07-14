@@ -1,7 +1,9 @@
+import { connectLambda, getStore } from "@netlify/blobs";
 import { Redis } from "@upstash/redis";
 import { timingSafeEqual } from "node:crypto";
 
 type RequestLike = {
+  blobs?: string;
   method?: string;
   body?: unknown;
   query?: Record<string, string | string[] | undefined>;
@@ -37,8 +39,15 @@ interface HistoricalExecutionLedgerEntry extends ExecutionLedgerEntryInput {
   accessTier: AccessTier;
 }
 
+interface LedgerStore {
+  get: () => Promise<HistoricalExecutionLedgerEntry[]>;
+  set: (rows: HistoricalExecutionLedgerEntry[]) => Promise<void>;
+}
+
 const LEDGER_KEY = process.env.EXECUTION_LEDGER_KEY || "ai-advantage:execution-ledger";
 const MAX_ROWS = 500;
+
+let redisClient: Redis | null | undefined;
 
 function getHeader(headers: RequestLike["headers"], name: string) {
   if (!headers) return undefined;
@@ -71,11 +80,64 @@ function isWriteAuthorized(req: RequestLike) {
 }
 
 function getRedis() {
+  if (redisClient !== undefined) return redisClient;
   if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
-    return null;
+    redisClient = null;
+    return redisClient;
   }
 
-  return Redis.fromEnv();
+  redisClient = Redis.fromEnv();
+  return redisClient;
+}
+
+function normalizeLambdaHeaders(headers: RequestLike["headers"]) {
+  return Object.fromEntries(
+    Object.entries(headers ?? {}).flatMap(([key, value]) => {
+      const flat = Array.isArray(value) ? value[0] : value;
+      return typeof flat === "string" ? [[key.toLowerCase(), flat]] : [];
+    }),
+  );
+}
+
+function isLedgerRows(value: unknown): value is HistoricalExecutionLedgerEntry[] {
+  return Array.isArray(value);
+}
+
+function getLedgerStore(req: RequestLike): LedgerStore | null {
+  if (req.blobs) {
+    try {
+      connectLambda({
+        blobs: req.blobs,
+        headers: normalizeLambdaHeaders(req.headers),
+      });
+
+      const store = getStore("ai-advantage-ledger");
+      return {
+        async get() {
+          const value = (await store.get(LEDGER_KEY, { type: "json" })) as unknown;
+          return isLedgerRows(value) ? value : [];
+        },
+        async set(rows) {
+          await store.setJSON(LEDGER_KEY, rows);
+        },
+      };
+    } catch (error) {
+      console.warn("Netlify Blobs ledger store is unavailable; checking fallback store.", error);
+    }
+  }
+
+  const redis = getRedis();
+  if (!redis) return null;
+
+  return {
+    async get() {
+      const value = await redis.get<HistoricalExecutionLedgerEntry[]>(LEDGER_KEY);
+      return isLedgerRows(value) ? value : [];
+    },
+    async set(rows) {
+      await redis.set(LEDGER_KEY, rows);
+    },
+  };
 }
 
 function parseLimit(query: RequestLike["query"]) {
@@ -149,12 +211,12 @@ function isExecutionLedgerEntryInput(value: unknown): value is ExecutionLedgerEn
 export default async function handler(req: RequestLike, res: ResponseLike) {
   res.setHeader("Content-Type", "application/json");
 
-  const redis = getRedis();
-  if (!redis) {
+  const store = getLedgerStore(req);
+  if (!store) {
     res.status(503).json({
       configured: false,
       rows: [],
-      message: "Upstash Redis is not configured for the shared execution ledger yet.",
+      message: "No shared ledger backend is configured yet.",
     });
     return;
   }
@@ -162,8 +224,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   if (req.method === "GET") {
     try {
       const limit = parseLimit(req.query);
-      const rows =
-        normalizeRows((await redis.get<HistoricalExecutionLedgerEntry[]>(LEDGER_KEY)) ?? []).slice(0, limit);
+      const rows = normalizeRows(await store.get()).slice(0, limit);
       res.status(200).json({ configured: true, rows });
     } catch (error) {
       const message =
@@ -192,9 +253,9 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
         return;
       }
 
-      const existingRows = (await redis.get<HistoricalExecutionLedgerEntry[]>(LEDGER_KEY)) ?? [];
+      const existingRows = await store.get();
       const mergedRows = mergeRows(existingRows, rows, accessTier);
-      await redis.set(LEDGER_KEY, mergedRows);
+      await store.set(mergedRows);
 
       res.status(200).json({
         configured: true,

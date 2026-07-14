@@ -203,7 +203,7 @@ function StatTile({
   accent?: string;
 }) {
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.045] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+    <div className="rounded-lg border border-white/10 bg-white/[0.045] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-300 hover:scale-[1.02] hover:border-white/20 hover:bg-white/[0.06] hover:shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
       <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
         {label}
       </div>
@@ -1094,7 +1094,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                 </h3>
                 <div className="mt-5 space-y-4">
                   {productProof.map((item) => (
-                    <div key={item.label} className="rounded-lg border border-white/10 bg-slate-950/50 p-4">
+                    <div key={item.label} className="rounded-lg border border-white/10 bg-slate-950/50 p-4 transition-all duration-300 hover:border-cyan-500/25 hover:bg-slate-950/70">
                       <div className="text-sm font-semibold text-white">{item.label}</div>
                       <p className="mt-2 text-sm leading-6 text-slate-400">{item.value}</p>
                     </div>
@@ -1169,7 +1169,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                   href={repo.href}
                   target="_blank"
                   rel="noreferrer"
-                  className="group rounded-xl border border-white/10 bg-white/[0.035] p-5 transition-colors hover:border-cyan-300/30 hover:bg-white/[0.055]"
+                  className="group rounded-xl border border-white/10 bg-white/[0.035] p-5 transition-all duration-300 hover:-translate-y-1 hover:border-cyan-300/30 hover:bg-white/[0.055] hover:shadow-lg"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex min-w-0 items-center gap-3">
@@ -1329,7 +1329,7 @@ The report will show:
             />
 
             <div className="mt-8 grid gap-5 lg:grid-cols-3">
-              <div className="rounded-xl border border-white/10 bg-white/[0.035] p-6">
+              <div className="rounded-xl border border-white/10 bg-white/[0.035] p-6 transition-all duration-300 hover:-translate-y-1 hover:border-slate-500/40 hover:bg-white/[0.05]">
                 <div className="flex items-center justify-between">
                   <h3 className="text-2xl font-semibold text-white">Free Desk</h3>
                   <Badge className="border-white/10 bg-white/[0.05] text-slate-300">Open</Badge>
@@ -1348,7 +1348,7 @@ The report will show:
                 </Button>
               </div>
 
-              <div className="rounded-xl border border-cyan-300/25 bg-cyan-300/[0.06] p-6 shadow-[0_24px_80px_rgba(34,211,238,0.08)]">
+              <div className="rounded-xl border border-cyan-300/25 bg-cyan-300/[0.06] p-6 shadow-[0_24px_80px_rgba(34,211,238,0.08)] transition-all duration-300 hover:-translate-y-1 hover:border-cyan-300/40 hover:shadow-[0_32px_96px_rgba(34,211,238,0.16)]">
                 <div className="flex items-center justify-between">
                   <h3 className="text-2xl font-semibold text-white">Pro Monthly</h3>
                   <Badge className="border-cyan-300/30 bg-cyan-300/10 text-cyan-100">Best fit</Badge>
@@ -1369,7 +1369,7 @@ The report will show:
                 </Button>
               </div>
 
-              <div className="rounded-xl border border-amber-300/20 bg-amber-300/[0.055] p-6">
+              <div className="rounded-xl border border-amber-300/20 bg-amber-300/[0.055] p-6 transition-all duration-300 hover:-translate-y-1 hover:border-amber-300/45 hover:bg-amber-300/[0.075]">
                 <div className="flex items-center justify-between">
                   <h3 className="text-2xl font-semibold text-white">Event Pass</h3>
                   <Badge className="border-amber-300/30 bg-amber-300/10 text-amber-100">72 hours</Badge>

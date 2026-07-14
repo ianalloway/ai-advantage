@@ -23,7 +23,7 @@ assignees: ianalloway
 ## Environment
 - OS: 
 - Version: 
-- Node/Python version: 
+- Node version: 
 
 ## Additional Context
 <!-- Logs, screenshots, anything else relevant -->
