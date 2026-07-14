@@ -20,11 +20,14 @@ import {
   Clock3,
   Crown,
   Database,
+  Download,
   RefreshCw,
   ShieldCheck,
   Target,
   Trophy,
 } from "lucide-react";
+import { downloadCsv, ledgerRowsFromEntries, toCsv } from "@/lib/exportDesk";
+import { useToast } from "@/components/ui/use-toast";
 import {
   Area,
   AreaChart,
@@ -133,6 +136,7 @@ export default function Leaderboard() {
   const [sportFilter, setSportFilter] = useState<SportFilter>("ALL");
   const [historicalEntries, setHistoricalEntries] = useState<HistoricalExecutionLedgerEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const { toast } = useToast();
 
   useEffect(() => {
     let cancelled = false;
@@ -344,7 +348,38 @@ export default function Leaderboard() {
             <ShieldCheck className="h-5 w-5 text-brand-300" />
             Proof Ledger
           </div>
-          <div className="w-16" />
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-white/10 text-zinc-300 hover:bg-white/[0.06]"
+            onClick={() => {
+              const canExportHistory = hasFeatureAccess("exports", access);
+              const merged = canExportHistory
+                ? [...filteredEntries, ...historicalPreview]
+                : filteredEntries;
+              const byId = new Map(merged.map((row) => [row.id, row]));
+              const rows = Array.from(byId.values());
+              const csv = toCsv(ledgerRowsFromEntries(rows));
+              if (!csv) {
+                toast({
+                  title: "Nothing to export",
+                  description: "No ledger rows on the current filter.",
+                  variant: "destructive",
+                });
+                return;
+              }
+              downloadCsv(`ai-advantage-ledger-${new Date().toISOString().slice(0, 10)}.csv`, csv);
+              toast({
+                title: "Ledger exported",
+                description: canExportHistory
+                  ? `${rows.length} rows (current + history). Reference: ESPN PickCenter.`
+                  : `${rows.length} current-board rows. Pro unlocks historical export.`,
+              });
+            }}
+          >
+            <Download className="mr-1.5 h-3.5 w-3.5" />
+            CSV
+          </Button>
         </div>
 
         <div className="grid gap-8 py-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">

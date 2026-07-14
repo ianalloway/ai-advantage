@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   Clock,
   Crown,
+  Download,
   Flame,
   Lock,
   Radar,
@@ -43,6 +44,10 @@ import { analyzeGame, formatEdge, formatOdds, formatProb, type GamePrediction } 
 import { fetchLiveGamesForSports, type LiveMarketGame } from "@/lib/liveSports";
 import { getEdgeBadge } from "@/lib/edgeBadge";
 import { getCurrentUserProfile } from "@/lib/profile";
+import { buildLinePath, closeLineValuePts, closeVerdict, formatCloseBadge, formatPathLabel } from "@/lib/linePath";
+import { stressKellyStake } from "@/lib/kellyStress";
+import { deskRowsFromPicks, downloadCsv, toCsv } from "@/lib/exportDesk";
+import { Slider } from "@/components/ui/slider";
 
 interface PickEntry {
   game: LiveMarketGame;
@@ -298,10 +303,12 @@ function PickCard({
   entry,
   locked,
   onUnlock,
+  bankroll,
 }: {
   entry: PickEntry;
   locked: boolean;
   onUnlock: () => void;
+  bankroll: number;
 }) {
   const { game, prediction } = entry;
   const winnerOdds = prediction.predictedWinnerOdds;
@@ -313,6 +320,48 @@ function PickCard({
     prediction.valueBet?.executionAdjustedEdge ?? winnerExecutionEdge,
     Boolean(prediction.valueBet),
   );
+
+  const sideLocation = prediction.valueBet?.location
+    ?? (prediction.predictedWinner === game.homeTeam
+      ? "Home"
+      : prediction.predictedWinner === game.awayTeam
+        ? "Away"
+        : "Draw");
+  const pathOdds = (() => {
+    if (!game.odds) return { open: undefined as number | undefined, current: undefined as number | undefined, close: undefined as number | undefined };
+    if (sideLocation === "Home") {
+      return {
+        open: game.odds.homeMoneylineOpen,
+        current: game.odds.homeMoneyline,
+        close: game.odds.homeMoneylineClose,
+      };
+    }
+    if (sideLocation === "Away") {
+      return {
+        open: game.odds.awayMoneylineOpen,
+        current: game.odds.awayMoneyline,
+        close: game.odds.awayMoneylineClose,
+      };
+    }
+    return { open: undefined, current: game.odds.drawMoneyline, close: undefined };
+  })();
+  const linePath = buildLinePath(pathOdds);
+  const entryForClv = prediction.valueBet?.odds ?? pathOdds.current;
+  const verdict = closeVerdict(entryForClv, pathOdds.close);
+  const clvPts =
+    entryForClv !== undefined && pathOdds.close !== undefined
+      ? closeLineValuePts(entryForClv, pathOdds.close)
+      : undefined;
+  const stress = prediction.valueBet
+    ? stressKellyStake({
+        winProb: prediction.valueBet.modelProb,
+        americanOdds: prediction.valueBet.odds,
+        stakeFraction: prediction.valueBet.kellyPct,
+        bankroll,
+        paths: 2000,
+        seed: Number(game.id.replace(/\D/g, "").slice(0, 8) || "1"),
+      })
+    : null;
 
   return (
     <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_42%),linear-gradient(180deg,rgba(9,13,24,0.98),rgba(5,8,18,0.98))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)] transition-all duration-300 hover:-translate-y-1 hover:border-brand-500/35 hover:shadow-[0_32px_96px_rgba(34,197,94,0.06)]">
@@ -499,19 +548,84 @@ function PickCard({
               </div>
             </div>
 
+            {linePath.length >= 2 ? (
+              <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Open → close (ESPN)</div>
+                  <span
+                    className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] ${
+                      verdict === "beat"
+                        ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                        : verdict === "lost"
+                          ? "border-red-400/30 bg-red-400/10 text-red-300"
+                          : "border-zinc-500/30 bg-zinc-500/10 text-zinc-300"
+                    }`}
+                  >
+                    {formatCloseBadge(verdict, clvPts)}
+                  </span>
+                </div>
+                <div className="mt-2 font-mono text-xs text-sky-200/90">{formatPathLabel(linePath)}</div>
+                <div className="mt-3 flex items-end gap-1">
+                  {linePath.map((point, index) => {
+                    const values = linePath.map((p) => Math.abs(p.odds));
+                    const min = Math.min(...values);
+                    const max = Math.max(...values);
+                    const height = 18 + ((Math.abs(point.odds) - min) / (max - min || 1)) * 28;
+                    return (
+                      <div key={`${point.label}-${index}`} className="flex flex-1 flex-col items-center gap-1">
+                        <div
+                          className="w-full rounded-t-md bg-gradient-to-t from-cyan-500/30 to-cyan-300/70"
+                          style={{ height }}
+                          title={`${point.label} ${formatOdds(point.odds)}`}
+                        />
+                        <div className="text-[10px] uppercase tracking-[0.14em] text-zinc-500">{point.label}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
             {prediction.valueBet ? (
-              <div className="mt-4 rounded-2xl border border-brand-400/20 bg-brand-400/10 p-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.24em] text-brand-200/80">Kelly sizing</div>
-                    <div className="mt-1 text-base font-semibold text-white">${prediction.valueBet.suggestedBet.toFixed(0)} suggested stake</div>
-                    <div className="mt-1 text-xs text-zinc-400">Execution window: {prediction.executionFactors.executionWindow}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-lg font-bold text-brand-300">{(prediction.valueBet.kellyPct * 100).toFixed(1)}%</div>
-                    <div className="text-xs text-zinc-400">fractional Kelly</div>
+              <div className="mt-4 space-y-3">
+                <div className="rounded-2xl border border-brand-400/20 bg-brand-400/10 p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.24em] text-brand-200/80">Kelly sizing</div>
+                      <div className="mt-1 text-base font-semibold text-white">${prediction.valueBet.suggestedBet.toFixed(0)} suggested stake</div>
+                      <div className="mt-1 text-xs text-zinc-400">Execution window: {prediction.executionFactors.executionWindow}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-bold text-brand-300">{(prediction.valueBet.kellyPct * 100).toFixed(1)}%</div>
+                      <div className="text-xs text-zinc-400">fractional Kelly</div>
+                    </div>
                   </div>
                 </div>
+                {stress ? (
+                  <div className="rounded-2xl border border-white/8 bg-black/25 p-4">
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Kelly stress (MC)</div>
+                    <p className="mt-1 text-xs leading-5 text-zinc-500">
+                      {stress.paths.toLocaleString()} paths · 40 repeats at this price — variance honesty, not a promise.
+                    </p>
+                    <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                      <div className="rounded-xl border border-white/8 bg-white/[0.03] p-2">
+                        <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">p10</div>
+                        <div className="mt-1 text-sm font-semibold text-red-300">${stress.p10Bankroll.toFixed(0)}</div>
+                      </div>
+                      <div className="rounded-xl border border-white/8 bg-white/[0.03] p-2">
+                        <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">p50</div>
+                        <div className="mt-1 text-sm font-semibold text-white">${stress.p50Bankroll.toFixed(0)}</div>
+                      </div>
+                      <div className="rounded-xl border border-white/8 bg-white/[0.03] p-2">
+                        <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">p90</div>
+                        <div className="mt-1 text-sm font-semibold text-emerald-300">${stress.p90Bankroll.toFixed(0)}</div>
+                      </div>
+                    </div>
+                    <div className="mt-2 text-xs text-zinc-500">
+                      Max path DD ~{stress.maxDrawdownPct}% · ruin proxy {stress.ruinRate}%
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.03] p-4 text-sm text-zinc-400">
@@ -537,6 +651,7 @@ export default function DailyPicks() {
   const [isLoading, setIsLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [hasError, setHasError] = useState(false);
+  const [minExecEdge, setMinExecEdge] = useState(3);
   const { toast } = useToast();
 
   const syncAccessUi = () => {
@@ -626,7 +741,7 @@ export default function DailyPicks() {
           game.awayTeam,
           game.sport,
           userBankroll,
-          3,
+          minExecEdge,
           userKellyFraction,
           {
             id: game.id,
@@ -648,14 +763,34 @@ export default function DailyPicks() {
         };
       })
       .sort((a, b) => b.score - a.score);
-  }, [games, userBankroll, userKellyFraction]);
+  }, [games, userBankroll, userKellyFraction, minExecEdge]);
 
-  const freePicks = analyzedGames.slice(0, 3);
-  const premiumPicks = analyzedGames.slice(3);
+  const filteredGames = useMemo(() => {
+    return analyzedGames.filter((entry) => {
+      const edge = entry.prediction.valueBet?.executionAdjustedEdge ?? entry.prediction.executionAdjustedEdge;
+      // Keep leans on the board; only hide rows that fail the slider when they have a value bet below threshold.
+      if (entry.prediction.valueBet) return edge >= minExecEdge;
+      return minExecEdge <= 3;
+    });
+  }, [analyzedGames, minExecEdge]);
+
+  const freePicks = filteredGames.slice(0, 3);
+  const premiumPicks = filteredGames.slice(3);
   const hasPremiumBoard = hasFeatureAccess("premium_board", access);
   const liveGames = games.filter((game) => game.status.state === "in").length;
-  const valueBets = analyzedGames.filter((entry) => entry.prediction.valueBet).length;
+  const valueBets = filteredGames.filter((entry) => entry.prediction.valueBet).length;
   const sportsShown = Array.from(new Set(games.map((game) => game.sportLabel)));
+
+  const exportDesk = () => {
+    const csv = toCsv(deskRowsFromPicks(filteredGames));
+    if (!csv) {
+      toast({ title: "Nothing to export", description: "No priced games on the filtered desk.", variant: "destructive" });
+      return;
+    }
+    const stamp = new Date().toISOString().slice(0, 10);
+    downloadCsv(`ai-advantage-desk-${stamp}.csv`, csv);
+    toast({ title: "Desk exported", description: `${filteredGames.length} rows vs ESPN PickCenter reference.` });
+  };
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_30%),linear-gradient(180deg,#030611,#070d1a_45%,#030611)] text-white">
@@ -708,6 +843,37 @@ export default function DailyPicks() {
             ].map(({ label, value, tone, icon }) => (
               <AnimatedStat key={label} label={label} value={value} tone={tone} icon={icon} />
             ))}
+          </div>
+        </div>
+
+        <div className="mb-6 rounded-[24px] border border-white/10 bg-white/[0.03] p-4">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div className="min-w-[220px] flex-1">
+              <div className="flex items-center justify-between gap-3 text-xs text-zinc-400">
+                <span className="uppercase tracking-[0.2em]">Min execution edge</span>
+                <span className="font-mono text-cyan-200">{minExecEdge.toFixed(0)}%</span>
+              </div>
+              <Slider
+                className="mt-3"
+                min={0}
+                max={12}
+                step={1}
+                value={[minExecEdge]}
+                onValueChange={(value) => setMinExecEdge(value[0] ?? 3)}
+              />
+              <p className="mt-2 text-xs text-zinc-500">
+                Rebel-style filter on execution-adjusted edge. Value bets below the floor drop off; model leans stay when the floor is ≤3%.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-white/10 text-zinc-300 hover:bg-white/[0.06]"
+              onClick={exportDesk}
+            >
+              <Download className="mr-1.5 h-3.5 w-3.5" />
+              Export desk CSV
+            </Button>
           </div>
         </div>
 
@@ -813,14 +979,16 @@ export default function DailyPicks() {
           <div className="rounded-[28px] border border-red-400/20 bg-red-400/10 p-8 text-center text-red-200">
             The live feed is temporarily unavailable. Reload in a minute and it should come back.
           </div>
-        ) : analyzedGames.length === 0 ? (
+        ) : filteredGames.length === 0 ? (
           <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-8 text-center text-zinc-400">
-            There are no current games with posted lines right now. The site is intentionally showing an empty board instead of inventing one.
+            {analyzedGames.length === 0
+              ? "There are no current games with posted lines right now. The site is intentionally showing an empty board instead of inventing one."
+              : `No spots clear ${minExecEdge}% execution edge. Lower the filter to see leans.`}
           </div>
         ) : (
           <div className="grid gap-8 lg:grid-cols-[1.3fr_0.7fr] items-start">
             <div className="space-y-10">
-              <SlateSummary picks={analyzedGames} />
+              <SlateSummary picks={filteredGames} />
               <section>
                 <div className="mb-4 flex items-center gap-2">
                   <Star className="h-4 w-4 text-emerald-300" />
@@ -831,7 +999,13 @@ export default function DailyPicks() {
                 </div>
                 <div className="space-y-5">
                   {freePicks.map((entry) => (
-                    <PickCard key={entry.game.id} entry={entry} locked={false} onUnlock={() => setShowCryptoModal(true)} />
+                    <PickCard
+                      key={entry.game.id}
+                      entry={entry}
+                      locked={false}
+                      bankroll={userBankroll}
+                      onUnlock={() => setShowCryptoModal(true)}
+                    />
                   ))}
                 </div>
               </section>
@@ -857,7 +1031,13 @@ export default function DailyPicks() {
                   </div>
                   <div className="space-y-5">
                     {premiumPicks.map((entry) => (
-                      <PickCard key={entry.game.id} entry={entry} locked={!hasPremiumBoard} onUnlock={() => setShowPaymentOptionModal(true)} />
+                      <PickCard
+                        key={entry.game.id}
+                        entry={entry}
+                        locked={!hasPremiumBoard}
+                        bankroll={userBankroll}
+                        onUnlock={() => setShowPaymentOptionModal(true)}
+                      />
                     ))}
                   </div>
                 </section>
