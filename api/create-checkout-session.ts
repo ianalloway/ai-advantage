@@ -65,10 +65,7 @@ function getOrigin(req: RequestLike) {
     return configuredOrigin.replace(/\/$/, "");
   }
 
-  const host =
-    getHeader(req.headers, "x-forwarded-host") ||
-    getHeader(req.headers, "host") ||
-    process.env.VERCEL_URL;
+  const host = getHeader(req.headers, "x-forwarded-host") || getHeader(req.headers, "host");
   const protocol = getHeader(req.headers, "x-forwarded-proto") || "https";
 
   if (!host) {

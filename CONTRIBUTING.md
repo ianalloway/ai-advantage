@@ -15,14 +15,13 @@ Thanks for your interest in contributing! Here's how to get started.
 ```bash
 git clone https://github.com/ianalloway/ai-advantage
 cd ai-advantage
-npm install      # or: pip install -r requirements.txt
-npm run dev      # or: python main.py
+npm install
+npm run dev
 ```
 
 ## Code Style
 
-- **TypeScript/JS**: ESLint + Prettier (config in repo). Run `npm run lint` before committing.
-- **Python**: Black + isort. Run `black . && isort .` before committing.
+- **TypeScript/JS**: ESLint (config in repo). Run `npm run lint` before committing.
 - Keep functions small and focused — one job per function.
 - Write self-documenting code; add comments only where logic is non-obvious.
 
@@ -39,7 +38,7 @@ npm run dev      # or: python main.py
 Use the [Bug Report template](.github/ISSUE_TEMPLATE/bug_report.md). Include:
 - Steps to reproduce
 - Expected vs actual behavior
-- Environment info (OS, Node/Python version)
+- Environment info (OS, Node version)
 
 ## Suggesting Features
 

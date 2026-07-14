@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Activity,
   ArrowRight,
+  BarChart2,
   Calendar,
   ChevronLeft,
+  Clock,
   Crown,
   Flame,
   Lock,
@@ -15,6 +17,7 @@ import {
   Star,
   Target,
   Trophy,
+  User,
   Zap,
 } from "lucide-react";
 import CryptoPaymentModal, { type UnlockType } from "@/components/CryptoPaymentModal";
@@ -107,6 +110,160 @@ function OddsSparkline({ open, current, favorable }: { open: number; current: nu
   );
 }
 
+// ---------------------------------------------------------------------------
+// useAnimatedCount — animates a number from 0 to target with easeOut
+// ---------------------------------------------------------------------------
+function useAnimatedCount(target: number, durationMs = 600): number {
+  const [display, setDisplay] = useState(0);
+  const frameRef = useRef<number>(0);
+
+  useEffect(() => {
+    const start = performance.now();
+    const from = 0;
+    const run = (now: number) => {
+      const elapsed = now - start;
+      const progress = Math.min(elapsed / durationMs, 1);
+      // easeOutQuad
+      const eased = 1 - (1 - progress) * (1 - progress);
+      setDisplay(Math.round(from + (target - from) * eased));
+      if (progress < 1) {
+        frameRef.current = requestAnimationFrame(run);
+      }
+    };
+    frameRef.current = requestAnimationFrame(run);
+    return () => cancelAnimationFrame(frameRef.current);
+  }, [target, durationMs]);
+
+  return display;
+}
+
+// ---------------------------------------------------------------------------
+// AnimatedStat — renders a stat tile with a counting animation
+// ---------------------------------------------------------------------------
+function AnimatedStat({ label, value, tone, icon: Icon }: {
+  label: string;
+  value: number;
+  tone: string;
+  icon: React.ElementType;
+}) {
+  const animated = useAnimatedCount(value);
+  return (
+    <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/[0.045] hover:shadow-lg">
+      <Icon className={`h-4 w-4 ${tone}`} />
+      <div className={`mt-3 text-3xl font-bold tabular-nums ${tone}`}>{animated}</div>
+      <div className="mt-1 text-sm text-zinc-500">{label}</div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Countdown — shows live time-to-tipoff for upcoming games
+// ---------------------------------------------------------------------------
+function Countdown({ commenceTime }: { commenceTime: string }) {
+  const [remaining, setRemaining] = useState("");
+
+  useEffect(() => {
+    const calc = () => {
+      const diff = new Date(commenceTime).getTime() - Date.now();
+      if (diff <= 0) {
+        setRemaining("");
+        return;
+      }
+      const hours = Math.floor(diff / 3_600_000);
+      const minutes = Math.floor((diff % 3_600_000) / 60_000);
+      const seconds = Math.floor((diff % 60_000) / 1_000);
+      if (hours > 24) {
+        const days = Math.floor(hours / 24);
+        setRemaining(`${days}d ${hours % 24}h`);
+      } else if (hours > 0) {
+        setRemaining(`${hours}h ${minutes}m`);
+      } else {
+        setRemaining(`${minutes}m ${seconds}s`);
+      }
+    };
+    calc();
+    const id = window.setInterval(calc, 1000);
+    return () => window.clearInterval(id);
+  }, [commenceTime]);
+
+  if (!remaining) return null;
+
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2.5 py-1 text-[11px] font-medium text-cyan-300 tabular-nums">
+      <Clock className="h-3 w-3" />
+      {remaining}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SlateSummary — analytics bar at the top of the picks grid
+// ---------------------------------------------------------------------------
+function SlateSummary({ picks }: { picks: PickEntry[] }) {
+  const summary = useMemo(() => {
+    const valueBets = picks.filter((p) => p.prediction.valueBet);
+    const edges = picks.map((p) => p.prediction.predictedWinnerExecutionEdge);
+    const avgEdge = edges.length ? edges.reduce((a, b) => a + b, 0) / edges.length : 0;
+    const maxEdge = edges.length ? Math.max(...edges) : 0;
+    const totalStake = valueBets.reduce((sum, p) => sum + (p.prediction.valueBet?.suggestedBet ?? 0), 0);
+    const sportsSet = new Set(picks.map((p) => p.game.sportLabel));
+    return { valueBets: valueBets.length, avgEdge, maxEdge, totalStake, sportsCount: sportsSet.size };
+  }, [picks]);
+
+  if (picks.length === 0) return null;
+
+  return (
+    <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      {[
+        { label: "Value bets on slate", value: String(summary.valueBets), tone: "text-emerald-300" },
+        { label: "Avg execution edge", value: formatEdge(summary.avgEdge), tone: summary.avgEdge >= 0 ? "text-brand-300" : "text-red-300" },
+        { label: "Best edge on board", value: formatEdge(summary.maxEdge), tone: summary.maxEdge >= 0 ? "text-cyan-300" : "text-red-300" },
+        { label: "Total suggested stake", value: `$${summary.totalStake.toFixed(0)}`, tone: "text-yellow-300" },
+      ].map((item) => (
+        <div key={item.label} className="rounded-2xl border border-white/8 bg-white/[0.025] p-3 transition-all duration-300 hover:bg-white/[0.04]">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">{item.label}</div>
+          <div className={`mt-1 text-xl font-bold tabular-nums ${item.tone}`}>{item.value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ProfileContextCard — shows the user's active bankroll & risk settings
+// ---------------------------------------------------------------------------
+function ProfileContextCard({ bankroll, kellyFraction, riskLabel }: {
+  bankroll: number;
+  kellyFraction: number;
+  riskLabel: string;
+}) {
+  return (
+    <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5 transition-all duration-300 hover:border-white/20 hover:bg-white/[0.045]">
+      <div className="flex items-center gap-2 text-sm font-semibold text-white">
+        <User className="h-4 w-4 text-brand-300" />
+        Your Desk Settings
+      </div>
+      <div className="mt-4 space-y-3">
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-zinc-500">Bankroll</span>
+          <span className="font-semibold tabular-nums text-white">${bankroll.toLocaleString()}</span>
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-zinc-500">Risk profile</span>
+          <Badge variant="outline" className="border-yellow-400/30 bg-yellow-400/10 text-yellow-200 text-xs">{riskLabel}</Badge>
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-zinc-500">Kelly fraction</span>
+          <span className="font-semibold tabular-nums text-cyan-300">{(kellyFraction * 100).toFixed(0)}%</span>
+        </div>
+      </div>
+      <Button asChild variant="outline" size="sm" className="mt-4 w-full border-white/10 text-zinc-300 hover:bg-white/[0.06]">
+        <Link to="/profile">Edit profile →</Link>
+      </Button>
+    </div>
+  );
+}
+
 function PickCardSkeleton() {
   return (
     <div className="relative overflow-hidden rounded-[28px] border border-white/5 bg-white/[0.02] p-5 animate-pulse">
@@ -161,6 +318,9 @@ function PickCard({
           <div className={`rounded-full border px-2.5 py-1 text-[11px] font-medium ${getStatusClasses(game.status.state)}`}>
             {game.status.shortDetail}
           </div>
+          {game.status.state === "pre" ? (
+            <Countdown commenceTime={game.date} />
+          ) : null}
           {isThreeWay ? (
             <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-amber-300">
               Experimental model
@@ -533,15 +693,11 @@ export default function DailyPicks() {
 
           <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
             {[
-              { label: "Games on board", value: String(games.length), tone: "text-white", icon: Activity },
-              { label: "Live right now", value: String(liveGames), tone: "text-emerald-300", icon: Zap },
-              { label: "Value bets", value: String(valueBets), tone: "text-brand-300", icon: Target },
-            ].map(({ label, value, tone, icon: Icon }) => (
-              <div key={label} className="rounded-[24px] border border-white/10 bg-white/[0.03] p-4">
-                <Icon className={`h-4 w-4 ${tone}`} />
-                <div className={`mt-3 text-3xl font-bold ${tone}`}>{value}</div>
-                <div className="mt-1 text-sm text-zinc-500">{label}</div>
-              </div>
+              { label: "Games on board", value: games.length, tone: "text-white", icon: Activity },
+              { label: "Live right now", value: liveGames, tone: "text-emerald-300", icon: Zap },
+              { label: "Value bets", value: valueBets, tone: "text-brand-300", icon: Target },
+            ].map(({ label, value, tone, icon }) => (
+              <AnimatedStat key={label} label={label} value={value} tone={tone} icon={icon} />
             ))}
           </div>
         </div>
@@ -655,6 +811,7 @@ export default function DailyPicks() {
         ) : (
           <div className="grid gap-8 lg:grid-cols-[1.3fr_0.7fr] items-start">
             <div className="space-y-10">
+              <SlateSummary picks={analyzedGames} />
               <section>
                 <div className="mb-4 flex items-center gap-2">
                   <Star className="h-4 w-4 text-emerald-300" />
@@ -698,6 +855,11 @@ export default function DailyPicks() {
               ) : null}
             </div>
             <div className="lg:sticky lg:top-6 space-y-6">
+              <ProfileContextCard
+                bankroll={userBankroll}
+                kellyFraction={userKellyFraction}
+                riskLabel={userProfile?.riskProfile === "conservative" ? "Conservative" : userProfile?.riskProfile === "aggressive" ? "Aggressive" : "Balanced"}
+              />
               <KellySimulator />
             </div>
           </div>

@@ -39,7 +39,7 @@ It's the product layer of a larger sports-analytics stack — the modeling lives
 
 `React` · `TypeScript` · `Vite` · `Tailwind CSS` · `shadcn/ui`
 
-Serverless API routes handle Stripe checkout and newsletter capture so previews and production stay fully functional.
+Netlify Functions handle Stripe checkout, newsletter capture, and the shared execution ledger so previews and production stay fully functional.
 
 ## Run it locally
 
@@ -50,13 +50,12 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`.
+Open `http://localhost:8080`.
 
 ## Deployment
 
-- `netlify.toml` — Netlify SPA deploy
-- `vercel.json` — SPA rewrites for Vercel preview deploys
-- `api/create-checkout-session.ts` + `api/checkout-session.ts` — server-side Stripe checkout
+- `netlify.toml` — Netlify SPA deploy + serverless functions (`netlify/functions`)
+- `api/` — shared server-side handlers (Stripe checkout, newsletter capture, execution ledger) wrapped by `netlify/functions`
 
 ### Stripe (server flow)
 
