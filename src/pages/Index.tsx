@@ -638,7 +638,10 @@ Bet responsibly. This is model output, not a guarantee.`);
                   onClick={() => {
                     signOutSiteUser();
                     syncAccessUi();
-                    toast({ title: "Logged out", description: "Your site account has been logged out." });
+                    toast({
+                      title: "Logged out",
+                      description: "Site account and paid access session cleared.",
+                    });
                   }}
                 >
                   <LogOut className="mr-2 h-4 w-4" />

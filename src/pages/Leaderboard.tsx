@@ -12,7 +12,7 @@ import {
   upsertExecutionLedgerEntries,
   type HistoricalExecutionLedgerEntry,
 } from "@/lib/executionLedgerStore";
-import { getAccessState, hasFeatureAccess, redirectToCheckout } from "@/lib/stripe";
+import { getAccessChangeEventName, getAccessState, hasFeatureAccess, redirectToCheckout } from "@/lib/stripe";
 import {
   Activity,
   AlertCircle,
@@ -128,7 +128,7 @@ function HistoryTable({ rows }: { rows: HistoricalExecutionLedgerEntry[] }) {
 }
 
 export default function Leaderboard() {
-  const [access] = useState(getAccessState());
+  const [access, setAccess] = useState(getAccessState());
   const [games, setGames] = useState<LiveMarketGame[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
@@ -137,6 +137,13 @@ export default function Leaderboard() {
   const [historicalEntries, setHistoricalEntries] = useState<HistoricalExecutionLedgerEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const { toast } = useToast();
+
+  useEffect(() => {
+    const sync = () => setAccess(getAccessState());
+    sync();
+    window.addEventListener(getAccessChangeEventName(), sync);
+    return () => window.removeEventListener(getAccessChangeEventName(), sync);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

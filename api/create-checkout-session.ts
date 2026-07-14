@@ -147,8 +147,10 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     cancelUrl.searchParams.set("checkout", "cancelled");
 
     const siteUser = await getCurrentSiteUserFromEvent({ blobs: req.blobs, headers: req.headers });
+    // Prefer authenticated session identity. Body fields are only used when logged out
+    // so a client cannot re-attribute a checkout to another userId while signed in.
     const customerEmail = siteUser?.email ?? getCustomerEmail(req.body);
-    const clientReferenceId = siteUser?.id ?? getClientReferenceId(req.body);
+    const clientReferenceId = siteUser?.id ?? (siteUser ? undefined : getClientReferenceId(req.body));
     const metadata = {
       product_surface: "ai-advantage",
       unlock_type: checkoutMode,

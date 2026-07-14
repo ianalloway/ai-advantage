@@ -35,7 +35,7 @@ function RouteFallback() {
 
 function App() {
   useEffect(() => {
-    void (async () => {
+    const syncAll = async () => {
       try {
         await syncAccessFromUrl();
         await syncSiteUserSession();
@@ -43,7 +43,24 @@ function App() {
       } catch {
         // Keep the last rendered state if the entitlement endpoint is briefly unavailable.
       }
-    })();
+    };
+
+    void syncAll();
+
+    // Re-sync when returning to the tab so webhook cancellations clear stale premium UI.
+    const onFocus = () => {
+      void syncEntitlementAccess().catch(() => undefined);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") onFocus();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   return (

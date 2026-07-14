@@ -326,6 +326,13 @@ export function signOutSiteUser(): void {
   void requestAuth("logout", { method: "POST", body: "{}" }).catch(() => undefined);
   setCachedUser(null);
   localStorage.removeItem(SESSION_STORAGE_KEY);
+  // Paid access is a separate cookie/local cache — clear it on account logout so
+  // shared devices don't keep the premium board unlocked.
+  void import("@/lib/stripe")
+    .then(({ signOutAccessSession }) => {
+      signOutAccessSession();
+    })
+    .catch(() => undefined);
   emitAuthChange();
 }
 

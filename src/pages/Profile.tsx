@@ -209,7 +209,7 @@ export default function Profile() {
                 signOutSiteUser();
                 toast({
                   title: "Logged out",
-                  description: "Your site account has been logged out on this device.",
+                  description: "Site account and paid access session cleared on this device.",
                 });
                 navigate("/login");
               }}

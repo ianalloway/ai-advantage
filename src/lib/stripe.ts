@@ -237,9 +237,12 @@ async function createCheckoutSession(type: CheckoutMode): Promise<string> {
   const siteUser = getCurrentSiteUser();
   const response = await fetch("/api/create-checkout-session", {
     method: "POST",
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      Accept: "application/json",
     },
+    // Email/id are hints only — server prefers the authenticated session cookie.
     body: JSON.stringify({
       mode: type,
       customerEmail: siteUser?.email,
@@ -261,7 +264,12 @@ async function createCheckoutSession(type: CheckoutMode): Promise<string> {
 }
 
 async function verifyCheckoutSession(sessionId: string): Promise<CheckoutSessionStatusResponse> {
-  const response = await fetch(`/api/checkout-session?session_id=${encodeURIComponent(sessionId)}`);
+  const response = await fetch(`/api/checkout-session?session_id=${encodeURIComponent(sessionId)}`, {
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+    },
+  });
 
   if (!response.ok) {
     const message = await readApiError(response, "Unable to verify Stripe checkout.");
@@ -530,7 +538,13 @@ export const redirectToCheckout = async (type: CheckoutMode = "premium"): Promis
     window.location.assign(checkoutUrl);
     return;
   } catch (error) {
-    const fallbackUrl = getCheckoutUrl(type);
+    const message = error instanceof Error ? error.message : "";
+    const isConfigError = /not configured|waiting on a Stripe Price|Missing STRIPE|stripe_secret|stripe_price/i.test(
+      message,
+    );
+    // Payment Links often omit session_id → orphaned paid access. Only allow as a
+    // local-dev escape hatch, never in production when Checkout Sessions fail.
+    const fallbackUrl = !import.meta.env.PROD && !isConfigError ? getCheckoutUrl(type) : "";
     if (fallbackUrl) {
       window.location.assign(fallbackUrl);
       return;

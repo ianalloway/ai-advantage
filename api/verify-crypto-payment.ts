@@ -23,9 +23,8 @@ type ResponseLike = {
 };
 
 const RPC_URL = process.env.ETH_RPC_URL || "https://cloudflare-eth.com";
-const PAYMENT_ADDRESS = (
-  process.env.CRYPTO_PAYMENT_ADDRESS || "0x6f278ce76ba5ed31fd9be646d074863e126836e9"
-).toLowerCase();
+// Fail closed — never default to a hard-coded wallet in production.
+const PAYMENT_ADDRESS = (process.env.CRYPTO_PAYMENT_ADDRESS || "").trim().toLowerCase();
 
 const MIN_ETH_WEI = BigInt(process.env.CRYPTO_MIN_ETH_WEI || "2500000000000000"); // 0.0025 ETH
 const MIN_STABLE_UNITS = BigInt(process.env.CRYPTO_MIN_STABLE_UNITS || "9500000"); // 9.5 USDC/USDT (6 dp)
@@ -125,6 +124,13 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   }
   if (!isValidEmail(email)) {
     res.status(400).json({ verified: false, reason: "A valid access email is required." });
+    return;
+  }
+  if (!/^0x[a-f0-9]{40}$/.test(PAYMENT_ADDRESS)) {
+    res.status(503).json({
+      verified: false,
+      reason: "Crypto payments are not configured (missing CRYPTO_PAYMENT_ADDRESS).",
+    });
     return;
   }
 

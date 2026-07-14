@@ -60,13 +60,19 @@ Open `http://localhost:8080`.
 ### Stripe (server flow)
 
 ```bash
-STRIPE_SECRET_KEY=***
+STRIPE_SECRET_KEY=sk_...
 STRIPE_PREMIUM_PRICE_ID=price_...
 STRIPE_ONE_TIME_PRICE_ID=price_...
-PUBLIC_APP_URL=https://your-domain
+STRIPE_WEBHOOK_SECRET=whsec_...
+PUBLIC_APP_URL=https://aiadvantagesports.com
+AUTH_SECRET=...
 ```
 
-If unset, the app falls back to static Stripe Payment Links via `VITE_STRIPE_CHECKOUT_URL` and `VITE_STRIPE_ONE_TIME_CHECKOUT_URL`.
+Webhook endpoint: `https://aiadvantagesports.com/.netlify/functions/stripe-webhook`  
+Events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.created|updated|deleted`.
+
+Check readiness: `curl -s https://aiadvantagesports.com/api/billing-status | jq`  
+Production does **not** fall back to Payment Links when Checkout Sessions fail (that orphaned access).
 
 ### Newsletter capture
 
