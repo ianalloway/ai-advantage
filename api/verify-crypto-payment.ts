@@ -2,6 +2,7 @@
 // Verifies an Ethereum tx (ETH or USDC/USDT transfer) actually paid the app
 // wallet before any premium access is granted. See issue #36.
 import {
+  CryptoTransactionAlreadyClaimedError,
   createEntitlementSession,
   entitlementSessionCookie,
   getEntitlementStore,
@@ -214,6 +215,14 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
       reason: "Transaction does not pay the app wallet the required amount.",
     });
   } catch (error) {
+    if (error instanceof CryptoTransactionAlreadyClaimedError) {
+      res.status(409).json({
+        verified: false,
+        reason: "This crypto transaction has already been claimed.",
+      });
+      return;
+    }
+
     const message = error instanceof Error ? error.message : "Verification failed.";
     res.status(502).json({ verified: false, reason: message });
   }
