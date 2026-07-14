@@ -528,7 +528,7 @@ export async function upsertStripeSubscriptionEntitlement(
   });
 }
 
-export async function upsertCryptoEntitlement(
+export async function claimCryptoEntitlement(
   store: EntitlementStore,
   input: {
     email: string;
@@ -539,16 +539,36 @@ export async function upsertCryptoEntitlement(
   },
 ) {
   const tier = input.tier === "premium" ? "premium" : "event";
+  const txHash = normalizeHash(input.txHash);
+  const email = normalizeEmail(input.email);
+  const walletAddress = normalizeWallet(input.walletAddress);
+  const id = `crypto:${txHash}`;
+  const existing = await getRecord(store, id);
+
+  if (existing) {
+    const sameClaimant =
+      existing.email === email &&
+      existing.walletAddress === walletAddress &&
+      existing.tier === tier &&
+      existing.cryptoTxHash === txHash;
+
+    if (!sameClaimant) {
+      throw new Error("CRYPTO_TRANSACTION_ALREADY_CLAIMED");
+    }
+
+    return existing;
+  }
+
   return upsertEntitlement(store, {
-    id: `crypto:${normalizeHash(input.txHash)}`,
+    id,
     tier,
     source: "crypto",
     label: input.label,
     status: "active",
     activatedAt: new Date().toISOString(),
     expiresAt: tier === "event" ? eventAccessExpiry() : undefined,
-    email: input.email,
-    walletAddress: input.walletAddress,
-    cryptoTxHash: input.txHash,
+    email,
+    walletAddress,
+    cryptoTxHash: txHash,
   });
 }

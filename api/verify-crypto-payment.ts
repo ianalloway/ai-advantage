@@ -5,7 +5,7 @@ import {
   createEntitlementSession,
   entitlementSessionCookie,
   getEntitlementStore,
-  upsertCryptoEntitlement,
+  claimCryptoEntitlement,
   type AccessTier,
 } from "../netlify/functions/_lib/entitlements";
 
@@ -166,7 +166,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
           res.status(503).json({ verified: false, reason: "Entitlement backend is not configured." });
           return;
         }
-        const entitlement = await upsertCryptoEntitlement(store, {
+        const entitlement = await claimCryptoEntitlement(store, {
           email,
           walletAddress,
           txHash,
@@ -196,7 +196,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
         res.status(503).json({ verified: false, reason: "Entitlement backend is not configured." });
         return;
       }
-      const entitlement = await upsertCryptoEntitlement(store, {
+      const entitlement = await claimCryptoEntitlement(store, {
         email,
         walletAddress,
         txHash,
@@ -215,6 +215,10 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Verification failed.";
+    if (message === "CRYPTO_TRANSACTION_ALREADY_CLAIMED") {
+      res.status(409).json({ verified: false, reason: "This transaction hash has already been claimed." });
+      return;
+    }
     res.status(502).json({ verified: false, reason: message });
   }
 }
