@@ -503,9 +503,19 @@ function toMarkets(events: OddsApiEvent[]) {
 }
 
 async function fetchOddsApiMarkets(sport: Sport, blobsReady: boolean) {
+  // Free-by-default: ESPN PickCenter is the primary market source.
+  // The Odds API is opt-in only (paid quota) via USE_ODDS_API=true.
+  const oddsApiEnabled = ["1", "true", "yes", "on"].includes(
+    String(process.env.USE_ODDS_API || "").trim().toLowerCase(),
+  );
   const apiKey = process.env.THE_ODDS_API_KEY || process.env.ODDS_API_KEY;
-  if (!apiKey) {
-    return { configured: false, markets: new Map<string, ReturnType<typeof parseOddsApiEvent>>(), cache: null, error: null };
+  if (!oddsApiEnabled || !apiKey) {
+    return {
+      configured: false,
+      markets: new Map<string, ReturnType<typeof parseOddsApiEvent>>(),
+      cache: null,
+      error: null,
+    };
   }
 
   const memoryHit = oddsMemoryCache.get(sport);
@@ -605,10 +615,10 @@ async function toLiveMarketGame(
           bookmaker: espnFallback.bookmaker,
           cacheTtlSeconds: ODDS_CACHE_MINUTES * 60,
           stale: false,
-          matchConfidence: oddsProvider.configured ? 0.55 : 0.7,
+          matchConfidence: oddsProvider.configured ? 0.55 : 0.85,
           fallbackReason: oddsProvider.configured
             ? oddsProvider.error || "No matching Odds API event was found for this ESPN game."
-            : "The Odds API key is not configured; using ESPN PickCenter fallback lines.",
+            : "Using free ESPN PickCenter lines (Odds API disabled / not configured).",
         }
       : {
           source: "none",
