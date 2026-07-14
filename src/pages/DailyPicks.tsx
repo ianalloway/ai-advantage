@@ -41,6 +41,7 @@ import {
 } from "@/lib/stripe";
 import { analyzeGame, formatEdge, formatOdds, formatProb, type GamePrediction } from "@/lib/predictions";
 import { fetchLiveGamesForSports, type LiveMarketGame } from "@/lib/liveSports";
+import { getEdgeBadge } from "@/lib/edgeBadge";
 import { getCurrentUserProfile } from "@/lib/profile";
 
 interface PickEntry {
@@ -57,12 +58,13 @@ function getStatusClasses(state: LiveMarketGame["status"]["state"]) {
 
 function getMarketAuditLabel(game: LiveMarketGame) {
   const audit = game.marketAudit;
-  if (!audit) return game.marketSource === "odds-api" ? "Provider confirmed" : "Fallback line";
+  if (!audit) return game.marketSource === "odds-api" ? "Provider confirmed" : "Public ESPN line";
   if (audit.source === "odds-api") {
     const age = audit.cacheAgeSeconds !== undefined ? ` · cache ${Math.round(audit.cacheAgeSeconds / 60)}m` : "";
     return `${audit.stale ? "Stale provider line" : "Provider confirmed"}${age}`;
   }
-  if (audit.source === "espn-fallback") return "ESPN fallback line";
+  // Honest reference: model edge is vs a public PickCenter price — not a paid sharp consensus.
+  if (audit.source === "espn-fallback") return "vs ESPN PickCenter";
   return "No verified line";
 }
 
@@ -307,11 +309,18 @@ function PickCard({
   const winnerExecutionEdge = prediction.predictedWinnerExecutionEdge;
   const winnerProb = prediction.predictedWinnerProb;
   const isThreeWay = game.odds?.drawMoneyline !== undefined;
+  const edgeBadge = getEdgeBadge(
+    prediction.valueBet?.executionAdjustedEdge ?? winnerExecutionEdge,
+    Boolean(prediction.valueBet),
+  );
 
   return (
     <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_42%),linear-gradient(180deg,rgba(9,13,24,0.98),rgba(5,8,18,0.98))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)] transition-all duration-300 hover:-translate-y-1 hover:border-brand-500/35 hover:shadow-[0_32px_96px_rgba(34,197,94,0.06)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 pb-4">
         <div className="flex items-center gap-2">
+          <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ${edgeBadge.className}`}>
+            {edgeBadge.shortLabel}
+          </span>
           <Badge variant="outline" className="border-brand-400/30 bg-brand-400/10 text-[11px] tracking-[0.24em] text-brand-300">
             {game.sportLabel}
           </Badge>

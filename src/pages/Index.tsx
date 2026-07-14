@@ -680,11 +680,11 @@ Bet responsibly. This is model output, not a guarantee.`);
                 Live edge command center
               </div>
               <h1 className="mt-5 text-4xl font-semibold tracking-tight text-white md:text-6xl lg:text-5xl xl:text-6xl">
-                Find the edge before the market moves.
+                Raw edge is a rumor. Execution-adjusted edge is a number you can bet.
               </h1>
               <p className="mt-5 max-w-xl text-base leading-7 text-slate-300 md:text-lg">
-                AI-assisted odds analysis, Kelly sizing, and proof-first tracking for NBA, NFL,
-                and MLB. Built for decisions that can be defended after the final whistle.
+                Model probability vs public ESPN lines, quarter-Kelly sizing, and a CLV proof ledger
+                for NBA, NFL, MLB, and World Cup 1X2. Not another tipster Discord—an execution desk.
               </p>
 
               <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
@@ -1075,6 +1075,45 @@ Bet responsibly. This is model output, not a guarantee.`);
                 </div>
               </aside>
             </div>
+          </div>
+        </section>
+
+        <section id="edge" className="border-b border-white/10 px-5 py-16">
+          <div className="mx-auto max-w-7xl">
+            <SectionHeader
+              eyebrow="The advertised edge"
+              title="We don’t sell win rate. We publish the CLV board."
+              description="OddsJam and Unabated win on multi-book firehoses ($99–$347/mo). We own a different category: model-originated edge against a public ESPN line, sized with quarter-Kelly, graded by close-line proof."
+            />
+            <div className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {[
+                {
+                  title: "Execution-adjusted edge",
+                  body: "Timing, volatility, and liquidity discount the raw model–market gap before you size.",
+                },
+                {
+                  title: "vs ESPN PickCenter",
+                  body: "Honest reference. No fake “sharp consensus” without Pinnacle. Public line, public proof.",
+                },
+                {
+                  title: "Quarter-Kelly on every card",
+                  body: "DawBets-style sizing without a calculator hop—stake guidance rides with the pick.",
+                },
+                {
+                  title: "Hourly live-line smoke",
+                  body: "If the board dies, so does the edge. Production checks keep the desk honest.",
+                },
+              ].map((item) => (
+                <div key={item.title} className="rounded-xl border border-white/10 bg-white/[0.03] p-5">
+                  <div className="text-sm font-semibold text-cyan-200">{item.title}</div>
+                  <p className="mt-2 text-sm leading-6 text-slate-400">{item.body}</p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-6 max-w-3xl text-sm leading-6 text-slate-500">
+              Skip arb scanners and steam Discord. We price World Cup 1X2 with the draw, rank MUST / STRONG / WATCH / PASS
+              off execution edge, and leave a ledger you can audit—not a tipster unit claim.
+            </p>
           </div>
         </section>
 

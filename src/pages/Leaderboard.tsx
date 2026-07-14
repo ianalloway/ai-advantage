@@ -75,7 +75,9 @@ function formatMarketAudit(game: LiveMarketGame) {
     const age = audit.cacheAgeSeconds !== undefined ? ` · ${Math.round(audit.cacheAgeSeconds / 60)}m cache` : "";
     return `${audit.stale ? "Stale" : "Confirmed"} · ${audit.bookmaker ?? game.bookmaker ?? "Odds API"}${age}`;
   }
-  if (audit.source === "espn-fallback") return `Fallback · ${audit.bookmaker ?? game.bookmaker ?? "ESPN"}`;
+  if (audit.source === "espn-fallback") {
+    return `vs ESPN PickCenter · ${audit.bookmaker ?? game.bookmaker ?? "public line"}`;
+  }
   return "No verified line";
 }
 
@@ -262,6 +264,8 @@ export default function Leaderboard() {
     const avgClv = clvEntries.length
       ? clvEntries.reduce((sum, entry) => sum + (entry.closeLineValue ?? 0), 0) / clvEntries.length
       : undefined;
+    const beatClose = clvEntries.filter((entry) => (entry.closeLineValue ?? 0) > 0).length;
+    const clvHitRate = clvEntries.length ? (beatClose / clvEntries.length) * 100 : undefined;
     const totalSuggestedStake = filteredEntries.reduce((sum, entry) => sum + entry.suggestedStake, 0);
     const wins = settled.filter((entry) => entry.ledgerOutcome === "won").length;
 
@@ -272,6 +276,8 @@ export default function Leaderboard() {
       avgExecEdge,
       avgScore,
       avgClv,
+      clvHitRate,
+      clvSample: clvEntries.length,
       totalSuggestedStake,
     };
   }, [filteredEntries]);
@@ -402,9 +408,13 @@ export default function Leaderboard() {
             <div className="mt-1 text-sm text-zinc-400">A higher score means stronger execution context, not louder marketing.</div>
           </div>
           <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-5 transition-all duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.05] hover:shadow-lg">
-            <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Close-line proof</div>
-            <div className="mt-2 text-3xl font-black text-emerald-300">{stats.avgClv !== undefined ? formatClv(stats.avgClv) : "Pending"}</div>
-            <div className="mt-1 text-sm text-zinc-400">Settled rows: {stats.settled}. Wins: {stats.wins}. Tracked stake: {formatStake(stats.totalSuggestedStake)}.</div>
+            <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">Beat-close rate</div>
+            <div className="mt-2 text-3xl font-black text-emerald-300">
+              {stats.clvHitRate !== undefined ? `${stats.clvHitRate.toFixed(0)}%` : "Pending"}
+            </div>
+            <div className="mt-1 text-sm text-zinc-400">
+              Avg CLV {stats.avgClv !== undefined ? formatClv(stats.avgClv) : "—"}. Sample {stats.clvSample}. Wins {stats.wins}/{stats.settled}.
+            </div>
           </div>
         </div>
 
