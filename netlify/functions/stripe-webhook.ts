@@ -5,6 +5,7 @@ import {
   upsertStripeCheckoutSessionEntitlement,
   upsertStripeSubscriptionEntitlement,
 } from "./_lib/entitlements";
+import { appendFunnelEvent } from "../lib/funnel";
 
 type NetlifyEvent = {
   blobs?: string;
@@ -100,7 +101,18 @@ export const handler = async (event: NetlifyEvent) => {
       case "checkout.session.completed":
       case "checkout.session.async_payment_succeeded": {
         const session = stripeEvent.data.object as Stripe.Checkout.Session;
-        await upsertStripeCheckoutSessionEntitlement(store, session);
+        const entitlement = await upsertStripeCheckoutSessionEntitlement(store, session);
+        await appendFunnelEvent(store, {
+          name: "checkout_paid",
+          mode: session.mode ?? session.metadata?.unlock_type ?? undefined,
+          sessionId: session.id,
+          email: session.customer_details?.email ?? session.customer_email ?? entitlement.email,
+          userId: entitlement.userId,
+          meta: {
+            payment_status: session.payment_status,
+            subscription: typeof session.subscription === "string" ? session.subscription : session.subscription?.id,
+          },
+        });
         break;
       }
       case "customer.subscription.created":
@@ -109,7 +121,19 @@ export const handler = async (event: NetlifyEvent) => {
         const subscription = stripeEvent.data.object as Stripe.Subscription;
         const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer?.id;
         const email = await customerEmail(stripe, customerId);
-        await upsertStripeSubscriptionEntitlement(store, subscription, { email });
+        const entitlement = await upsertStripeSubscriptionEntitlement(store, subscription, { email });
+        if (stripeEvent.type === "customer.subscription.deleted" || subscription.status === "canceled") {
+          await appendFunnelEvent(store, {
+            name: "subscription_cancelled",
+            email: email ?? entitlement.email,
+            userId: entitlement.userId,
+            meta: {
+              subscriptionId: subscription.id,
+              status: subscription.status,
+              cancel_at_period_end: subscription.cancel_at_period_end,
+            },
+          });
+        }
         break;
       }
       default:

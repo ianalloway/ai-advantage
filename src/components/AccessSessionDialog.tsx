@@ -60,23 +60,25 @@ export default function AccessSessionDialog({
 
   const handleSignIn = async () => {
     setIsSubmitting(true);
-    const result = signInWithCryptoAccount({ email, txHash });
-    setIsSubmitting(false);
+    try {
+      const result = await signInWithCryptoAccount({ email, txHash });
+      toast({
+        title: result.success ? "Signed in" : "Could not sign in",
+        description: result.message,
+        variant: result.success ? "default" : "destructive",
+      });
 
-    toast({
-      title: result.success ? "Signed in" : "Could not sign in",
-      description: result.message,
-      variant: result.success ? "default" : "destructive",
-    });
+      if (!result.success) return;
 
-    if (!result.success) return;
-
-    setAccess(getAccessState());
-    setCurrentAccount(getCurrentCryptoAccount());
-    onSessionChange?.();
-    setEmail("");
-    setTxHash("");
-    onOpenChange(false);
+      setAccess(getAccessState());
+      setCurrentAccount(getCurrentCryptoAccount());
+      onSessionChange?.();
+      setEmail("");
+      setTxHash("");
+      onOpenChange(false);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleLogout = () => {

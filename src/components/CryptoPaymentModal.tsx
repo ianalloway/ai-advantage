@@ -137,7 +137,8 @@ export default function CryptoPaymentModal({
     try {
       const response = await fetch("/api/verify-crypto-payment", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify({ txHash: hash, walletAddress: wallet, email, unlockType }),
       });
       const result = (await response.json()) as { verified?: boolean; reason?: string };
@@ -149,28 +150,28 @@ export default function CryptoPaymentModal({
         });
         return;
       }
+      // Cache account metadata for UI only — access unlocks from the server cookie + entitlements sync.
+      saveCryptoAccessAccount({
+        email,
+        walletAddress: wallet,
+        txHash: hash,
+        tier: unlockType === "knowledge-vault" ? "premium" : "event",
+        label: unlockType === "knowledge-vault" ? "Crypto Knowledge Vault" : "Crypto Big Game Pass",
+        activatedAt: new Date().toISOString(),
+        expiresAt: unlockType === "knowledge-vault" ? undefined : getEventAccessExpiry(),
+      });
+      await syncEntitlementAccess();
+      setStep("done");
+      onSuccess();
     } catch {
       toast({
         title: "Verification unavailable",
         description: "Could not reach the verification service. Try again in a minute.",
         variant: "destructive",
       });
-      return;
     } finally {
       setIsVerifying(false);
     }
-    saveCryptoAccessAccount({
-      email,
-      walletAddress: wallet,
-      txHash: hash,
-      tier: unlockType === "knowledge-vault" ? "premium" : "event",
-      label: unlockType === "knowledge-vault" ? "Crypto Knowledge Vault" : "Crypto Big Game Pass",
-      activatedAt: new Date().toISOString(),
-      expiresAt: unlockType === "knowledge-vault" ? undefined : getEventAccessExpiry(),
-    });
-    await syncEntitlementAccess().catch(() => null);
-    setStep("done");
-    onSuccess();
   };
 
   const handleClose = () => {

@@ -101,6 +101,10 @@ const FREE_ACCESS: AccessState = {
   label: "Free access",
 };
 
+/** In-memory server truth — localStorage is cache only and never gates features alone. */
+let accessHydrated = false;
+let serverAccess: AccessState = FREE_ACCESS;
+
 function getEventAccessExpiry(hours = EVENT_ACCESS_DURATION_HOURS) {
   return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
 }
@@ -281,6 +285,8 @@ async function verifyCheckoutSession(sessionId: string): Promise<CheckoutSession
 
 export function activateAccess(access: AccessState): void {
   if (typeof window === "undefined") return;
+  serverAccess = access;
+  accessHydrated = true;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(access));
   // Never write the legacy flag — it was a trivially forgeable premium bypass.
   localStorage.removeItem(LEGACY_STORAGE_KEY);
@@ -289,32 +295,35 @@ export function activateAccess(access: AccessState): void {
 
 export function clearAccess(): void {
   if (typeof window === "undefined") return;
+  serverAccess = FREE_ACCESS;
+  accessHydrated = true;
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(LEGACY_STORAGE_KEY);
   emitAccessChange();
 }
 
+/**
+ * Paid features only unlock after `/api/entitlements/me` hydrates this session.
+ * Forged localStorage premium is ignored until the server confirms a cookie/user entitlement.
+ */
 export function getAccessState(): AccessState {
   if (typeof window === "undefined") return FREE_ACCESS;
-
-  const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored) {
-    try {
-      const parsed = JSON.parse(stored) as AccessState;
-      if (parsed.tier && !isExpired(parsed)) {
-        return parsed;
-      }
-      clearAccess();
-    } catch {
-      clearAccess();
-    }
-  }
-
-  // The legacy `ai_advantage_premium` flag is no longer honored — it allowed
-  // anyone to grant themselves premium from the console (issue #36).
   localStorage.removeItem(LEGACY_STORAGE_KEY);
 
-  return FREE_ACCESS;
+  if (!accessHydrated) {
+    return FREE_ACCESS;
+  }
+
+  if (isExpired(serverAccess)) {
+    clearAccess();
+    return FREE_ACCESS;
+  }
+
+  return serverAccess;
+}
+
+export function isAccessHydrated(): boolean {
+  return accessHydrated;
 }
 
 export async function syncEntitlementAccess(): Promise<AccessState> {
@@ -329,9 +338,13 @@ export async function syncEntitlementAccess(): Promise<AccessState> {
     throw new Error("Unable to load entitlement status.");
   }
 
-  const status = (await response.json()) as EntitlementStatusResponse;
+  const status = (await response.json()) as EntitlementStatusResponse & { serverVerified?: boolean };
   if (!status.configured) {
-    return getAccessState();
+    // Store down: stay locked (free). Do not fall back to forgeable localStorage.
+    accessHydrated = true;
+    serverAccess = FREE_ACCESS;
+    emitAccessChange();
+    return FREE_ACCESS;
   }
 
   const access = normalizeServerAccess(status.access);
@@ -345,6 +358,11 @@ export async function syncEntitlementAccess(): Promise<AccessState> {
 }
 
 export function hasFeatureAccess(feature: AccessFeature, access = getAccessState()): boolean {
+  // Deny all paid features until the server has answered at least once.
+  if (!accessHydrated) {
+    return false;
+  }
+
   if (isExpired(access)) {
     return false;
   }
@@ -386,6 +404,7 @@ export function getCurrentCryptoAccount(): CryptoAccessAccount | null {
   return account;
 }
 
+/** Cache crypto account metadata for UI/restore. Does not unlock paid features — server cookie + sync does. */
 export function saveCryptoAccessAccount(input: {
   email: string;
   walletAddress: string;
@@ -414,7 +433,6 @@ export function saveCryptoAccessAccount(input: {
     localStorage.setItem(CRYPTO_SESSION_KEY, account.id);
   }
 
-  activateAccess(buildAccessState(account));
   return account;
 }
 
@@ -425,10 +443,10 @@ export function signOutAccessSession(): void {
   clearAccess();
 }
 
-export function signInWithCryptoAccount(input: {
+export async function signInWithCryptoAccount(input: {
   email: string;
   txHash: string;
-}): { success: boolean; message: string; account?: CryptoAccessAccount } {
+}): Promise<{ success: boolean; message: string; account?: CryptoAccessAccount }> {
   if (typeof window === "undefined") {
     return { success: false, message: "Crypto sign-in is only available in the browser." };
   }
@@ -455,7 +473,38 @@ export function signInWithCryptoAccount(input: {
   }
 
   localStorage.setItem(CRYPTO_SESSION_KEY, account.id);
-  activateAccess(buildAccessState(account));
+
+  // Re-verify on-chain and mint a server entitlement cookie — never unlock from localStorage alone.
+  try {
+    const unlockType = account.tier === "premium" ? "knowledge-vault" : "big-game";
+    const response = await fetch("/api/verify-crypto-payment", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        txHash: account.txHash,
+        walletAddress: account.walletAddress,
+        email: account.email,
+        unlockType,
+      }),
+    });
+    const result = (await response.json()) as { verified?: boolean; reason?: string };
+    if (!result.verified) {
+      return {
+        success: false,
+        message: result.reason || "Could not re-verify that crypto payment on-chain.",
+        account,
+      };
+    }
+    await syncEntitlementAccess();
+  } catch {
+    return {
+      success: false,
+      message: "Verification unavailable. Try again in a minute.",
+      account,
+    };
+  }
+
   return {
     success: true,
     message: "Crypto access restored. You are signed back in.",
@@ -532,10 +581,82 @@ export async function getBillingStatus(): Promise<BillingStatus> {
   return (await response.json()) as BillingStatus;
 }
 
-export const redirectToCheckout = async (type: CheckoutMode = "premium"): Promise<void> => {
+async function trackFunnelClient(
+  name: "cancel_reason" | "portal_opened" | "checkout_paid",
+  payload: Record<string, unknown> = {},
+) {
   try {
-    const checkoutUrl = await createCheckoutSession(type);
-    window.location.assign(checkoutUrl);
+    await fetch("/api/funnel", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ name, ...payload }),
+    });
+  } catch {
+    // Funnel must never block billing UX.
+  }
+}
+
+export async function openBillingPortal(): Promise<void> {
+  const response = await fetch("/api/create-portal-session", {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: "{}",
+  });
+  if (!response.ok) {
+    throw new Error(await readApiError(response, "Unable to open billing portal."));
+  }
+  const data = (await response.json()) as { url?: string };
+  if (!data.url) throw new Error("Billing portal did not return a URL.");
+  window.location.assign(data.url);
+}
+
+export async function submitCancelReason(reason: string): Promise<void> {
+  await trackFunnelClient("cancel_reason", { reason: reason.slice(0, 200) });
+}
+
+export async function saveEdgeAlertSubscription(input: {
+  enabled: boolean;
+  minExecEdge: number;
+}): Promise<void> {
+  const response = await fetch("/api/edge-alerts", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    throw new Error(await readApiError(response, "Unable to save edge alerts."));
+  }
+}
+
+export const redirectToCheckout = async (
+  type: CheckoutMode = "premium",
+  options: { trial?: boolean } = {},
+): Promise<void> => {
+  try {
+    const siteUser = getCurrentSiteUser();
+    const response = await fetch("/api/create-checkout-session", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        mode: type,
+        trial: options.trial !== false && type === "premium",
+        customerEmail: siteUser?.email,
+        clientReferenceId: siteUser?.id,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(await readApiError(response, "Unable to start Stripe checkout."));
+    }
+    const data = (await response.json()) as CheckoutSessionResponse & { url?: string };
+    if (!data.url) throw new Error("Stripe checkout session did not return a redirect URL.");
+    window.location.assign(data.url);
     return;
   } catch (error) {
     const message = error instanceof Error ? error.message : "";

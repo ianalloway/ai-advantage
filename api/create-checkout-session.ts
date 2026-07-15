@@ -1,5 +1,7 @@
 import Stripe from "stripe";
 import { getCurrentSiteUserFromEvent } from "../netlify/functions/_lib/auth-session";
+import { getEntitlementStore } from "../netlify/functions/_lib/entitlements";
+import { appendFunnelEvent } from "../netlify/lib/funnel";
 
 type CheckoutMode = "premium" | "one-time";
 
@@ -159,6 +161,10 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
       ...(clientReferenceId ? { client_reference_id: clientReferenceId } : {}),
     };
 
+    const trialDays = Number(process.env.STRIPE_TRIAL_DAYS || "7");
+    const bodyObj = req.body && typeof req.body === "object" ? (req.body as { trial?: boolean }) : {};
+    const wantsTrial = checkoutMode === "premium" && bodyObj.trial !== false && trialDays > 0;
+
     const session = await stripe.checkout.sessions.create({
       mode: modeConfig.stripeMode,
       billing_address_collection: "auto",
@@ -177,13 +183,49 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
       ],
       success_url: successUrl.toString(),
       cancel_url: cancelUrl.toString(),
-      metadata,
+      metadata: {
+        ...metadata,
+        ...(wantsTrial ? { trial_days: String(trialDays) } : {}),
+      },
       ...(modeConfig.stripeMode === "subscription"
-        ? { subscription_data: { metadata } }
+        ? {
+            subscription_data: {
+              metadata,
+              ...(wantsTrial ? { trial_period_days: trialDays } : {}),
+            },
+          }
         : { payment_intent_data: { metadata } }),
     });
 
-    res.status(200).json({ url: session.url, id: session.id, mode: session.mode });
+    const store = getEntitlementStore({ blobs: req.blobs, headers: req.headers });
+    if (store) {
+      await appendFunnelEvent(store, {
+        name: "checkout_started",
+        mode: checkoutMode,
+        sessionId: session.id,
+        email: customerEmail,
+        userId: clientReferenceId,
+        meta: { trial: wantsTrial, trialDays: wantsTrial ? trialDays : 0 },
+      });
+      if (wantsTrial) {
+        await appendFunnelEvent(store, {
+          name: "trial_started",
+          mode: checkoutMode,
+          sessionId: session.id,
+          email: customerEmail,
+          userId: clientReferenceId,
+          meta: { trialDays },
+        });
+      }
+    }
+
+    res.status(200).json({
+      url: session.url,
+      id: session.id,
+      mode: session.mode,
+      trial: wantsTrial,
+      trialDays: wantsTrial ? trialDays : 0,
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unable to create Stripe Checkout session.";

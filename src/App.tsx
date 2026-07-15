@@ -1,8 +1,9 @@
-import { Suspense, lazy, useEffect } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import Index from "./pages/Index";
+import CancelReasonDialog from "./components/CancelReasonDialog";
 import { syncAccessFromUrl, syncEntitlementAccess } from "./lib/stripe";
 import { syncSiteUserSession } from "./lib/auth";
 
@@ -34,6 +35,8 @@ function RouteFallback() {
 }
 
 function App() {
+  const [showCancelReason, setShowCancelReason] = useState(false);
+
   useEffect(() => {
     const syncAll = async () => {
       try {
@@ -41,13 +44,25 @@ function App() {
         await syncSiteUserSession();
         await syncEntitlementAccess();
       } catch {
-        // Keep the last rendered state if the entitlement endpoint is briefly unavailable.
+        // Deny paid features if entitlements are unavailable (no localStorage forge path).
+        try {
+          await syncEntitlementAccess();
+        } catch {
+          /* stay free */
+        }
       }
     };
 
     void syncAll();
 
-    // Re-sync when returning to the tab so webhook cancellations clear stale premium UI.
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("billing") === "portal") {
+      setShowCancelReason(true);
+      params.delete("billing");
+      const next = `${window.location.pathname}${params.toString() ? `?${params}` : ""}${window.location.hash}`;
+      window.history.replaceState({}, "", next);
+    }
+
     const onFocus = () => {
       void syncEntitlementAccess().catch(() => undefined);
     };
@@ -66,6 +81,7 @@ function App() {
   return (
     <TooltipProvider>
       <Toaster />
+      <CancelReasonDialog open={showCancelReason} onOpenChange={setShowCancelReason} />
       <BrowserRouter>
         <Suspense fallback={<RouteFallback />}>
           <Routes>

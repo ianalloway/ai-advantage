@@ -64,12 +64,17 @@ STRIPE_SECRET_KEY=sk_...
 STRIPE_PREMIUM_PRICE_ID=price_...
 STRIPE_ONE_TIME_PRICE_ID=price_...
 STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_TRIAL_DAYS=7
 PUBLIC_APP_URL=https://aiadvantagesports.com
 AUTH_SECRET=...
 ```
 
 Webhook endpoint: `https://aiadvantagesports.com/.netlify/functions/stripe-webhook`  
 Events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `customer.subscription.created|updated|deleted`.
+
+Paid access is **server-truth only** (`/api/entitlements/me`). localStorage is a cache and cannot unlock Pro.
+
+Checkout includes a `STRIPE_TRIAL_DAYS` trial on Pro Monthly. Customer Portal: `/api/create-portal-session` (enable in Stripe Dashboard → Settings → Billing → Customer portal). Funnel events: `checkout_started` → `checkout_paid` → `d7_retained` → `cancel_reason` via `/api/funnel`. Hourly edge-alert emails: `send-edge-alerts` (needs `RESEND_*`).
 
 Check readiness: `curl -s https://aiadvantagesports.com/api/billing-status | jq`  
 Production does **not** fall back to Payment Links when Checkout Sessions fail (that orphaned access).

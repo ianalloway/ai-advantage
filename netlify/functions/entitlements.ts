@@ -6,6 +6,7 @@ import {
   getEntitlementSessionToken,
   getEntitlementStore,
 } from "./_lib/entitlements";
+import { maybeRecordD7Retention } from "../lib/funnel";
 
 type NetlifyEvent = {
   blobs?: string;
@@ -63,10 +64,21 @@ export const handler = async (event: NetlifyEvent) => {
       ? { "Set-Cookie": clearEntitlementSessionCookie(event.headers) }
       : {};
 
+  if (entitlement && access.tier !== "free") {
+    await maybeRecordD7Retention(store, {
+      entitlementId: entitlement.id,
+      email: entitlement.email ?? user?.email,
+      userId: entitlement.userId ?? user?.id,
+      activatedAt: entitlement.activatedAt,
+      tier: access.tier,
+    });
+  }
+
   return json(200, {
     configured: true,
     entitlement,
     access,
+    serverVerified: true,
     user,
   }, headers);
 };

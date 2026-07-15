@@ -17,6 +17,9 @@ import {
   getAccessChangeEventName,
   getAccessState,
   getCurrentCryptoAccount,
+  openBillingPortal,
+  redirectToCheckout,
+  saveEdgeAlertSubscription,
   signOutAccessSession,
   type AccessState,
   type CryptoAccessAccount,
@@ -389,7 +392,9 @@ export default function Profile() {
                 <div className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-black/20 p-4">
                   <div>
                     <div className="font-medium text-white">Market alert mode</div>
-                    <p className="text-sm text-zinc-400">Save that you want the product biased toward faster execution signals.</p>
+                    <p className="text-sm text-zinc-400">
+                      Preference only — use Edge alert email in the session panel to actually receive emails.
+                    </p>
                   </div>
                   <Switch
                     checked={profile.marketAlerts}
@@ -467,22 +472,95 @@ export default function Profile() {
                 </div>
               ) : null}
 
-              {hasPaidAccess ? (
-                <Button
-                  variant="outline"
-                  className="mt-6 w-full border-white/10 text-zinc-200 hover:bg-white/[0.06]"
-                  onClick={() => {
-                    signOutAccessSession();
-                    toast({
-                      title: "Paid access cleared",
-                      description: "The paid access session on this browser has been removed.",
-                    });
-                    navigate("/login");
-                  }}
-                >
-                  Clear paid access on this device
-                </Button>
-              ) : null}
+              <div className="mt-6 space-y-3">
+                {!hasPaidAccess ? (
+                  <Button
+                    className="w-full bg-cyan-300 font-semibold text-slate-950 hover:bg-cyan-200"
+                    onClick={() => {
+                      void redirectToCheckout("premium", { trial: true }).catch((error) => {
+                        toast({
+                          title: "Checkout unavailable",
+                          description: error instanceof Error ? error.message : "Try again shortly.",
+                          variant: "destructive",
+                        });
+                      });
+                    }}
+                  >
+                    Start 7-day Pro trial
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    className="w-full border-white/10 text-zinc-200 hover:bg-white/[0.06]"
+                    onClick={() => {
+                      void openBillingPortal().catch((error) => {
+                        toast({
+                          title: "Portal unavailable",
+                          description: error instanceof Error ? error.message : "No Stripe customer on file yet.",
+                          variant: "destructive",
+                        });
+                      });
+                    }}
+                  >
+                    Manage billing (portal)
+                  </Button>
+                )}
+
+                {profile ? (
+                  <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-white">Edge alert email</div>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          Hourly check vs ESPN PickCenter. Emails when exec edge clears your floor (max 1/day).
+                        </p>
+                      </div>
+                      <Switch
+                        checked={profile.marketAlerts}
+                        onCheckedChange={(checked) => {
+                          updateProfile("marketAlerts", checked);
+                          void saveEdgeAlertSubscription({
+                            enabled: checked,
+                            minExecEdge: profile.riskProfile === "aggressive" ? 3 : profile.riskProfile === "conservative" ? 7 : 5,
+                          })
+                            .then(() => {
+                              toast({
+                                title: checked ? "Alerts on" : "Alerts off",
+                                description: checked
+                                  ? "We will email qualifying edges to your account address."
+                                  : "Edge alert emails paused.",
+                              });
+                            })
+                            .catch((error) => {
+                              toast({
+                                title: "Could not save alerts",
+                                description: error instanceof Error ? error.message : "Log in and try again.",
+                                variant: "destructive",
+                              });
+                            });
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+
+                {hasPaidAccess ? (
+                  <Button
+                    variant="outline"
+                    className="w-full border-white/10 text-zinc-200 hover:bg-white/[0.06]"
+                    onClick={() => {
+                      signOutAccessSession();
+                      toast({
+                        title: "Paid access cleared",
+                        description: "The paid access session on this browser has been removed.",
+                      });
+                      navigate("/login");
+                    }}
+                  >
+                    Clear paid access on this device
+                  </Button>
+                ) : null}
+              </div>
             </div>
 
             <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-6">
