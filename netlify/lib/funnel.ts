@@ -7,6 +7,7 @@ export type FunnelEventName =
   | "cancel_reason"
   | "subscription_cancelled"
   | "trial_started"
+  | "trial_nudge_sent"
   | "portal_opened"
   | "edge_alert_sent";
 
@@ -25,11 +26,10 @@ export interface FunnelEvent {
 const FUNNEL_KEY = "ai-advantage:funnel:events";
 const MAX_EVENTS = 2000;
 
-export async function appendFunnelEvent(
-  store: EntitlementStore,
+function finalizeEvent(
   event: Omit<FunnelEvent, "id" | "at"> & { id?: string; at?: string },
-): Promise<FunnelEvent> {
-  const full: FunnelEvent = {
+): FunnelEvent {
+  return {
     id: event.id ?? `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     at: event.at ?? new Date().toISOString(),
     name: event.name,
@@ -40,12 +40,28 @@ export async function appendFunnelEvent(
     reason: event.reason,
     meta: event.meta,
   };
+}
 
+/** Single read/modify/write — avoids blob races that drop checkout_started when trial_started follows. */
+export async function appendFunnelEvents(
+  store: EntitlementStore,
+  events: Array<Omit<FunnelEvent, "id" | "at"> & { id?: string; at?: string }>,
+): Promise<FunnelEvent[]> {
+  if (!events.length) return [];
+  const full = events.map(finalizeEvent);
   const existing = (await store.get<FunnelEvent[]>(FUNNEL_KEY)) ?? [];
-  existing.push(full);
+  existing.push(...full);
   while (existing.length > MAX_EVENTS) existing.shift();
   await store.set(FUNNEL_KEY, existing);
   return full;
+}
+
+export async function appendFunnelEvent(
+  store: EntitlementStore,
+  event: Omit<FunnelEvent, "id" | "at"> & { id?: string; at?: string },
+): Promise<FunnelEvent> {
+  const [saved] = await appendFunnelEvents(store, [event]);
+  return saved;
 }
 
 export async function listFunnelEvents(store: EntitlementStore, limit = 100): Promise<FunnelEvent[]> {
@@ -76,6 +92,7 @@ export function summarizeFunnel(events: FunnelEvent[]) {
     subscription_cancelled: cancels,
     cancel_reasons: reasons,
     trial_started: count("trial_started"),
+    trial_nudge_sent: count("trial_nudge_sent"),
     edge_alert_sent: count("edge_alert_sent"),
   };
 }

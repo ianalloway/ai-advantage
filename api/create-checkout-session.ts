@@ -1,7 +1,7 @@
 import Stripe from "stripe";
 import { getCurrentSiteUserFromEvent } from "../netlify/functions/_lib/auth-session";
 import { getEntitlementStore } from "../netlify/functions/_lib/entitlements";
-import { appendFunnelEvent } from "../netlify/lib/funnel";
+import { appendFunnelEvents } from "../netlify/lib/funnel";
 
 type CheckoutMode = "premium" | "one-time";
 
@@ -199,24 +199,28 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
 
     const store = getEntitlementStore({ blobs: req.blobs, headers: req.headers });
     if (store) {
-      await appendFunnelEvent(store, {
-        name: "checkout_started",
-        mode: checkoutMode,
-        sessionId: session.id,
-        email: customerEmail,
-        userId: clientReferenceId,
-        meta: { trial: wantsTrial, trialDays: wantsTrial ? trialDays : 0 },
-      });
-      if (wantsTrial) {
-        await appendFunnelEvent(store, {
-          name: "trial_started",
+      await appendFunnelEvents(store, [
+        {
+          name: "checkout_started",
           mode: checkoutMode,
           sessionId: session.id,
           email: customerEmail,
           userId: clientReferenceId,
-          meta: { trialDays },
-        });
-      }
+          meta: { trial: wantsTrial, trialDays: wantsTrial ? trialDays : 0 },
+        },
+        ...(wantsTrial
+          ? [
+              {
+                name: "trial_started" as const,
+                mode: checkoutMode,
+                sessionId: session.id,
+                email: customerEmail,
+                userId: clientReferenceId,
+                meta: { trialDays },
+              },
+            ]
+          : []),
+      ]);
     }
 
     res.status(200).json({

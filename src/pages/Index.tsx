@@ -691,20 +691,31 @@ Bet responsibly. This is model output, not a guarantee.`);
               </p>
 
               <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                <Button asChild size="lg" className="w-full bg-cyan-300 px-7 font-semibold text-slate-950 hover:bg-cyan-200 sm:w-auto">
-                  <a href="#live-desk">
-                    Open Live Desk
-                    <ChevronRight className="ml-2 h-4 w-4" />
-                  </a>
-                </Button>
+                {hasPaidAccess ? (
+                  <Button asChild size="lg" className="w-full bg-cyan-300 px-7 font-semibold text-slate-950 hover:bg-cyan-200 sm:w-auto">
+                    <Link to="/daily-picks">
+                      Open Live Desk
+                      <ChevronRight className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button
+                    size="lg"
+                    className="w-full bg-cyan-300 px-7 font-semibold text-slate-950 hover:bg-cyan-200 sm:w-auto"
+                    onClick={() => void handleUpgrade("premium")}
+                  >
+                    <Crown className="mr-2 h-4 w-4" />
+                    Start 7-day trial
+                  </Button>
+                )}
                 <Button
                   size="lg"
                   variant="outline"
                   className="w-full border-white/15 bg-white/[0.04] px-7 font-semibold text-white hover:bg-white/[0.09] sm:w-auto"
                   asChild
                 >
-                  <a href="#model-lab">
-                    Run Matchup
+                  <a href="#proof">
+                    See proof ledger
                     <Target className="ml-2 h-4 w-4 text-emerald-300" />
                   </a>
                 </Button>
@@ -1395,8 +1406,8 @@ The report will show:
                   <h3 className="text-2xl font-semibold text-white">Pro Monthly</h3>
                   <Badge className="border-cyan-300/30 bg-cyan-300/10 text-cyan-100">Best fit</Badge>
                 </div>
-                <div className="mt-6 text-4xl font-semibold text-white">$19</div>
-                <div className="mt-2 text-sm text-slate-400">Monthly Stripe subscription</div>
+                <div className="mt-6 text-4xl font-semibold text-white">$15</div>
+                <div className="mt-2 text-sm text-slate-400">per month after 7-day free trial</div>
                 <ul className="mt-6 space-y-3">
                   {PREMIUM_FEATURES.slice(0, 5).map((feature) => (
                     <li key={feature} className="flex gap-3 text-sm leading-6 text-slate-300">
@@ -1405,9 +1416,9 @@ The report will show:
                     </li>
                   ))}
                 </ul>
-                <Button className="mt-8 w-full bg-cyan-300 text-slate-950 hover:bg-cyan-200" onClick={() => handleUpgrade("premium")}>
+                <Button className="mt-8 w-full bg-cyan-300 text-slate-950 hover:bg-cyan-200" onClick={() => void handleUpgrade("premium")}>
                   <Crown className="mr-2 h-4 w-4" />
-                  Upgrade with Stripe
+                  Start 7-day trial
                 </Button>
               </div>
 

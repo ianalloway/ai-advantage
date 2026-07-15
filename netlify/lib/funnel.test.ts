@@ -22,6 +22,7 @@ describe("summarizeFunnel", () => {
       subscription_cancelled: 1,
       cancel_reasons: { too_expensive: 2 },
       trial_started: 0,
+      trial_nudge_sent: 0,
       edge_alert_sent: 0,
     });
   });

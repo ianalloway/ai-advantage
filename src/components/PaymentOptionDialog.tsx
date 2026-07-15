@@ -7,6 +7,7 @@ interface PaymentOptionDialogProps {
   onOpenChange: (open: boolean) => void;
   onSelectStripe: () => void;
   onSelectCrypto: () => void;
+  onSelectTrial?: () => void;
 }
 
 export default function PaymentOptionDialog({
@@ -14,6 +15,7 @@ export default function PaymentOptionDialog({
   onOpenChange,
   onSelectStripe,
   onSelectCrypto,
+  onSelectTrial,
 }: PaymentOptionDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -26,11 +28,26 @@ export default function PaymentOptionDialog({
             Unlock the Live Board
           </DialogTitle>
           <DialogDescription className="text-center text-zinc-400">
-            Get 72-hour full access to the live board, recommended side, execution edge, and Kelly sizing.
+            Start a 7-day Pro trial, or grab a 72-hour event pass if you only need one slate.
           </DialogDescription>
         </DialogHeader>
 
         <div className="my-6 space-y-4">
+          {onSelectTrial ? (
+            <Button
+              onClick={onSelectTrial}
+              className="relative flex h-14 w-full items-center justify-start gap-4 rounded-xl border border-cyan-300/30 bg-cyan-300/15 px-4 text-left font-semibold text-white transition-all hover:bg-cyan-300/25"
+            >
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-300/20 text-cyan-200">
+                <CreditCard className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold">Start 7-day Pro trial</div>
+                <div className="text-xs font-normal text-zinc-400">Then $15/mo — cancel in the portal anytime</div>
+              </div>
+            </Button>
+          ) : null}
+
           <div className="flex items-center justify-center gap-2 rounded-2xl border border-white/5 bg-white/[0.02] p-4 text-center">
             <div className="text-3xl font-extrabold text-white">$10</div>
             <div className="text-xs text-zinc-400">One-time / 72-hour pass</div>
@@ -45,8 +62,8 @@ export default function PaymentOptionDialog({
                 <CreditCard className="h-5 w-5" />
               </div>
               <div>
-                <div className="text-sm font-semibold">Pay with Card</div>
-                <div className="text-xs font-normal text-zinc-400">Secure Stripe checkout</div>
+                <div className="text-sm font-semibold">Event pass with card</div>
+                <div className="text-xs font-normal text-zinc-400">Secure Stripe checkout · $10</div>
               </div>
             </Button>
 

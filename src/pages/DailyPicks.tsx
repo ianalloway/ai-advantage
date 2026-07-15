@@ -679,6 +679,20 @@ export default function DailyPicks() {
     setShowCryptoModal(true);
   };
 
+  const handleSelectTrial = async () => {
+    setShowPaymentOptionModal(false);
+    try {
+      await redirectToCheckout("premium", { trial: true });
+    } catch (error) {
+      toast({
+        title: "Checkout unavailable",
+        description:
+          error instanceof Error ? error.message : "We could not start Stripe Checkout right now.",
+        variant: "destructive",
+      });
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
 
@@ -904,11 +918,11 @@ export default function DailyPicks() {
               <Button
                 size="sm"
                 variant="outline"
-                className="border-white/10 text-zinc-300 hover:bg-white/[0.06]"
-                onClick={() => void redirectToCheckout("premium")}
+                className="border-cyan-300/30 bg-cyan-300/10 text-cyan-100 hover:bg-cyan-300/15"
+                onClick={() => void redirectToCheckout("premium", { trial: true })}
               >
                 <Crown className="mr-1.5 h-3.5 w-3.5 text-yellow-300" />
-                Go Pro monthly
+                Start 7-day trial
               </Button>
             </div>
           ) : (
@@ -1023,12 +1037,30 @@ export default function DailyPicks() {
                     {!hasPremiumBoard ? (
                       <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-500">
                         <span>Execution sizing, stronger spots, and the rest of the slate</span>
-                        <Button size="sm" variant="outline" className="border-white/10 text-zinc-300 hover:bg-white/[0.06]" onClick={() => void redirectToCheckout("premium")}>
-                          Pro monthly
+                        <Button
+                          size="sm"
+                          className="bg-cyan-300 font-semibold text-slate-950 hover:bg-cyan-200"
+                          onClick={() => void redirectToCheckout("premium", { trial: true })}
+                        >
+                          Start 7-day trial
                         </Button>
                       </div>
                     ) : null}
                   </div>
+                  {!hasPremiumBoard ? (
+                    <div className="mb-5 rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.06] p-4">
+                      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-200/80">
+                        Proof near the paywall
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-zinc-300">
+                        Same desk as the free board — model vs ESPN, execution-adjusted edge, then CLV on the{" "}
+                        <Link to="/leaderboard" className="text-cyan-200 underline-offset-2 hover:underline">
+                          Proof Ledger
+                        </Link>
+                        . Trial unlocks the full slate before you pay.
+                      </p>
+                    </div>
+                  ) : null}
                   <div className="space-y-5">
                     {premiumPicks.map((entry) => (
                       <PickCard
@@ -1066,6 +1098,7 @@ export default function DailyPicks() {
         onOpenChange={setShowPaymentOptionModal}
         onSelectStripe={handleSelectStripe}
         onSelectCrypto={handleSelectCrypto}
+        onSelectTrial={() => void handleSelectTrial()}
       />
       <AccessSessionDialog
         open={showAccessDialog}
