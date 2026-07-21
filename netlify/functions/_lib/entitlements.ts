@@ -50,6 +50,13 @@ export interface EntitlementStore {
   set: (key: string, value: unknown, options?: { ex?: number }) => Promise<void>;
 }
 
+export class CryptoTransactionAlreadyClaimedError extends Error {
+  constructor(txHash: string) {
+    super(`Crypto transaction has already been claimed: ${normalizeHash(txHash)}`);
+    this.name = "CryptoTransactionAlreadyClaimedError";
+  }
+}
+
 export type EventLike = {
   blobs?: string;
   headers?: Record<string, string | string[] | undefined>;
@@ -538,9 +545,16 @@ export async function upsertCryptoEntitlement(
     label: string;
   },
 ) {
+  const txHash = normalizeHash(input.txHash);
+  const id = `crypto:${txHash}`;
+  const existing = await getRecord(store, id);
+  if (existing) {
+    throw new CryptoTransactionAlreadyClaimedError(txHash);
+  }
+
   const tier = input.tier === "premium" ? "premium" : "event";
   return upsertEntitlement(store, {
-    id: `crypto:${normalizeHash(input.txHash)}`,
+    id,
     tier,
     source: "crypto",
     label: input.label,
@@ -549,6 +563,6 @@ export async function upsertCryptoEntitlement(
     expiresAt: tier === "event" ? eventAccessExpiry() : undefined,
     email: input.email,
     walletAddress: input.walletAddress,
-    cryptoTxHash: input.txHash,
+    cryptoTxHash: txHash,
   });
 }
