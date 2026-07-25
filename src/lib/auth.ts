@@ -17,10 +17,14 @@ interface AuthResponse {
   user?: SiteUser | null;
 }
 
-const ACCOUNT_STORAGE_KEY = "ai_advantage_site_accounts_v1";
-const SESSION_STORAGE_KEY = "ai_advantage_site_session_v1";
-const CACHED_USER_STORAGE_KEY = "ai_advantage_cached_user_v2";
 const AUTH_CHANGE_EVENT = "ai-advantage-auth-changed";
+
+// Authentication state is intentionally memory-only. The production session
+// is held by the server in an HttpOnly cookie; the development fallback must
+// not persist identities, password hashes, or session identifiers in browser
+// storage.
+let cachedUser: SiteUser | null = null;
+let legacyAccounts: StoredSiteUser[] = [];
 
 function emitAuthChange(): void {
   if (typeof window === "undefined") return;
@@ -41,53 +45,24 @@ function sanitizeUser(user: StoredSiteUser): SiteUser {
 }
 
 function setCachedUser(user: SiteUser | null): void {
-  if (typeof window === "undefined") return;
-
-  if (user) {
-    localStorage.setItem(CACHED_USER_STORAGE_KEY, JSON.stringify(user));
-  } else {
-    localStorage.removeItem(CACHED_USER_STORAGE_KEY);
-  }
+  cachedUser = user;
 }
 
 function getCachedUser(): SiteUser | null {
-  if (typeof window === "undefined") return null;
-
-  const stored = localStorage.getItem(CACHED_USER_STORAGE_KEY);
-  if (!stored) return null;
-
-  try {
-    const parsed = JSON.parse(stored) as SiteUser;
-    return parsed?.id && parsed?.email ? parsed : null;
-  } catch {
-    localStorage.removeItem(CACHED_USER_STORAGE_KEY);
-    return null;
-  }
+  return cachedUser;
 }
 
 function loadLegacyAccounts(): StoredSiteUser[] {
-  if (typeof window === "undefined") return [];
-
-  const stored = localStorage.getItem(ACCOUNT_STORAGE_KEY);
-  if (!stored) return [];
-
-  try {
-    const parsed = JSON.parse(stored) as StoredSiteUser[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    localStorage.removeItem(ACCOUNT_STORAGE_KEY);
-    return [];
-  }
+  return [...legacyAccounts];
 }
 
 function saveLegacyAccounts(accounts: StoredSiteUser[]): void {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(ACCOUNT_STORAGE_KEY, JSON.stringify(accounts));
+  legacyAccounts = [...accounts];
 }
 
 async function legacyHashPassword(password: string): Promise<string> {
   if (typeof window === "undefined" || !window.crypto?.subtle) {
-    return password;
+    throw new Error("Secure browser cryptography is unavailable.");
   }
 
   const bytes = new TextEncoder().encode(password);
@@ -170,7 +145,6 @@ async function signUpLegacySiteUser(input: {
 
   accounts.push(nextAccount);
   saveLegacyAccounts(accounts);
-  localStorage.setItem(SESSION_STORAGE_KEY, nextAccount.id);
   const user = sanitizeUser(nextAccount);
   setCachedUser(user);
   emitAuthChange();
@@ -203,7 +177,6 @@ async function signInLegacySiteUser(input: {
     return { success: false, message: "That password does not match this account." };
   }
 
-  localStorage.setItem(SESSION_STORAGE_KEY, account.id);
   const user = sanitizeUser(account);
   setCachedUser(user);
   emitAuthChange();
@@ -229,7 +202,6 @@ export async function syncSiteUserSession(): Promise<SiteUser | null> {
     const payload = await requestAuth("me", { method: "GET" });
     const user = payload.user ?? null;
     setCachedUser(user);
-    localStorage.removeItem(SESSION_STORAGE_KEY);
     emitAuthChange();
     return user;
   } catch (error) {
@@ -265,7 +237,6 @@ export async function signUpSiteUser(input: {
     }
 
     setCachedUser(payload.user);
-    localStorage.removeItem(SESSION_STORAGE_KEY);
     emitAuthChange();
     return {
       success: true,
@@ -305,7 +276,6 @@ export async function signInSiteUser(input: {
     }
 
     setCachedUser(payload.user);
-    localStorage.removeItem(SESSION_STORAGE_KEY);
     emitAuthChange();
     return { success: true, message: payload.message || "Logged in successfully.", user: payload.user };
   } catch (error) {
@@ -325,7 +295,6 @@ export function signOutSiteUser(): void {
 
   void requestAuth("logout", { method: "POST", body: "{}" }).catch(() => undefined);
   setCachedUser(null);
-  localStorage.removeItem(SESSION_STORAGE_KEY);
   // Paid access is a separate cookie/local cache — clear it on account logout so
   // shared devices don't keep the premium board unlocked.
   void import("@/lib/stripe")
