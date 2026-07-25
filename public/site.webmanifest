@@ -13,12 +13,6 @@
       "sizes": "64x64",
       "type": "image/svg+xml",
       "purpose": "any maskable"
-    },
-    {
-      "src": "/og-image.png",
-      "sizes": "1200x630",
-      "type": "image/png",
-      "purpose": "any"
     }
   ]
 }
