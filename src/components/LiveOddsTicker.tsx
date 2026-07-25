@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, Minus, TrendingDown, TrendingUp, Zap } from "lucide-react";
+import { AlertCircle, Minus, TrendingDown, TrendingUp } from "lucide-react";
 import { fetchLiveGamesForSports, type LiveMarketGame } from "@/lib/liveSports";
 
 function formatOdds(n: number): string {
@@ -28,26 +28,22 @@ function OddsChip({ game }: { game: LiveMarketGame }) {
 
   return (
     <div
-      className={`mx-1.5 flex shrink-0 items-center gap-3 rounded-full border px-4 py-2 transition-colors ${
-        bigMove
-          ? "border-yellow-400/30 bg-yellow-400/8"
-          : "border-white/10 bg-white/[0.04]"
+      className={`mx-5 flex shrink-0 items-center gap-2.5 border-r border-white/10 pr-10 text-[10px] font-medium uppercase tracking-[0.08em] transition-colors ${
+        bigMove ? "text-amber-200" : "text-slate-400"
       }`}
     >
-      <div className="flex items-center gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-[0.24em] text-brand-300/80">{game.sportLabel}</span>
-        <span className="text-[11px] text-zinc-500">{game.status.state === "in" ? game.status.shortDetail : game.displayTime}</span>
-      </div>
+      <span className="font-semibold tracking-[0.16em] text-[#b9ff55]">{game.sportLabel}</span>
+      <span className="text-slate-600">{game.status.state === "in" ? game.status.shortDetail : game.displayTime}</span>
 
-      <div className="flex items-center gap-1.5 text-sm text-zinc-200">
-        <span className="font-medium text-zinc-300">{game.awayAbbr}</span>
+      <div className="flex items-center gap-1.5">
+        <span className="text-slate-300">{game.awayAbbr}</span>
         <MovementIcon dir={awayDir} />
-        <span className="font-mono tabular-nums text-sky-300">{formatOdds(game.odds.awayMoneyline)}</span>
+        <span className="font-mono tabular-nums text-cyan-200">{formatOdds(game.odds.awayMoneyline)}</span>
       </div>
 
-      <div className="flex items-center gap-2 border-x border-white/10 px-3 text-[11px] text-zinc-500">
+      <div className="flex items-center gap-2 text-slate-600">
         {game.odds.drawMoneyline !== undefined ? (
-          <span>Draw <span className="font-mono tabular-nums text-zinc-400">{formatOdds(game.odds.drawMoneyline)}</span></span>
+          <span>Draw <span className="font-mono tabular-nums text-slate-400">{formatOdds(game.odds.drawMoneyline)}</span></span>
         ) : (
           <>
             <span>{game.odds.spread !== undefined ? `${game.odds.spread > 0 ? "+" : ""}${game.odds.spread}` : "ML"}</span>
@@ -56,13 +52,11 @@ function OddsChip({ game }: { game: LiveMarketGame }) {
         )}
       </div>
 
-      <div className="flex items-center gap-1.5 text-sm text-zinc-200">
-        <span className="font-mono tabular-nums text-sky-300">{formatOdds(game.odds.homeMoneyline)}</span>
+      <div className="flex items-center gap-1.5">
+        <span className="font-mono tabular-nums text-cyan-200">{formatOdds(game.odds.homeMoneyline)}</span>
         <MovementIcon dir={homeDir} />
-        <span className="font-medium text-zinc-300">{game.homeAbbr}</span>
+        <span className="text-slate-300">{game.homeAbbr}</span>
       </div>
-
-      {bigMove ? <Zap className="h-3.5 w-3.5 text-yellow-300" /> : null}
     </div>
   );
 }
@@ -107,18 +101,11 @@ export default function LiveOddsTicker({ speed = 40, pauseOnHover = true }: Live
   const duration = Math.max((Math.max(games.length, 4) * 170) / speed, 20);
 
   return (
-    <div className="w-full overflow-hidden border-y border-white/10 bg-[#050816]">
-      <div className="flex items-center justify-between gap-4 border-b border-white/5 px-4 py-2">
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-zinc-500">Live Market Feed</span>
-        </div>
-        <span className="text-[10px] text-zinc-500">
-          {hasError
-            ? "Feed temporarily unavailable"
-            : updatedAt
-              ? `Updated ${updatedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
-              : "Syncing live board"}
+    <div className="relative flex h-8 w-full items-center overflow-hidden border-y border-[#b9ff55]/10 bg-[#0b1510]">
+      <div className="relative z-10 flex h-full shrink-0 items-center gap-2 border-r border-[#b9ff55]/15 bg-[#0b1510] px-4 sm:px-6">
+        <span className="h-1.5 w-1.5 rounded-full bg-[#b9ff55] shadow-[0_0_10px_rgba(185,255,85,0.8)] motion-safe:animate-pulse" />
+        <span className="text-[9px] font-semibold uppercase tracking-[0.2em] text-[#b9ff55]">
+          Models live
         </span>
       </div>
 
@@ -131,28 +118,40 @@ export default function LiveOddsTicker({ speed = 40, pauseOnHover = true }: Live
       </div>
 
       {hasError ? (
-        <div className="flex items-center justify-center gap-2 px-4 py-3 text-xs text-zinc-500">
+        <div className="flex items-center gap-2 px-4 text-[10px] text-slate-500">
           <AlertCircle className="h-3.5 w-3.5" />
-          Live odds are having a moment. Reload soon.
+          Live odds temporarily unavailable
         </div>
       ) : games.length === 0 ? (
-        <div className="px-4 py-3 text-xs text-zinc-500">No current lines available right now.</div>
+        <div className="px-4 text-[10px] uppercase tracking-[0.12em] text-slate-500">
+          Syncing the current market board
+        </div>
       ) : (
-        <div
-          className="live-odds-ticker-track flex py-2.5"
-          style={{
-            animation: `ticker-scroll ${duration}s linear infinite`,
-            animationPlayState: paused ? "paused" : "running",
-            willChange: "transform",
-          }}
-          onMouseEnter={() => pauseOnHover && setPaused(true)}
-          onMouseLeave={() => pauseOnHover && setPaused(false)}
-        >
-          {tickerItems.map((game, index) => (
-            <OddsChip key={`${game.id}-${index}`} game={game} />
-          ))}
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <div
+            className="live-odds-ticker-track flex"
+            style={{
+              animation: `ticker-scroll ${duration}s linear infinite`,
+              animationPlayState: paused ? "paused" : "running",
+              willChange: "transform",
+            }}
+            onMouseEnter={() => pauseOnHover && setPaused(true)}
+            onMouseLeave={() => pauseOnHover && setPaused(false)}
+          >
+            {tickerItems.map((game, index) => (
+              <OddsChip key={`${game.id}-${index}`} game={game} />
+            ))}
+          </div>
         </div>
       )}
+
+      <div className="relative z-10 hidden h-full shrink-0 items-center border-l border-white/10 bg-[#0b1510] px-5 text-[9px] uppercase tracking-[0.12em] text-slate-600 md:flex">
+        {hasError
+          ? "Feed offline"
+          : updatedAt
+            ? `Sync ${updatedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+            : "Syncing"}
+      </div>
 
       <style>{`
         @keyframes ticker-scroll {

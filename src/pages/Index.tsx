@@ -12,7 +12,6 @@ import {
   BarChart3,
   Bitcoin,
   Brain,
-  Calendar,
   Check,
   ChevronRight,
   Copy,
@@ -22,12 +21,9 @@ import {
   GitBranch,
   LineChart as LineChartIcon,
   Loader2,
-  LogOut,
   Percent,
-  Radio,
   Shield,
   Target,
-  TrendingUp,
   Trophy,
   UserCircle2,
   Wallet,
@@ -187,28 +183,6 @@ function SectionHeader({
       {description ? (
         <p className="mt-4 text-base leading-7 text-slate-400 md:text-lg">{description}</p>
       ) : null}
-    </div>
-  );
-}
-
-function StatTile({
-  label,
-  value,
-  detail,
-  accent = "text-white",
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  accent?: string;
-}) {
-  return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.045] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all duration-300 hover:scale-[1.02] hover:border-white/20 hover:bg-white/[0.06] hover:shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">
-        {label}
-      </div>
-      <div className={`mt-3 text-3xl font-semibold tracking-tight ${accent}`}>{value}</div>
-      <div className="mt-2 text-sm leading-5 text-slate-500">{detail}</div>
     </div>
   );
 }
@@ -432,6 +406,7 @@ function Index() {
     ? executionBoardEntries.reduce((sum, entry) => sum + entry.executionAdjustedEdge, 0) /
       executionBoardEntries.length
     : 0;
+  const featuredEntry = topExecutionEntries[0];
 
   const chartData = useMemo(() => {
     const source = performanceData?.weeklyData?.slice(-8);
@@ -567,289 +542,414 @@ Bet responsibly. This is model output, not a guarantee.`);
 
       <LiveOddsTicker speed={44} pauseOnHover />
 
-      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#05070d]/88 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4 sm:px-5">
-          <Link to="/" className="flex items-center gap-3">
-            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-cyan-300/25 bg-cyan-300/10 sm:h-10 sm:w-10">
-              <TrendingUp className="h-5 w-5 text-cyan-300" />
+      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#05070d]/95 backdrop-blur-xl">
+        <div className="mx-auto flex h-[72px] max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+          <Link to="/" className="group flex min-w-0 items-center gap-3">
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] border border-[#b9ff55]/35 bg-[#b9ff55]/10 text-xs font-bold text-[#b9ff55] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-colors group-hover:bg-[#b9ff55]/15">
+              A+
             </div>
             <div className="min-w-0">
-              <div className="text-sm font-semibold tracking-tight text-white md:text-base">
+              <div className="truncate text-[13px] font-bold uppercase tracking-[0.04em] text-white sm:text-sm">
                 AI Advantage Sports
               </div>
-              <div className="hidden text-xs text-slate-500 sm:block">Sports intelligence, sized and tracked</div>
+              <div className="hidden text-[9px] uppercase tracking-[0.14em] text-slate-600 sm:block">
+                Execution desk / live markets
+              </div>
             </div>
           </Link>
 
-          <nav className="hidden items-center gap-6 text-sm text-slate-400 lg:flex">
-            <a href="#live-desk" className="transition-colors hover:text-white">
-              Live Desk
+          <nav className="hidden items-center gap-7 text-xs font-medium text-slate-400 lg:flex">
+            <a href="#live-desk" className="text-[#b9ff55] transition-colors hover:text-[#d7ff9a]">
+              Live desk
             </a>
             <a href="#proof" className="transition-colors hover:text-white">
-              Proof
+              Proof ledger
             </a>
             <a href="#model-lab" className="transition-colors hover:text-white">
-              Model
-            </a>
-            <a href="#sports-stack" className="transition-colors hover:text-white">
-              Stack
+              Model lab
             </a>
             <a href="#pricing" className="transition-colors hover:text-white">
               Pricing
             </a>
-            <Link to="/leaderboard" className="transition-colors hover:text-white">
-              Ledger
-            </Link>
-            {siteUser ? (
-              <Link to="/profile" className="transition-colors hover:text-white">
-                Profile
-              </Link>
-            ) : null}
           </nav>
 
           <div className="flex items-center gap-2">
-            {hasPaidAccess ? (
-              <Badge className="hidden border-emerald-400/30 bg-emerald-400/10 text-emerald-200 md:inline-flex">
-                {access.label}
-              </Badge>
-            ) : null}
+            <span className="hidden items-center gap-2 rounded-lg border border-[#b9ff55]/25 bg-[#b9ff55]/[0.07] px-3 py-2 text-[9px] font-semibold uppercase tracking-[0.12em] text-[#b9ff55] md:inline-flex">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#b9ff55] shadow-[0_0_10px_rgba(185,255,85,0.7)] motion-safe:animate-pulse" />
+              Markets live
+            </span>
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="hidden border-white/10 bg-white/[0.03] text-slate-200 hover:bg-white/[0.08] sm:inline-flex"
+              className="hidden text-xs text-slate-500 hover:bg-white/[0.05] hover:text-white xl:inline-flex"
               onClick={() => setShowAccessDialog(true)}
             >
-              <Wallet className="mr-2 h-4 w-4" />
+              <Wallet className="mr-1.5 h-3.5 w-3.5" />
               Restore
             </Button>
             {siteUser ? (
-              <>
-                <Button asChild size="sm" className="bg-white text-slate-950 hover:bg-slate-200">
-                  <Link to="/profile">
-                    <UserCircle2 className="mr-2 h-4 w-4" />
-                    <span className="sm:hidden">Acct</span>
-                    <span className="hidden sm:inline">Account</span>
-                  </Link>
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="hidden border-white/10 bg-white/[0.03] text-slate-200 hover:bg-white/[0.08] sm:inline-flex"
-                  onClick={() => {
-                    signOutSiteUser();
-                    syncAccessUi();
-                    toast({
-                      title: "Logged out",
-                      description: "Site account and paid access session cleared.",
-                    });
-                  }}
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Log out
-                </Button>
-              </>
+              <Button
+                asChild
+                variant="ghost"
+                size="sm"
+                className="hidden text-xs text-slate-400 hover:bg-white/[0.05] hover:text-white sm:inline-flex"
+              >
+                <Link to="/profile">
+                  <UserCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                  Account
+                </Link>
+              </Button>
             ) : (
-              <>
-                <Button
-                  asChild
-                  size="sm"
-                  variant="outline"
-                  className="hidden border-white/10 bg-white/[0.03] text-slate-200 hover:bg-white/[0.08] sm:inline-flex"
-                >
-                  <Link to="/login">Log in</Link>
-                </Button>
-                <Button asChild size="sm" className="bg-white text-slate-950 hover:bg-slate-200">
-                  <Link to="/signup">
-                    <span className="sm:hidden">Join</span>
-                    <span className="hidden sm:inline">Create account</span>
-                  </Link>
-                </Button>
-              </>
+              <Button
+                asChild
+                variant="ghost"
+                size="sm"
+                className="hidden text-xs text-slate-400 hover:bg-white/[0.05] hover:text-white sm:inline-flex"
+              >
+                <Link to="/login">Log in</Link>
+              </Button>
+            )}
+            {hasPaidAccess ? (
+              <Button asChild size="sm" className="bg-white text-slate-950 hover:bg-slate-200">
+                <Link to="/daily-picks">
+                  Open desk
+                  <ChevronRight className="ml-1 h-3.5 w-3.5" />
+                </Link>
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                className="bg-white text-slate-950 hover:bg-slate-200"
+                onClick={() => void handleUpgrade("premium")}
+              >
+                Open desk
+                <ChevronRight className="ml-1 h-3.5 w-3.5" />
+              </Button>
             )}
           </div>
         </div>
       </header>
 
       <main id="main-content">
-        <section className="relative overflow-hidden border-b border-white/10">
-          <div className="absolute inset-0 bg-[linear-gradient(135deg,rgba(8,13,24,0.98),rgba(3,7,18,0.98)_46%,rgba(6,18,23,0.96))]" />
-          <div className="absolute inset-0 opacity-[0.13] [background-image:linear-gradient(rgba(148,163,184,0.22)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.18)_1px,transparent_1px)] [background-size:44px_44px]" />
-          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/70 to-transparent" />
+        <section className="relative overflow-hidden border-b border-white/10 bg-[#05070d]">
+          <div className="pointer-events-none absolute inset-0 opacity-[0.14] [background-image:linear-gradient(rgba(148,163,184,0.16)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.13)_1px,transparent_1px)] [background-size:42px_42px]" />
+          <div className="pointer-events-none absolute -left-32 top-[-280px] h-[620px] w-[620px] rounded-full bg-[#b9ff55]/[0.045] blur-3xl" />
 
-          <div className="relative mx-auto grid min-h-[640px] max-w-7xl min-w-0 gap-8 px-5 py-10 lg:grid-cols-[0.78fr_1.22fr] lg:items-center lg:py-12">
-            <div className="min-w-0 max-w-2xl">
-              <div className="inline-flex items-center gap-2 rounded-lg border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-cyan-200">
-                <Radio className="h-4 w-4" />
-                Live edge command center
-              </div>
-              <h1 className="mt-5 text-4xl font-semibold tracking-tight text-white md:text-6xl lg:text-5xl xl:text-6xl">
-                Raw edge is a rumor. Execution-adjusted edge is a number you can bet.
-              </h1>
-              <p className="mt-5 max-w-xl text-base leading-7 text-slate-300 md:text-lg">
-                Model probability vs public ESPN lines, quarter-Kelly sizing, and a CLV proof ledger
-                for NBA, NFL, MLB, and World Cup 1X2. Not another tipster Discord—an execution desk.
-              </p>
+          <div className="relative mx-auto max-w-[1440px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+            <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+              <div className="min-w-0 space-y-4">
+                <article className="desk-enter overflow-hidden rounded-[14px] border border-[#b9ff55]/25 bg-[#09101a]/95 shadow-[0_30px_100px_rgba(0,0,0,0.3)]">
+                  <div className="p-5 sm:p-6">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                        Featured edge / {featuredEntry?.sportLabel ?? sportName}
+                      </div>
+                      <span
+                        className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] ${
+                          featuredEntry
+                            ? "border-[#b9ff55]/30 bg-[#b9ff55]/[0.08] text-[#b9ff55]"
+                            : "border-amber-300/20 bg-amber-300/[0.07] text-amber-200"
+                        }`}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${featuredEntry ? "bg-[#b9ff55]" : "bg-amber-300"}`} />
+                        {featuredEntry ? "Qualified" : "Pass"}
+                      </span>
+                    </div>
 
-              <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-                {hasPaidAccess ? (
-                  <Button asChild size="lg" className="w-full bg-cyan-300 px-7 font-semibold text-slate-950 hover:bg-cyan-200 sm:w-auto">
-                    <Link to="/daily-picks">
-                      Open Live Desk
-                      <ChevronRight className="ml-2 h-4 w-4" />
-                    </Link>
-                  </Button>
-                ) : (
-                  <Button
-                    size="lg"
-                    className="w-full bg-cyan-300 px-7 font-semibold text-slate-950 hover:bg-cyan-200 sm:w-auto"
-                    onClick={() => void handleUpgrade("premium")}
-                  >
-                    <Crown className="mr-2 h-4 w-4" />
-                    Start 7-day trial
-                  </Button>
-                )}
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="w-full border-white/15 bg-white/[0.04] px-7 font-semibold text-white hover:bg-white/[0.09] sm:w-auto"
-                  asChild
-                >
-                  <a href="#proof">
-                    See proof ledger
-                    <Target className="ml-2 h-4 w-4 text-emerald-300" />
-                  </a>
-                </Button>
-              </div>
-
-              <div className="mt-8 grid gap-3 sm:grid-cols-3">
-                <StatTile
-                  label="Posted lines"
-                  value={String(postedLineCount)}
-                  detail="Current market rows on desk"
-                  accent="text-cyan-200"
-                />
-                <StatTile
-                  label="Live now"
-                  value={String(liveCount)}
-                  detail="Games moving in real time"
-                  accent="text-emerald-300"
-                />
-                <StatTile
-                  label="Avg edge"
-                  value={executionBoardEntries.length ? formatEdge(avgEdge) : "Pass"}
-                  detail="Execution-adjusted board average"
-                  accent="text-amber-200"
-                />
-              </div>
-            </div>
-
-            <div className="min-w-0 overflow-hidden rounded-xl border border-white/12 bg-slate-950/72 shadow-[0_30px_110px_rgba(0,0,0,0.45)] backdrop-blur">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
-                    Live desk preview
+                    <h1 className="mt-4 max-w-4xl text-3xl font-bold tracking-[-0.035em] text-white sm:text-4xl lg:text-[42px]">
+                      {featuredEntry?.eventLabel ?? "The desk is passing the current slate"}
+                    </h1>
+                    <div className="mt-2 font-mono text-xs font-semibold uppercase tracking-[0.08em] text-cyan-200 sm:text-sm">
+                      {featuredEntry
+                        ? `${featuredEntry.recommendedSide} ${featuredEntry.summary.line} · ${featuredEntry.bookmaker ?? "Public consensus"}`
+                        : `No edge clears ${minEdge}% after execution filters`}
+                    </div>
+                    <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-400">
+                      {featuredEntry
+                        ? `The model remains ${formatEdge(featuredEntry.executionAdjustedEdge)} above the implied market after timing, volatility, and liquidity discounts.`
+                        : "No fabricated signal. Adjust the controls or wait for the next verified market update."}
+                    </p>
                   </div>
-                  <div className="mt-1 text-xl font-semibold text-white">Market board</div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                  <span className="rounded-md border border-white/10 px-3 py-1.5">{selectedSport.toUpperCase()}</span>
-                  <span className="rounded-md border border-emerald-300/20 bg-emerald-300/10 px-3 py-1.5 text-emerald-200">
-                    {liveSlateUpdatedAt
-                      ? `Updated ${liveSlateUpdatedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
-                      : "Syncing"}
-                  </span>
-                </div>
-              </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[680px] text-left text-sm">
-                  <thead className="bg-white/[0.03] text-[11px] uppercase tracking-[0.22em] text-slate-500">
-                    <tr>
-                      <th className="px-5 py-3 font-semibold">Matchup</th>
-                      <th className="px-5 py-3 font-semibold">Signal</th>
-                      <th className="px-5 py-3 font-semibold">Line</th>
-                      <th className="px-5 py-3 font-semibold">Model</th>
-                      <th className="px-5 py-3 font-semibold">Edge</th>
-                      <th className="px-5 py-3 font-semibold">Stake</th>
-                      <th className="px-5 py-3 font-semibold">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/8">
-                    {boardPreviewRows.length ? (
-                      boardPreviewRows.map((row) => (
-                        <tr key={row.id} className="transition-colors hover:bg-white/[0.035]">
-                          <td className="px-5 py-4">
-                            <div className="font-medium text-white">{row.eventLabel}</div>
-                            <div className="mt-1 text-xs text-slate-500">{row.sportLabel}</div>
-                          </td>
-                          <td className="px-5 py-4 text-slate-200">{row.recommendedSide}</td>
-                          <td className="px-5 py-4 font-mono text-cyan-200">{row.line}</td>
-                          <td className="px-5 py-4 text-slate-300">{row.model}</td>
-                          <td className="px-5 py-4 font-semibold text-emerald-300">{row.edge}</td>
-                          <td className="px-5 py-4 text-slate-300">{row.stake}</td>
-                          <td className="px-5 py-4">
-                            <span className="rounded-md border border-amber-300/20 bg-amber-300/10 px-2.5 py-1 text-xs text-amber-100">
-                              {row.status}
-                            </span>
-                          </td>
+                  <div className="grid grid-cols-2 border-y border-white/10 bg-black/10 sm:grid-cols-4 sm:divide-x sm:divide-white/10">
+                    {[
+                      {
+                        label: "Model probability",
+                        value: featuredEntry ? formatProb(featuredEntry.modelProb) : "—",
+                      },
+                      {
+                        label: "Market implied",
+                        value: featuredEntry ? formatProb(featuredEntry.impliedProb) : "—",
+                      },
+                      {
+                        label: "Execution edge",
+                        value: featuredEntry ? formatEdge(featuredEntry.executionAdjustedEdge) : "Pass",
+                      },
+                      {
+                        label: "Kelly stake",
+                        value: featuredEntry ? formatMoney(featuredEntry.suggestedStake) : "$0",
+                      },
+                    ].map((metric) => (
+                      <div key={metric.label} className="border-white/10 px-5 py-4 even:border-l sm:border-l-0">
+                        <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+                          {metric.label}
+                        </div>
+                        <div className={`mt-2 font-mono text-xl font-semibold tabular-nums ${metric.label === "Execution edge" ? "text-[#b9ff55]" : "text-white"}`}>
+                          {metric.value}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+                    <div className="flex items-start gap-3 text-xs leading-5 text-slate-500">
+                      <Shield className="mt-0.5 h-4 w-4 shrink-0 text-[#b9ff55]" />
+                      <span>
+                        Quarter-Kelly sizing · {featuredEntry?.executionWindow ?? "waiting for entry window"} ·
+                        {" "}updated every 60 seconds
+                      </span>
+                    </div>
+                    <Button
+                      asChild
+                      size="sm"
+                      className="shrink-0 bg-[#b9ff55] font-semibold text-[#0b1007] hover:bg-[#d0ff8e]"
+                    >
+                      <Link to="/daily-picks">
+                        Open full card
+                        <ChevronRight className="ml-1 h-3.5 w-3.5" />
+                      </Link>
+                    </Button>
+                  </div>
+                </article>
+
+                <div className="desk-enter desk-enter-delay-1 overflow-hidden rounded-[14px] border border-white/10 bg-[#070b13]/95">
+                  <div className="flex flex-col gap-4 border-b border-white/10 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Activity className="h-4 w-4 text-[#b9ff55]" />
+                        <h2 className="text-sm font-semibold text-white">Live market slate</h2>
+                      </div>
+                      <p className="mt-1 text-xs text-slate-600">
+                        Model, market, edge, and stake in one decision row.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1 rounded-lg border border-white/10 bg-white/[0.025] p-1">
+                      {LIVE_DESK_SPORTS.map((sport) => (
+                        <button
+                          key={sport}
+                          type="button"
+                          className={`rounded-md px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors ${
+                            selectedSport === sport
+                              ? "bg-[#b9ff55] text-[#0b1007]"
+                              : "text-slate-500 hover:bg-white/[0.05] hover:text-white"
+                          }`}
+                          onClick={() => {
+                            setSelectedSport(sport);
+                            setBacktestSummary(null);
+                          }}
+                        >
+                          {sportShortLabel(sport)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[760px] text-left">
+                      <thead className="bg-white/[0.018] text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+                        <tr>
+                          <th className="px-5 py-3">Matchup</th>
+                          <th className="px-4 py-3">Signal</th>
+                          <th className="px-4 py-3">Line</th>
+                          <th className="px-4 py-3">Model</th>
+                          <th className="px-4 py-3">Edge</th>
+                          <th className="px-4 py-3">Stake</th>
+                          <th className="px-5 py-3 text-right">Window</th>
                         </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={7} className="px-5 py-10 text-center text-sm leading-6 text-slate-500">
-                          No execution-qualified entries on the current {selectedSport.toUpperCase()} board. The desk is passing instead of inventing a signal.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                      </thead>
+                      <tbody className="divide-y divide-white/[0.07] text-xs">
+                        {isSlateLoading ? (
+                          <tr>
+                            <td colSpan={7} className="px-5 py-10 text-center text-slate-500">
+                              Loading the verified {sportName} board…
+                            </td>
+                          </tr>
+                        ) : liveSlateError ? (
+                          <tr>
+                            <td colSpan={7} className="px-5 py-10 text-center text-red-300">
+                              {liveSlateError}
+                            </td>
+                          </tr>
+                        ) : boardPreviewRows.length ? (
+                          boardPreviewRows.map((row) => (
+                            <tr key={row.id} className="desk-row transition-colors hover:bg-white/[0.035]">
+                              <td className="px-5 py-4">
+                                <div className="font-medium text-white">{row.eventLabel}</div>
+                                <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-600">{row.sportLabel}</div>
+                              </td>
+                              <td className="px-4 py-4 text-slate-300">{row.recommendedSide}</td>
+                              <td className="px-4 py-4 font-mono tabular-nums text-cyan-200">{row.line}</td>
+                              <td className="px-4 py-4 font-mono tabular-nums text-slate-300">{row.model}</td>
+                              <td className="px-4 py-4 font-mono font-semibold tabular-nums text-[#b9ff55]">{row.edge}</td>
+                              <td className="px-4 py-4 font-mono tabular-nums text-white">{row.stake}</td>
+                              <td className="px-5 py-4 text-right">
+                                <span className="rounded-md border border-white/10 bg-white/[0.025] px-2.5 py-1 text-[10px] text-slate-400">
+                                  {row.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={7} className="px-5 py-10 text-center text-sm leading-6 text-slate-500">
+                              No execution-qualified {sportShortLabel(selectedSport)} rows. The desk is passing instead of inventing a signal.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="flex items-center justify-between border-t border-white/10 px-5 py-3 text-[10px] uppercase tracking-[0.12em] text-slate-600">
+                    <span>{postedLineCount} posted lines · {liveCount} live</span>
+                    <span>{liveSlateUpdatedAt ? `Sync ${liveSlateUpdatedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Syncing"}</span>
+                  </div>
+                </div>
               </div>
 
-              <div className="grid gap-0 border-t border-white/10 lg:grid-cols-[1fr_0.9fr]">
-                <div className="border-b border-white/10 p-5 lg:border-b-0 lg:border-r">
-                  <div className="mb-3 flex items-center justify-between">
+              <aside className="min-w-0 space-y-4">
+                <div className="desk-enter desk-enter-delay-1 rounded-[14px] border border-white/10 bg-[#070b13]/95 p-5">
+                  <div className="flex items-start justify-between gap-4">
                     <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-                        Bankroll control
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                        Risk controls
                       </div>
-                      <div className="mt-1 text-sm text-slate-300">Quarter-Kelly exposure</div>
+                      <h2 className="mt-2 text-xl font-semibold text-white">Bankroll policy</h2>
                     </div>
-                    <div className="text-xl font-semibold text-white">{formatMoney(bankroll)}</div>
+                    <Target className="h-5 w-5 text-[#b9ff55]" />
                   </div>
-                  <Slider value={[bankroll]} onValueChange={(v) => setBankroll(v[0])} min={100} max={10000} step={100} />
-                  <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                    <div className="rounded-lg border border-white/10 bg-white/[0.035] p-3">
-                      <div className="text-slate-500">Min edge</div>
-                      <div className="mt-1 font-semibold text-cyan-200">{minEdge}%</div>
-                    </div>
-                    <div className="rounded-lg border border-white/10 bg-white/[0.035] p-3">
-                      <div className="text-slate-500">Kelly</div>
-                      <div className="mt-1 font-semibold text-emerald-300">
-                        {(kellyFraction * 100).toFixed(0)}%
+
+                  <div className="mt-6 space-y-7">
+                    <div>
+                      <div className="mb-3 flex items-end justify-between gap-3">
+                        <span className="text-xs text-slate-500">Bankroll</span>
+                        <span className="font-mono text-lg font-semibold tabular-nums text-white">{formatMoney(bankroll)}</span>
                       </div>
+                      <Slider
+                        className="[&_[role=slider]]:border-[#b9ff55] [&_[role=slider]]:bg-[#05070d] [&_[data-orientation=horizontal]>span]:bg-[#b9ff55]"
+                        value={[bankroll]}
+                        onValueChange={(v) => setBankroll(v[0])}
+                        min={100}
+                        max={10000}
+                        step={100}
+                      />
+                      <div className="mt-2 flex justify-between font-mono text-[9px] text-slate-700">
+                        <span>$100</span>
+                        <span>$10,000</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="mb-3 flex items-end justify-between gap-3">
+                        <span className="text-xs text-slate-500">Minimum edge</span>
+                        <span className="font-mono text-lg font-semibold tabular-nums text-cyan-200">{minEdge}%</span>
+                      </div>
+                      <Slider value={[minEdge]} onValueChange={(v) => setMinEdge(v[0])} min={0} max={10} step={0.5} />
+                    </div>
+
+                    <div>
+                      <div className="mb-3 flex items-end justify-between gap-3">
+                        <span className="text-xs text-slate-500">Kelly fraction</span>
+                        <span className="font-mono text-lg font-semibold tabular-nums text-[#b9ff55]">
+                          {(kellyFraction * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                      <Slider
+                        value={[kellyFraction]}
+                        onValueChange={(v) => setKellyFraction(v[0])}
+                        min={0.1}
+                        max={1}
+                        step={0.05}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-6 grid grid-cols-3 divide-x divide-white/10 border-y border-white/10 py-4 text-center">
+                    <div>
+                      <div className="font-mono text-lg font-semibold text-white">{executionBoardEntries.length}</div>
+                      <div className="mt-1 text-[9px] uppercase tracking-[0.12em] text-slate-600">Tracked</div>
+                    </div>
+                    <div>
+                      <div className="font-mono text-lg font-semibold text-[#b9ff55]">{valueBets.length}</div>
+                      <div className="mt-1 text-[9px] uppercase tracking-[0.12em] text-slate-600">Value</div>
+                    </div>
+                    <div>
+                      <div className="font-mono text-lg font-semibold text-white">
+                        {executionBoardEntries.length ? formatEdge(avgEdge) : "Pass"}
+                      </div>
+                      <div className="mt-1 text-[9px] uppercase tracking-[0.12em] text-slate-600">Avg edge</div>
                     </div>
                   </div>
                 </div>
-                <div className="p-5">
-                  <div className="mb-2 flex items-center justify-between">
+
+                <div className="desk-enter desk-enter-delay-2 rounded-[14px] border border-white/10 bg-[#070b13]/95 p-5">
+                  <div className="flex items-start justify-between gap-4">
                     <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
                         Proof curve
                       </div>
-                      <div className="mt-1 text-sm text-slate-300">Bankroll trend · illustrative, not historical results</div>
+                      <h2 className="mt-2 text-xl font-semibold text-white">Evaluation trend</h2>
                     </div>
                     <Button
                       type="button"
                       size="sm"
-                      variant="outline"
-                      className="border-white/10 text-slate-200 hover:bg-white/[0.08]"
+                      variant="ghost"
+                      className="h-8 text-[10px] uppercase tracking-[0.1em] text-slate-500 hover:bg-white/[0.05] hover:text-white"
                       onClick={() => setPerformanceData(generatePerformanceData())}
                     >
                       Refresh
                     </Button>
                   </div>
-                  <MiniChart data={chartData} />
+                  <p className="mt-2 text-xs leading-5 text-slate-600">
+                    Illustrative bankroll series. Settled outcomes live in the public proof ledger.
+                  </p>
+                  <div className="mt-4">
+                    <MiniChart data={chartData} />
+                  </div>
+                  <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-4 text-xs">
+                    <span className="text-slate-500">Ledger standard</span>
+                    <span className="font-medium text-white">CLV + calibration</span>
+                  </div>
+                  <Button
+                    asChild
+                    variant="outline"
+                    className="mt-4 w-full border-white/10 bg-white/[0.02] text-xs text-slate-300 hover:bg-white/[0.05] hover:text-white"
+                  >
+                    <Link to="/leaderboard">
+                      Inspect proof ledger
+                      <BarChart3 className="ml-2 h-4 w-4 text-[#b9ff55]" />
+                    </Link>
+                  </Button>
                 </div>
+              </aside>
+            </div>
+
+            <div className="desk-enter desk-enter-delay-2 mt-4 grid divide-y divide-white/10 overflow-hidden rounded-xl border border-white/10 bg-[#070b13]/80 text-[10px] uppercase tracking-[0.12em] text-slate-600 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+              <div className="flex items-center justify-between gap-4 px-5 py-3">
+                <span>Market source</span>
+                <span className="text-slate-300">Verified public lines</span>
+              </div>
+              <div className="flex items-center justify-between gap-4 px-5 py-3">
+                <span>Method</span>
+                <span className="text-slate-300">Execution-adjusted</span>
+              </div>
+              <div className="flex items-center justify-between gap-4 px-5 py-3">
+                <span>Sizing</span>
+                <span className="text-slate-300">Fractional Kelly</span>
+              </div>
+              <div className="flex items-center justify-between gap-4 px-5 py-3">
+                <span>Refresh</span>
+                <span className="text-[#b9ff55]">60 seconds</span>
               </div>
             </div>
           </div>
