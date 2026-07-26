@@ -26,6 +26,7 @@ import AccessSessionDialog from "@/components/AccessSessionDialog";
 import PaymentOptionDialog from "@/components/PaymentOptionDialog";
 import { useToast } from "@/components/ui/use-toast";
 import KellySimulator from "@/components/KellySimulator";
+import PortfolioRiskView from "@/components/PortfolioRiskView";
 import {
   getAuthChangeEventName,
   getCurrentSiteUser,
@@ -47,6 +48,7 @@ import { getCurrentUserProfile } from "@/lib/profile";
 import { buildLinePath, closeLineValuePts, closeVerdict, formatCloseBadge, formatPathLabel } from "@/lib/linePath";
 import { stressKellyStake } from "@/lib/kellyStress";
 import { deskRowsFromPicks, downloadCsv, toCsv } from "@/lib/exportDesk";
+import type { RiskPosition } from "@/lib/portfolioRisk";
 import { Slider } from "@/components/ui/slider";
 
 interface PickEntry {
@@ -795,6 +797,30 @@ export default function DailyPicks() {
   const valueBets = filteredGames.filter((entry) => entry.prediction.valueBet).length;
   const sportsShown = Array.from(new Set(games.map((game) => game.sportLabel)));
 
+  // Risk is measured over the bets this user can actually place — the open board
+  // alone until premium unlocks the rest of the slate.
+  const riskPositions = useMemo<RiskPosition[]>(() => {
+    const actionable = hasPremiumBoard ? filteredGames : freePicks;
+    return actionable.flatMap(({ game, prediction }) => {
+      const bet = prediction.valueBet;
+      if (!bet || bet.suggestedBet <= 0) return [];
+      return [
+        {
+          id: `${game.id}:${bet.team}`,
+          gameId: game.id,
+          sport: game.sport,
+          sportLabel: game.sportLabel,
+          team: bet.team,
+          opponent: bet.team === game.homeTeam ? game.awayTeam : game.homeTeam,
+          side: bet.location,
+          stake: bet.suggestedBet,
+          modelProb: bet.modelProb,
+          americanOdds: bet.odds,
+        },
+      ];
+    });
+  }, [filteredGames, freePicks, hasPremiumBoard]);
+
   const exportDesk = () => {
     const csv = toCsv(deskRowsFromPicks(filteredGames));
     if (!csv) {
@@ -1080,6 +1106,13 @@ export default function DailyPicks() {
                 bankroll={userBankroll}
                 kellyFraction={userKellyFraction}
                 riskLabel={userProfile?.riskProfile === "conservative" ? "Conservative" : userProfile?.riskProfile === "aggressive" ? "Aggressive" : "Balanced"}
+              />
+              <PortfolioRiskView
+                positions={riskPositions}
+                bankroll={userBankroll}
+                riskProfile={userProfile?.riskProfile ?? "balanced"}
+                locked={!hasPremiumBoard}
+                onUnlock={() => setShowPaymentOptionModal(true)}
               />
               <KellySimulator />
             </div>
