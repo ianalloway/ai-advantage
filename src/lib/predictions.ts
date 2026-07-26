@@ -1009,8 +1009,14 @@ export function generateBacktestData(sport: Sport, months: number = 6): Backtest
       const actualWinner = actualHomeWin ? homeTeam : awayTeam;
       const correct = prediction === actualWinner;
       
-      // Generate realistic odds
-      const odds = generateOdds(homeProb > 0.5 ? homeProb : 1 - homeProb);
+      // Price the market off its own read of the matchup, not off the model's
+      // number. Pricing from modelProb meant impliedProb always landed above it
+      // once juice was added, so edge was negative on every game and the
+      // simulation could never place a bet — the console rendered all zeros.
+      // Disagreement is symmetric, so the juice still drags results downward and
+      // a losing run stays possible.
+      const marketProb = clampValue(modelProb + (rng() - 0.5) * 0.12, 0.05, 0.95);
+      const odds = generateOdds(marketProb);
       const impliedProb = americanToImpliedProb(odds);
       const edge = (modelProb - impliedProb) * 100;
       
@@ -1199,7 +1205,6 @@ export function generatePerformanceData(): PerformanceData {
     const winRate = wins / picks;
     
     // Calculate profit assuming average odds of -110
-    const avgOdds = -110;
     const winPayout = wins * (100 / 110); // Win at -110 odds
     const lossAmount = losses * 1; // Lose 1 unit per loss
     const profit = (winPayout - lossAmount) * 100; // In dollars assuming $100 units

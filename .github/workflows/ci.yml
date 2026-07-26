@@ -20,8 +20,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Build mode (-b), not `tsc --noEmit`: the root tsconfig is a solution file
+      # with `"files": []`, and plain `tsc` does not follow project references —
+      # so the old command typechecked zero files and always passed.
       - name: Type check
-        run: npx tsc --noEmit
+        run: npx tsc -b --force
 
       - name: Lint
         run: npm run lint

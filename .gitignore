@@ -34,3 +34,6 @@ dist-ssr
 *.pem
 *.key
 .netlify
+
+# TypeScript incremental build info (emitted by `tsc -b`)
+*.tsbuildinfo
