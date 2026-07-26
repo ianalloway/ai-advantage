@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Badge } from "@/components/ui/badge";
-import { Play, RotateCcw, HelpCircle, TrendingUp, ChevronDown, ChevronUp } from "lucide-react";
+import { RotateCcw, HelpCircle, TrendingUp, ChevronDown, ChevronUp } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,

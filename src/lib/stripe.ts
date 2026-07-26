@@ -237,36 +237,6 @@ function isConfiguredPaymentLink(url: string): boolean {
   }
 }
 
-async function createCheckoutSession(type: CheckoutMode): Promise<string> {
-  const siteUser = getCurrentSiteUser();
-  const response = await fetch("/api/create-checkout-session", {
-    method: "POST",
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    // Email/id are hints only — server prefers the authenticated session cookie.
-    body: JSON.stringify({
-      mode: type,
-      customerEmail: siteUser?.email,
-      clientReferenceId: siteUser?.id,
-    }),
-  });
-
-  if (!response.ok) {
-    const message = await readApiError(response, "Unable to start Stripe checkout.");
-    throw new Error(message || "Unable to start Stripe checkout.");
-  }
-
-  const data = (await response.json()) as CheckoutSessionResponse;
-  if (!data.url) {
-    throw new Error("Stripe checkout session did not return a redirect URL.");
-  }
-
-  return data.url;
-}
-
 async function verifyCheckoutSession(sessionId: string): Promise<CheckoutSessionStatusResponse> {
   const response = await fetch(`/api/checkout-session?session_id=${encodeURIComponent(sessionId)}`, {
     credentials: "include",

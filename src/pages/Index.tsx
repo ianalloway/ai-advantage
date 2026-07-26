@@ -48,7 +48,6 @@ import { fetchLiveGamesForSport, type LiveMarketGame } from "@/lib/liveSports";
 import {
   getAuthChangeEventName,
   getCurrentSiteUser,
-  signOutSiteUser,
   type SiteUser,
 } from "@/lib/auth";
 import {
@@ -187,51 +186,72 @@ function SectionHeader({
   );
 }
 
-// Recharts is heavy (~95KB). Lazy-load it so it splits into its own chunk and
-// stays off the homepage's first-paint critical path.
-const MiniChart = lazy(() =>
-  import("recharts").then((mod) => {
-    const { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } = mod;
-    return {
-      default: function MiniChart({ data }: { data: Array<{ name: string; value: number }> }) {
-        const values = data.map((item) => item.value);
-        const min = Math.min(...values);
-        const max = Math.max(...values);
-        const range = Math.max(max - min, 1);
-        const points = data
-          .map((item, index) => {
-            const x = data.length === 1 ? 0 : (index / (data.length - 1)) * 100;
-            const y = 88 - ((item.value - min) / range) * 72;
-            return `${x},${y}`;
-          })
-          .join(" ");
-        return (
-          <div className="h-40 w-full min-w-0">
-            <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full overflow-visible">
-              <defs>
-                <linearGradient id="proof-curve-fill" x1="0" x2="0" y1="0" y2="1">
-                  <stop offset="0%" stopColor="rgba(34,211,238,0.24)" />
-                  <stop offset="100%" stopColor="rgba(34,211,238,0)" />
-                </linearGradient>
-              </defs>
-              <polyline points={`0,96 ${points} 100,96`} fill="url(#proof-curve-fill)" stroke="none" />
-              <polyline points={points} fill="none" stroke="#22d3ee" strokeWidth="2.4" vectorEffect="non-scaling-stroke" />
-              {data.map((item, index) => {
-                const x = data.length === 1 ? 0 : (index / (data.length - 1)) * 100;
-                const y = 88 - ((item.value - min) / range) * 72;
-                return <circle key={item.name} cx={x} cy={y} r="1.6" fill="#34d399" vectorEffect="non-scaling-stroke" />;
-              })}
-            </svg>
-            <div className="mt-2 flex justify-between text-[11px] text-slate-600">
-              <span>{data[0]?.name}</span>
-              <span>{data[data.length - 1]?.name}</span>
-            </div>
-          </div>
-        );
-      },
-    };
-  }),
-);
+// Backtest console summary tile. Referenced by the console since it shipped but
+// never actually defined, so every run crashed the page on render.
+function StatTile({
+  label,
+  value,
+  detail,
+  accent = "text-white",
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  accent?: string;
+}) {
+  return (
+    <div className="rounded-lg border border-white/10 bg-slate-950/50 px-4 py-3">
+      <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-600">{label}</div>
+      <div className={`mt-2 font-mono text-xl font-semibold tabular-nums ${accent}`}>{value}</div>
+      <div className="mt-1 text-[11px] leading-4 text-slate-500">{detail}</div>
+    </div>
+  );
+}
+
+// Hand-rolled SVG on purpose: this sparkline needs a fill, a stroke, and dots,
+// which is not worth a charting runtime. It used to lazy-load recharts and then
+// render none of it, which pulled ~150KB gzip onto the homepage's critical path
+// and — with no local Suspense boundary — dropped the whole page to the
+// route-level fallback until that chunk landed.
+function MiniChart({ data }: { data: Array<{ name: string; value: number }> }) {
+  const values = data.map((item) => item.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = Math.max(max - min, 1);
+  const pointAt = (item: { value: number }, index: number) => ({
+    x: data.length === 1 ? 0 : (index / (data.length - 1)) * 100,
+    y: 88 - ((item.value - min) / range) * 72,
+  });
+  const points = data
+    .map((item, index) => {
+      const { x, y } = pointAt(item, index);
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <div className="h-40 w-full min-w-0">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full overflow-visible">
+        <defs>
+          <linearGradient id="proof-curve-fill" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stopColor="rgba(34,211,238,0.24)" />
+            <stop offset="100%" stopColor="rgba(34,211,238,0)" />
+          </linearGradient>
+        </defs>
+        <polyline points={`0,96 ${points} 100,96`} fill="url(#proof-curve-fill)" stroke="none" />
+        <polyline points={points} fill="none" stroke="#22d3ee" strokeWidth="2.4" vectorEffect="non-scaling-stroke" />
+        {data.map((item, index) => {
+          const { x, y } = pointAt(item, index);
+          return <circle key={item.name} cx={x} cy={y} r="1.6" fill="#34d399" vectorEffect="non-scaling-stroke" />;
+        })}
+      </svg>
+      <div className="mt-2 flex justify-between text-[11px] text-slate-600">
+        <span>{data[0]?.name}</span>
+        <span>{data[data.length - 1]?.name}</span>
+      </div>
+    </div>
+  );
+}
 
 function formatLineDelta(delta?: number) {
   if (delta === undefined || Number.isNaN(delta)) return "Flat";
@@ -268,7 +288,8 @@ function Index() {
   // fabricated-fresh-on-every-render curve. The real settled record is the ledger.
   const [performanceData, setPerformanceData] = useState<PerformanceData | null>(() => generatePerformanceData());
   const [access, setAccess] = useState(getAccessState());
-  const [cryptoAccount, setCryptoAccount] = useState(getCurrentCryptoAccount());
+  // Value is unread — this state exists only to re-render on access changes.
+  const [, setCryptoAccount] = useState(getCurrentCryptoAccount());
   const [siteUser, setSiteUser] = useState<SiteUser | null>(getCurrentSiteUser());
   const [billingStatus, setBillingStatus] = useState<BillingStatus | null>(null);
   const [showCryptoModal, setShowCryptoModal] = useState(false);

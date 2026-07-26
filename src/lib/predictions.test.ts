@@ -7,6 +7,8 @@ import {
   calculateExecutionAdjustedEdge,
   predictSoccer,
   getWorldCupRating,
+  generateBacktestData,
+  calculateBacktestSummary,
 } from "./predictions";
 
 describe("odds conversions", () => {
@@ -98,5 +100,43 @@ describe("predictSoccer (World Cup 3-way model)", () => {
     const m = predictSoccer(getWorldCupRating("Wakanda"), getWorldCupRating("Atlantis"));
     // Two unknowns ⇒ only the home-advantage tilt separates them.
     expect(Math.abs(m.homeProb - m.awayProb)).toBeLessThan(0.15);
+  });
+});
+
+describe("backtest simulation", () => {
+  // The market line used to be priced off the model's own probability, so juice
+  // pushed implied probability above it on every game. Edge was always negative,
+  // the `edge > 3` gate never opened, and the console rendered all zeros.
+  it("places bets — the market must not be priced off the model's own number", () => {
+    const results = generateBacktestData("nba", 6);
+    const bets = results.filter((row) => row.betPlaced);
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(bets.length).toBeGreaterThan(0);
+  });
+
+  it("produces a summary with a populated monthly series", () => {
+    const summary = calculateBacktestSummary(generateBacktestData("nba", 6));
+
+    expect(summary.totalBets).toBeGreaterThan(0);
+    expect(summary.profitByMonth.length).toBeGreaterThan(0);
+    expect(Number.isFinite(summary.roi)).toBe(true);
+    expect(Number.isFinite(summary.sharpeRatio)).toBe(true);
+  });
+
+  it("stays deterministic for a given sport and window", () => {
+    const a = calculateBacktestSummary(generateBacktestData("nba", 6));
+    const b = calculateBacktestSummary(generateBacktestData("nba", 6));
+    expect(a.totalProfit).toBe(b.totalProfit);
+    expect(a.totalBets).toBe(b.totalBets);
+  });
+
+  it("does not tilt the simulation toward a winning record", () => {
+    // Symmetric market disagreement plus juice: results must be free to go
+    // negative, never engineered into a guaranteed upward curve.
+    const sports = (["nba", "nfl", "mlb"] as const).map((sport) =>
+      calculateBacktestSummary(generateBacktestData(sport, 6)),
+    );
+    expect(sports.some((summary) => summary.totalProfit < 0)).toBe(true);
   });
 });

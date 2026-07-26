@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useState, useRef, useCallback } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Activity,
   ArrowRight,
-  BarChart2,
   Calendar,
   ChevronLeft,
   Clock,
@@ -39,7 +38,6 @@ import {
   getCurrentCryptoAccount,
   hasFeatureAccess,
   redirectToCheckout,
-  signOutAccessSession,
 } from "@/lib/stripe";
 import { analyzeGame, formatEdge, formatOdds, formatProb, type GamePrediction } from "@/lib/predictions";
 import { fetchLiveGamesForSports, type LiveMarketGame } from "@/lib/liveSports";
