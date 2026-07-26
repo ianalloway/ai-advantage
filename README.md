@@ -31,6 +31,7 @@ It's the product layer of a larger sports-analytics stack — the modeling lives
 | Game analyzer | Enter a matchup, get an analysis and a recommendation |
 | Live odds | Track lines and movement across the slate |
 | Kelly sizing | Translate edge + bankroll into a stake |
+| Portfolio risk | Correlated exposure by team, game, sport, and narrative, with a stake haircut |
 | Multi-sport | NBA, NFL, MLB workflows |
 | Premium | Stripe subscription + one-time checkout |
 | Newsletter | Notion-backed capture wired into Substack |

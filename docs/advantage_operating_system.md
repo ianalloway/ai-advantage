@@ -149,7 +149,7 @@ It should position as:
    - Show bets by urgency
    - Example: `hit now`, `watch`, `pass if moves 5 cents more`
 
-4. `Portfolio Risk View`
+4. `Portfolio Risk View` — shipped, see `docs/portfolio_risk.md`
    - Show correlated exposure across teams, games, and slates
    - Stop over-betting one narrative in different wrappers
 
