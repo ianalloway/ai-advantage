@@ -107,7 +107,7 @@ export default function Signup() {
                   You are signed in as <span className="font-semibold text-white">@{currentUser.username}</span>. Jump into your profile and keep building it out there.
                 </p>
                 <div className="mt-8 flex flex-wrap gap-4">
-                  <Button asChild className="h-11 px-6 bg-brand-600 text-white hover:bg-brand-700 shadow-lg shadow-brand-600/20">
+                  <Button asChild className="h-11 px-6 bg-brand-700 text-white hover:bg-brand-800 shadow-lg shadow-brand-600/20">
                     <Link to="/profile">Open profile</Link>
                   </Button>
                   <Button asChild variant="outline" className="h-11 px-6 border-white/10 text-zinc-200 hover:bg-white/[0.06]">
@@ -182,7 +182,7 @@ export default function Signup() {
 
                   <Button
                     type="submit"
-                    className="w-full h-12 text-base font-bold bg-brand-600 text-white hover:bg-brand-700 shadow-lg shadow-brand-600/20 transition-all active:scale-[0.98]"
+                    className="w-full h-12 text-base font-bold bg-brand-700 text-white hover:bg-brand-800 shadow-lg shadow-brand-600/20 transition-all active:scale-[0.98]"
                     disabled={isSubmitting}
                   >
                     <UserPlus className="mr-2 h-5 w-5" />

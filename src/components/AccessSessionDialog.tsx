@@ -148,7 +148,7 @@ export default function AccessSessionDialog({
               <LogOut className="mr-2 h-4 w-4" />
               Log out of this device
             </Button>
-            <Button asChild className="w-full bg-brand-600 text-white hover:bg-brand-700">
+            <Button asChild className="w-full bg-brand-700 text-white hover:bg-brand-800">
               <Link to="/profile" onClick={() => onOpenChange(false)}>
                 <UserCircle2 className="mr-2 h-4 w-4" />
                 Go to my profile
@@ -215,7 +215,7 @@ export default function AccessSessionDialog({
             </p>
 
             <Button
-              className="w-full bg-brand-600 font-semibold text-white hover:bg-brand-700"
+              className="w-full bg-brand-700 font-semibold text-white hover:bg-brand-800"
               disabled={isSubmitting}
               onClick={() => void handleSignIn()}
             >

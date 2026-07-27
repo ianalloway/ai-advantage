@@ -201,9 +201,9 @@ function StatTile({
 }) {
   return (
     <div className="rounded-lg border border-white/10 bg-slate-950/50 px-4 py-3">
-      <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-600">{label}</div>
+      <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</div>
       <div className={`mt-2 font-mono text-xl font-semibold tabular-nums ${accent}`}>{value}</div>
-      <div className="mt-1 text-[11px] leading-4 text-slate-500">{detail}</div>
+      <div className="mt-1 text-[11px] leading-4 text-slate-400">{detail}</div>
     </div>
   );
 }
@@ -245,7 +245,7 @@ function MiniChart({ data }: { data: Array<{ name: string; value: number }> }) {
           return <circle key={item.name} cx={x} cy={y} r="1.6" fill="#34d399" vectorEffect="non-scaling-stroke" />;
         })}
       </svg>
-      <div className="mt-2 flex justify-between text-[11px] text-slate-600">
+      <div className="mt-2 flex justify-between text-[11px] text-slate-400">
         <span>{data[0]?.name}</span>
         <span>{data[data.length - 1]?.name}</span>
       </div>
@@ -573,7 +573,7 @@ Bet responsibly. This is model output, not a guarantee.`);
               <div className="truncate text-[13px] font-bold uppercase tracking-[0.04em] text-white sm:text-sm">
                 AI Advantage Sports
               </div>
-              <div className="hidden text-[9px] uppercase tracking-[0.14em] text-slate-600 sm:block">
+              <div className="hidden text-[9px] uppercase tracking-[0.14em] text-slate-400 sm:block">
                 Execution desk / live markets
               </div>
             </div>
@@ -602,7 +602,7 @@ Bet responsibly. This is model output, not a guarantee.`);
             <Button
               variant="ghost"
               size="sm"
-              className="hidden text-xs text-slate-500 hover:bg-white/[0.05] hover:text-white xl:inline-flex"
+              className="hidden text-xs text-slate-400 hover:bg-white/[0.05] hover:text-white xl:inline-flex"
               onClick={() => setShowAccessDialog(true)}
             >
               <Wallet className="mr-1.5 h-3.5 w-3.5" />
@@ -662,7 +662,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                 <article className="desk-enter overflow-hidden rounded-[14px] border border-[#b9ff55]/25 bg-[#09101a]/95 shadow-[0_30px_100px_rgba(0,0,0,0.3)]">
                   <div className="p-5 sm:p-6">
                     <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">
                         Featured edge / {featuredEntry?.sportLabel ?? sportName}
                       </div>
                       <span
@@ -712,7 +712,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                       },
                     ].map((metric) => (
                       <div key={metric.label} className="border-white/10 px-5 py-4 even:border-l sm:border-l-0">
-                        <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+                        <div className="text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                           {metric.label}
                         </div>
                         <div className={`mt-2 font-mono text-xl font-semibold tabular-nums ${metric.label === "Execution edge" ? "text-[#b9ff55]" : "text-white"}`}>
@@ -723,7 +723,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                   </div>
 
                   <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-                    <div className="flex items-start gap-3 text-xs leading-5 text-slate-500">
+                    <div className="flex items-start gap-3 text-xs leading-5 text-slate-400">
                       <Shield className="mt-0.5 h-4 w-4 shrink-0 text-[#b9ff55]" />
                       <span>
                         Quarter-Kelly sizing · {featuredEntry?.executionWindow ?? "waiting for entry window"} ·
@@ -750,7 +750,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                         <Activity className="h-4 w-4 text-[#b9ff55]" />
                         <h2 className="text-sm font-semibold text-white">Live market slate</h2>
                       </div>
-                      <p className="mt-1 text-xs text-slate-600">
+                      <p className="mt-1 text-xs text-slate-400">
                         Model, market, edge, and stake in one decision row.
                       </p>
                     </div>
@@ -762,7 +762,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                           className={`rounded-md px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors ${
                             selectedSport === sport
                               ? "bg-[#b9ff55] text-[#0b1007]"
-                              : "text-slate-500 hover:bg-white/[0.05] hover:text-white"
+                              : "text-slate-400 hover:bg-white/[0.05] hover:text-white"
                           }`}
                           onClick={() => {
                             setSelectedSport(sport);
@@ -777,7 +777,7 @@ Bet responsibly. This is model output, not a guarantee.`);
 
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[760px] text-left">
-                      <thead className="bg-white/[0.018] text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+                      <thead className="bg-white/[0.018] text-[9px] font-semibold uppercase tracking-[0.16em] text-slate-400">
                         <tr>
                           <th className="px-5 py-3">Matchup</th>
                           <th className="px-4 py-3">Signal</th>
@@ -791,7 +791,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                       <tbody className="divide-y divide-white/[0.07] text-xs">
                         {isSlateLoading ? (
                           <tr>
-                            <td colSpan={7} className="px-5 py-10 text-center text-slate-500">
+                            <td colSpan={7} className="px-5 py-10 text-center text-slate-400">
                               Loading the verified {sportName} board…
                             </td>
                           </tr>
@@ -806,7 +806,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                             <tr key={row.id} className="desk-row transition-colors hover:bg-white/[0.035]">
                               <td className="px-5 py-4">
                                 <div className="font-medium text-white">{row.eventLabel}</div>
-                                <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-600">{row.sportLabel}</div>
+                                <div className="mt-1 text-[10px] uppercase tracking-[0.12em] text-slate-400">{row.sportLabel}</div>
                               </td>
                               <td className="px-4 py-4 text-slate-300">{row.recommendedSide}</td>
                               <td className="px-4 py-4 font-mono tabular-nums text-cyan-200">{row.line}</td>
@@ -822,7 +822,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                           ))
                         ) : (
                           <tr>
-                            <td colSpan={7} className="px-5 py-10 text-center text-sm leading-6 text-slate-500">
+                            <td colSpan={7} className="px-5 py-10 text-center text-sm leading-6 text-slate-400">
                               No execution-qualified {sportShortLabel(selectedSport)} rows. The desk is passing instead of inventing a signal.
                             </td>
                           </tr>
@@ -831,7 +831,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                     </table>
                   </div>
 
-                  <div className="flex items-center justify-between border-t border-white/10 px-5 py-3 text-[10px] uppercase tracking-[0.12em] text-slate-600">
+                  <div className="flex items-center justify-between border-t border-white/10 px-5 py-3 text-[10px] uppercase tracking-[0.12em] text-slate-400">
                     <span>{postedLineCount} posted lines · {liveCount} live</span>
                     <span>{liveSlateUpdatedAt ? `Sync ${liveSlateUpdatedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Syncing"}</span>
                   </div>
@@ -842,7 +842,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                 <div className="desk-enter desk-enter-delay-1 rounded-[14px] border border-white/10 bg-[#070b13]/95 p-5">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                         Risk controls
                       </div>
                       <h2 className="mt-2 text-xl font-semibold text-white">Bankroll policy</h2>
@@ -853,10 +853,11 @@ Bet responsibly. This is model output, not a guarantee.`);
                   <div className="mt-6 space-y-7">
                     <div>
                       <div className="mb-3 flex items-end justify-between gap-3">
-                        <span className="text-xs text-slate-500">Bankroll</span>
+                        <span className="text-xs text-slate-400">Bankroll</span>
                         <span className="font-mono text-lg font-semibold tabular-nums text-white">{formatMoney(bankroll)}</span>
                       </div>
                       <Slider
+                        aria-label="Bankroll"
                         className="[&_[role=slider]]:border-[#b9ff55] [&_[role=slider]]:bg-[#05070d] [&_[data-orientation=horizontal]>span]:bg-[#b9ff55]"
                         value={[bankroll]}
                         onValueChange={(v) => setBankroll(v[0])}
@@ -872,20 +873,21 @@ Bet responsibly. This is model output, not a guarantee.`);
 
                     <div>
                       <div className="mb-3 flex items-end justify-between gap-3">
-                        <span className="text-xs text-slate-500">Minimum edge</span>
+                        <span className="text-xs text-slate-400">Minimum edge</span>
                         <span className="font-mono text-lg font-semibold tabular-nums text-cyan-200">{minEdge}%</span>
                       </div>
-                      <Slider value={[minEdge]} onValueChange={(v) => setMinEdge(v[0])} min={0} max={10} step={0.5} />
+                      <Slider aria-label="Minimum edge" value={[minEdge]} onValueChange={(v) => setMinEdge(v[0])} min={0} max={10} step={0.5} />
                     </div>
 
                     <div>
                       <div className="mb-3 flex items-end justify-between gap-3">
-                        <span className="text-xs text-slate-500">Kelly fraction</span>
+                        <span className="text-xs text-slate-400">Kelly fraction</span>
                         <span className="font-mono text-lg font-semibold tabular-nums text-[#b9ff55]">
                           {(kellyFraction * 100).toFixed(0)}%
                         </span>
                       </div>
                       <Slider
+                        aria-label="Kelly fraction"
                         value={[kellyFraction]}
                         onValueChange={(v) => setKellyFraction(v[0])}
                         min={0.1}
@@ -898,17 +900,17 @@ Bet responsibly. This is model output, not a guarantee.`);
                   <div className="mt-6 grid grid-cols-3 divide-x divide-white/10 border-y border-white/10 py-4 text-center">
                     <div>
                       <div className="font-mono text-lg font-semibold text-white">{executionBoardEntries.length}</div>
-                      <div className="mt-1 text-[9px] uppercase tracking-[0.12em] text-slate-600">Tracked</div>
+                      <div className="mt-1 text-[9px] uppercase tracking-[0.12em] text-slate-400">Tracked</div>
                     </div>
                     <div>
                       <div className="font-mono text-lg font-semibold text-[#b9ff55]">{valueBets.length}</div>
-                      <div className="mt-1 text-[9px] uppercase tracking-[0.12em] text-slate-600">Value</div>
+                      <div className="mt-1 text-[9px] uppercase tracking-[0.12em] text-slate-400">Value</div>
                     </div>
                     <div>
                       <div className="font-mono text-lg font-semibold text-white">
                         {executionBoardEntries.length ? formatEdge(avgEdge) : "Pass"}
                       </div>
-                      <div className="mt-1 text-[9px] uppercase tracking-[0.12em] text-slate-600">Avg edge</div>
+                      <div className="mt-1 text-[9px] uppercase tracking-[0.12em] text-slate-400">Avg edge</div>
                     </div>
                   </div>
                 </div>
@@ -916,7 +918,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                 <div className="desk-enter desk-enter-delay-2 rounded-[14px] border border-white/10 bg-[#070b13]/95 p-5">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                         Proof curve
                       </div>
                       <h2 className="mt-2 text-xl font-semibold text-white">Evaluation trend</h2>
@@ -925,20 +927,20 @@ Bet responsibly. This is model output, not a guarantee.`);
                       type="button"
                       size="sm"
                       variant="ghost"
-                      className="h-8 text-[10px] uppercase tracking-[0.1em] text-slate-500 hover:bg-white/[0.05] hover:text-white"
+                      className="h-8 text-[10px] uppercase tracking-[0.1em] text-slate-400 hover:bg-white/[0.05] hover:text-white"
                       onClick={() => setPerformanceData(generatePerformanceData())}
                     >
                       Refresh
                     </Button>
                   </div>
-                  <p className="mt-2 text-xs leading-5 text-slate-600">
+                  <p className="mt-2 text-xs leading-5 text-slate-400">
                     Illustrative bankroll series. Settled outcomes live in the public proof ledger.
                   </p>
                   <div className="mt-4">
                     <MiniChart data={chartData} />
                   </div>
                   <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-4 text-xs">
-                    <span className="text-slate-500">Ledger standard</span>
+                    <span className="text-slate-400">Ledger standard</span>
                     <span className="font-medium text-white">CLV + calibration</span>
                   </div>
                   <Button
@@ -955,7 +957,7 @@ Bet responsibly. This is model output, not a guarantee.`);
               </aside>
             </div>
 
-            <div className="desk-enter desk-enter-delay-2 mt-4 grid divide-y divide-white/10 overflow-hidden rounded-xl border border-white/10 bg-[#070b13]/80 text-[10px] uppercase tracking-[0.12em] text-slate-600 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+            <div className="desk-enter desk-enter-delay-2 mt-4 grid divide-y divide-white/10 overflow-hidden rounded-xl border border-white/10 bg-[#070b13]/80 text-[10px] uppercase tracking-[0.12em] text-slate-400 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
               <div className="flex items-center justify-between gap-4 px-5 py-3">
                 <span>Market source</span>
                 <span className="text-slate-300">Verified public lines</span>
@@ -1012,11 +1014,11 @@ Bet responsibly. This is model output, not a guarantee.`);
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-5 py-4">
                   <div>
                     <h3 className="text-xl font-semibold text-white">{sportName} market board</h3>
-                    <p className="mt-1 text-sm text-slate-500">
+                    <p className="mt-1 text-sm text-slate-400">
                       Live slate with scores, prices, model probability, and execution-adjusted edge.
                     </p>
                   </div>
-                  <div className="text-sm text-slate-500">
+                  <div className="text-sm text-slate-400">
                     {liveSlateUpdatedAt
                       ? `Updated ${liveSlateUpdatedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
                       : "Syncing live board"}
@@ -1034,7 +1036,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[780px] text-left text-sm">
-                      <thead className="bg-slate-950/50 text-[11px] uppercase tracking-[0.22em] text-slate-500">
+                      <thead className="bg-slate-950/50 text-[11px] uppercase tracking-[0.22em] text-slate-400">
                         <tr>
                           <th className="px-5 py-3">Game</th>
                           <th className="px-5 py-3">Market</th>
@@ -1061,7 +1063,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                                   <div className="font-medium text-white">
                                     {game.awayAbbr} @ {game.homeAbbr}
                                   </div>
-	                                  <div className="mt-1 text-xs text-slate-500">
+	                                  <div className="mt-1 text-xs text-slate-400">
 	                                    {game.status.shortDetail} · {game.displayTime}
 	                                  </div>
                                     <div
@@ -1085,7 +1087,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                                     : `${formatOdds(game.odds.awayMoneyline)} / ${formatOdds(game.odds.homeMoneyline)}`
                                   : "Pending"}
                               </div>
-                              <div className="mt-1 text-xs text-slate-500">
+                              <div className="mt-1 text-xs text-slate-400">
                                 {game.odds?.drawMoneyline !== undefined
                                   ? "Away / Draw / Home"
                                   : `${game.odds?.spread !== undefined ? `Spread ${game.odds.spread}` : "Moneyline"} · O/U ${game.odds?.overUnder ?? "Pending"}`}
@@ -1095,10 +1097,10 @@ Bet responsibly. This is model output, not a guarantee.`);
                               {prediction ? (
                                 <>
                                   <div className="font-medium text-white">{prediction.predictedWinner}</div>
-                                  <div className="mt-1 text-xs text-slate-500">{formatProb(prediction.confidence)} confidence</div>
+                                  <div className="mt-1 text-xs text-slate-400">{formatProb(prediction.confidence)} confidence</div>
                                 </>
                               ) : (
-                                <span className="text-slate-500">Waiting for line</span>
+                                <span className="text-slate-400">Waiting for line</span>
                               )}
                             </td>
                             <td className="px-5 py-4">
@@ -1107,7 +1109,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                                   {formatEdge(prediction.predictedWinnerEdge)}
                                 </span>
                               ) : (
-                                <span className="text-slate-500">Pending</span>
+                                <span className="text-slate-400">Pending</span>
                               )}
                             </td>
                             <td className="px-5 py-4">
@@ -1116,12 +1118,12 @@ Bet responsibly. This is model output, not a guarantee.`);
                                   <div className={prediction.executionAdjustedEdge >= 0 ? "font-semibold text-cyan-200" : "font-semibold text-red-300"}>
                                     {formatEdge(prediction.executionAdjustedEdge)}
                                   </div>
-                                  <div className="mt-1 text-xs text-slate-500">
+                                  <div className="mt-1 text-xs text-slate-400">
                                     {prediction.executionFactors.executionWindow} · {formatLineDelta(prediction.executionFactors.openToCurrentDelta)}
                                   </div>
                                 </div>
                               ) : (
-                                <span className="text-slate-500">No signal</span>
+                                <span className="text-slate-400">No signal</span>
                               )}
                             </td>
                             <td className="px-5 py-4">
@@ -1130,12 +1132,12 @@ Bet responsibly. This is model output, not a guarantee.`);
                                   <div className="font-semibold text-emerald-300">
                                     {formatMoney(prediction.valueBet.suggestedBet)}
                                   </div>
-                                  <div className="mt-1 text-xs text-slate-500">
+                                  <div className="mt-1 text-xs text-slate-400">
                                     {(prediction.valueBet.kellyPct * 100).toFixed(1)}% bankroll
                                   </div>
                                 </div>
                               ) : (
-                                <span className="text-slate-500">Pass</span>
+                                <span className="text-slate-400">Pass</span>
                               )}
                             </td>
                           </tr>
@@ -1160,7 +1162,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                         </span>
                         <span className="font-semibold text-white">{formatMoney(bankroll)}</span>
                       </div>
-                      <Slider value={[bankroll]} onValueChange={(v) => setBankroll(v[0])} min={100} max={10000} step={100} />
+                      <Slider aria-label="Bankroll" value={[bankroll]} onValueChange={(v) => setBankroll(v[0])} min={100} max={10000} step={100} />
                     </div>
                     <div>
                       <div className="mb-3 flex items-center justify-between text-sm">
@@ -1169,7 +1171,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                         </span>
                         <span className="font-semibold text-white">{minEdge}%</span>
                       </div>
-                      <Slider value={[minEdge]} onValueChange={(v) => setMinEdge(v[0])} min={0} max={10} step={0.5} />
+                      <Slider aria-label="Minimum edge" value={[minEdge]} onValueChange={(v) => setMinEdge(v[0])} min={0} max={10} step={0.5} />
                     </div>
                     <div>
                       <div className="mb-3 flex items-center justify-between text-sm">
@@ -1178,7 +1180,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                         </span>
                         <span className="font-semibold text-white">{(kellyFraction * 100).toFixed(0)}%</span>
                       </div>
-                      <Slider value={[kellyFraction]} onValueChange={(v) => setKellyFraction(v[0])} min={0.1} max={1} step={0.05} />
+                      <Slider aria-label="Kelly fraction" value={[kellyFraction]} onValueChange={(v) => setKellyFraction(v[0])} min={0.1} max={1} step={0.05} />
                     </div>
                   </div>
                 </div>
@@ -1245,7 +1247,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                 </div>
               ))}
             </div>
-            <p className="mt-6 max-w-3xl text-sm leading-6 text-slate-500">
+            <p className="mt-6 max-w-3xl text-sm leading-6 text-slate-400">
               Skip arb scanners and steam Discord. We price World Cup 1X2 with the draw, rank MUST / STRONG / WATCH / PASS
               off execution edge, and leave a ledger you can audit—not a tipster unit claim.
             </p>
@@ -1289,7 +1291,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                       <BarChart3 className="h-5 w-5 text-cyan-300" />
                       Backtest console
                     </h3>
-                    <p className="mt-1 text-xs text-slate-500">
+                    <p className="mt-1 text-xs text-slate-400">
                       Deterministic illustrative simulation — not historical results. The real settled record is the execution ledger.
                     </p>
                   </div>
@@ -1316,7 +1318,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                   </div>
                 ) : (
                   <div className="mt-6 rounded-lg border border-white/10 bg-slate-950/50 p-8 text-center">
-                    <LineChartIcon className="mx-auto h-10 w-10 text-slate-600" />
+                    <LineChartIcon className="mx-auto h-10 w-10 text-slate-400" />
                     <h4 className="mt-4 text-lg font-semibold text-white">Run the proof loop</h4>
                     <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
                       Generate a six-month simulation for the selected sport, then inspect profit, ROI, drawdown, and monthly movement.
@@ -1352,7 +1354,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                       </div>
                       <div className="min-w-0">
                         <div className="truncate text-base font-semibold text-white">{repo.name}</div>
-                        <div className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-500">{repo.role}</div>
+                        <div className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">{repo.role}</div>
                       </div>
                     </div>
                     <Badge
@@ -1409,7 +1411,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                       value={gameInput}
                       onChange={(event) => setGameInput(event.target.value)}
                       placeholder={`Try "${selectedSport === "nba" ? "Lakers vs Warriors" : selectedSport === "nfl" ? "Bills vs Chiefs" : selectedSport === "wc" ? "Brazil vs Morocco" : "Dodgers vs Padres"}"`}
-                      className="min-h-28 border-white/10 bg-slate-950/70 text-white placeholder:text-slate-600"
+                      className="min-h-28 border-white/10 bg-slate-950/70 text-white placeholder:text-slate-400"
                     />
                     <Button
                       onClick={analyzeBetting}
@@ -1464,7 +1466,7 @@ Bet responsibly. This is model output, not a guarantee.`);
               <div className="rounded-xl border border-white/10 bg-slate-950/70 p-6">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                    <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-400">
                       Matchup report
                     </div>
                     <h3 className="mt-1 text-xl font-semibold text-white">Model output</h3>
@@ -1697,7 +1699,7 @@ The report will show:
       </main>
 
       <footer className="border-t border-white/10 px-5 py-8">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 text-sm text-slate-500 md:flex-row md:items-center md:justify-between">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 text-sm text-slate-400 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="font-semibold text-slate-300">AI Advantage Sports</div>
             <div className="mt-1">AI-assisted sports intelligence. Bet responsibly.</div>

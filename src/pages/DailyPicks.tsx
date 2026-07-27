@@ -892,6 +892,7 @@ export default function DailyPicks() {
                 <span className="font-mono text-cyan-200">{minExecEdge.toFixed(0)}%</span>
               </div>
               <Slider
+                aria-label="Minimum execution edge"
                 className="mt-3"
                 min={0}
                 max={12}
