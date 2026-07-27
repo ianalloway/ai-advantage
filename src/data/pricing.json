@@ -1,0 +1,30 @@
+{
+  "currency": "USD",
+  "trialDays": 7,
+  "plans": [
+    {
+      "id": "free",
+      "name": "Free Desk",
+      "price": 0,
+      "cadence": "forever",
+      "badge": "Open",
+      "seoBlurb": "Live board, model leans, and the public proof ledger."
+    },
+    {
+      "id": "premium",
+      "name": "Pro Monthly",
+      "price": 15,
+      "cadence": "per month after 7-day free trial",
+      "badge": "Best fit",
+      "seoBlurb": "Deeper boards, historical ledgers, and workflow tools."
+    },
+    {
+      "id": "one-time",
+      "name": "Event Pass",
+      "price": 10,
+      "cadence": "One-time card or crypto unlock",
+      "badge": "72 hours",
+      "seoBlurb": "Unlock the full execution board for a single slate."
+    }
+  ]
+}
