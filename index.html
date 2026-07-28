@@ -29,7 +29,22 @@
     <link rel="manifest" href="/site.webmanifest" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!--
+      Fonts load off the critical path. A plain stylesheet link here blocks first
+      paint on a third-party round trip; `media="print"` lets the browser fetch it
+      at low priority, then `onload` promotes it to `all`. `display=swap` means
+      text is readable in the fallback face the whole time, and the <noscript>
+      copy keeps the webfont for script-less clients.
+    -->
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      media="print"
+      onload="this.media='all';this.onload=null;"
+    >
+    <noscript>
+      <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    </noscript>
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
@@ -48,14 +63,14 @@
           },
           {
             "@type": "Offer",
-            "name": "Event Pass",
-            "price": "10",
+            "name": "Pro Monthly",
+            "price": "15",
             "priceCurrency": "USD"
           },
           {
             "@type": "Offer",
-            "name": "Pro Monthly",
-            "price": "19",
+            "name": "Event Pass",
+            "price": "10",
             "priceCurrency": "USD"
           }
         ]

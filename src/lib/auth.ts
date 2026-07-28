@@ -1,3 +1,7 @@
+// Type-only: erased at compile time, so this does not reintroduce the runtime
+// auth.ts -> stripe.ts edge that moving signOutAccessSession here removed.
+import type { AccessState } from "@/lib/stripe";
+
 export interface SiteUser {
   id: string;
   email: string;

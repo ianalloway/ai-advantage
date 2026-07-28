@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useDocumentMeta } from "@/lib/useDocumentMeta";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -128,6 +129,13 @@ function HistoryTable({ rows }: { rows: HistoricalExecutionLedgerEntry[] }) {
 }
 
 export default function Leaderboard() {
+  useDocumentMeta({
+    title: "Proof Ledger — AI Advantage Sports",
+    description:
+      "The public settled record: graded picks, closing-line value, and calibration history for every recommendation the desk has made.",
+    canonicalPath: "/leaderboard",
+  });
+
   const [access, setAccess] = useState(getAccessState());
   const [games, setGames] = useState<LiveMarketGame[]>([]);
   const [isLoading, setIsLoading] = useState(true);

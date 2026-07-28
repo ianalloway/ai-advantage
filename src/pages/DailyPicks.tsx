@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from "react";
+import { useDocumentMeta } from "@/lib/useDocumentMeta";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -640,6 +641,13 @@ function PickCard({
 }
 
 export default function DailyPicks() {
+  useDocumentMeta({
+    title: "Daily Picks — AI Advantage Sports",
+    description:
+      "The full execution board: every qualified play with model probability, execution-adjusted edge, recommended stake, and entry window.",
+    canonicalPath: "/daily-picks",
+  });
+
   const [access, setAccess] = useState(getAccessState());
   const [cryptoAccount, setCryptoAccount] = useState(getCurrentCryptoAccount());
   const [siteUser, setSiteUser] = useState<SiteUser | null>(getCurrentSiteUser());
@@ -893,6 +901,8 @@ export default function DailyPicks() {
               </div>
               <Slider
                 className="mt-3"
+                aria-label="Minimum execution edge"
+                valueText={`${minExecEdge.toFixed(0)}%`}
                 min={0}
                 max={12}
                 step={1}
