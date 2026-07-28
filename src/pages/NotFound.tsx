@@ -1,7 +1,7 @@
-import { useEffect } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ArrowLeft, Compass } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useDocumentMeta } from "@/lib/useDocumentMeta";
 
 const SUGGESTIONS = [
   { to: "/", label: "Live desk", detail: "Current slate, model edge, and Kelly sizing" },
@@ -17,30 +17,12 @@ const SUGGESTIONS = [
 export default function NotFound() {
   const location = useLocation();
 
-  useEffect(() => {
-    // The SPA fallback serves this at a 200, so the status code can't say
-    // "gone". A robots meta tag is what actually keeps bad URLs out of the index.
-    //
-    // index.html ships a static `robots: index,follow`. Appending a second meta
-    // leaves that permissive one first in the document, so retarget the existing
-    // tag and restore it on unmount rather than adding a competing one.
-    const existing = document.head.querySelector<HTMLMetaElement>('meta[name="robots"]');
-    const meta = existing ?? document.createElement("meta");
-    const previousContent = existing?.content ?? null;
-
-    meta.name = "robots";
-    meta.content = "noindex,follow";
-    if (!existing) document.head.appendChild(meta);
-
-    const previousTitle = document.title;
-    document.title = "Page not found — AI Advantage Sports";
-
-    return () => {
-      if (previousContent === null) meta.remove();
-      else meta.content = previousContent;
-      document.title = previousTitle;
-    };
-  }, []);
+  // The SPA fallback serves this at a 200, so the status code can't say "gone".
+  // The robots tag is what actually keeps mistyped URLs out of the index.
+  useDocumentMeta({
+    title: "Page not found — AI Advantage Sports",
+    robots: "noindex,follow",
+  });
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#05070d] px-5 py-16 text-slate-100">
