@@ -136,7 +136,8 @@ function cleanupCheckoutParams(url: URL) {
   window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
 }
 
-function emitAccessChange(): void {
+/** @deprecated Import from `src/lib/auth.ts` to avoid circular auth↔stripe dependency. */
+export function emitAccessChange(): void {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new CustomEvent(ACCESS_CHANGE_EVENT));
 }
@@ -263,6 +264,7 @@ export function activateAccess(access: AccessState): void {
   emitAccessChange();
 }
 
+/** @deprecated Import from `src/lib/auth.ts` to avoid circular auth↔stripe dependency. */
 export function clearAccess(): void {
   if (typeof window === "undefined") return;
   serverAccess = FREE_ACCESS;
@@ -406,6 +408,7 @@ export function saveCryptoAccessAccount(input: {
   return account;
 }
 
+/** @deprecated Export moved to `src/lib/auth.ts` (breaks circular auth↔stripe import). */
 export function signOutAccessSession(): void {
   if (typeof window === "undefined") return;
   void fetch("/api/entitlements/me", { method: "POST", credentials: "include" }).catch(() => undefined);
