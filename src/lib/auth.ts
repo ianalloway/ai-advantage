@@ -21,36 +21,34 @@ interface AuthResponse {
   user?: SiteUser | null;
 }
 
+// Access-state keys — crypto access is cleared alongside the auth session so
+// shared devices don't retain entitlement leaks. The names mirror the keys in
+// src/lib/stripe.ts (defined there as STORAGE_KEY, LEGACY_STORAGE_KEY,
+// CRYPTO_SESSION_KEY) to prevent a silent mismatch when the sign-out flows
+// clear the same local storage entries from two different modules.
+import { type AccessState } from "@/lib/stripe";
+
+const ACCESS_STORAGE_KEY = "ai_advantage_access_v2";
+const STRIPE_CRYPTO_SESSION_KEY = "ai_advantage_crypto_session_v1";
+
 const FREE_ACCESS: AccessState = {
   tier: "free",
   source: "manual",
   label: "Free access",
 };
 
-// Access-state keys — crypto access is cleared alongside the auth session so
-// shared devices don't retain entitlement leaks. These mirror the keys in
-// src/lib/stripe.ts and should be unified in a future "access.ts" module.
-const ACCESS_STORAGE_KEY = "ai_advantage_access_v2";
-const STRIPE_LEGACY_STORAGE_KEY = "ai_advantage_premium";
-const STRIPE_CRYPTO_SESSION_KEY = "ai_advantage_crypto_session_v1";
-const ACCESS_STATE_CHANGE_EVENT = "ai-advantage-access-changed";
-
-// Un-hydrated session — server entitlement must be confirmed before any
-// paid feature unlocks.
-let accessHydrated = false;
-let serverAccess: AccessState = FREE_ACCESS;
-
 function emitAccessChange(): void {
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent(ACCESS_STATE_CHANGE_EVENT));
+  // Mirrors the event emitted by src/lib/stripe.ts so that in-memory callers
+  // do not depend on a circular auth↔stripe import.
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("ai-advantage-access-changed"));
+  }
 }
 
 function clearAccess(): void {
   if (typeof window === "undefined") return;
-  serverAccess = FREE_ACCESS;
-  accessHydrated = true;
   localStorage.removeItem(ACCESS_STORAGE_KEY);
-  localStorage.removeItem(STRIPE_LEGACY_STORAGE_KEY);
+  localStorage.removeItem("ai_advantage_premium");  // mirrors LEGACY_STORAGE_KEY in stripe.ts
   emitAccessChange();
 }
 
