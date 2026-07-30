@@ -1,6 +1,3 @@
-// Type-only: erased at compile time, so this does not reintroduce the runtime
-// auth.ts -> stripe.ts edge that moving signOutAccessSession here removed.
-import type { AccessState } from "@/lib/stripe";
 
 export interface SiteUser {
   id: string;
@@ -26,16 +23,9 @@ interface AuthResponse {
 // src/lib/stripe.ts (defined there as STORAGE_KEY, LEGACY_STORAGE_KEY,
 // CRYPTO_SESSION_KEY) to prevent a silent mismatch when the sign-out flows
 // clear the same local storage entries from two different modules.
-import { type AccessState } from "@/lib/stripe";
 
 const ACCESS_STORAGE_KEY = "ai_advantage_access_v2";
 const STRIPE_CRYPTO_SESSION_KEY = "ai_advantage_crypto_session_v1";
-
-const FREE_ACCESS: AccessState = {
-  tier: "free",
-  source: "manual",
-  label: "Free access",
-};
 
 function emitAccessChange(): void {
   // Mirrors the event emitted by src/lib/stripe.ts so that in-memory callers
