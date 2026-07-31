@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import DeskNav from "@/components/DeskNav";
 import { useDocumentMeta } from "@/lib/useDocumentMeta";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -359,10 +360,7 @@ export default function Leaderboard() {
               Back
             </Link>
           </Button>
-          <div className="flex items-center gap-2 text-sm font-semibold text-white">
-            <ShieldCheck className="h-5 w-5 text-brand-300" />
-            Proof Ledger
-          </div>
+          <DeskNav current="/leaderboard" />
           <Button
             size="sm"
             variant="outline"

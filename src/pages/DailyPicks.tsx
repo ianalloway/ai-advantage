@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from "react";
+import DeskNav from "@/components/DeskNav";
 import { useDocumentMeta } from "@/lib/useDocumentMeta";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +18,6 @@ import {
   RefreshCw,
   Star,
   Target,
-  Trophy,
   User,
   Zap,
 } from "lucide-react";
@@ -848,10 +848,7 @@ export default function DailyPicks() {
               Back
             </Link>
           </Button>
-          <div className="flex items-center gap-2 text-sm font-semibold text-white">
-            <Trophy className="h-5 w-5 text-yellow-300" />
-            Daily Picks
-          </div>
+          <DeskNav current="/daily-picks" />
           <div className="w-16" />
         </div>
 
