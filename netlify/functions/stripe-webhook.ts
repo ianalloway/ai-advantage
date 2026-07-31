@@ -15,7 +15,7 @@ type NetlifyEvent = {
   isBase64Encoded?: boolean;
 };
 
-const API_VERSION = "2026-02-25.clover";
+const API_VERSION = "2026-06-24.dahlia";
 
 let stripeClient: Stripe | null = null;
 
@@ -58,7 +58,11 @@ async function customerEmail(stripe: Stripe, customerId?: string | null) {
   if (!customerId) return undefined;
   try {
     const customer = await stripe.customers.retrieve(customerId);
-    return !customer.deleted ? customer.email ?? undefined : undefined;
+    // retrieve() returns Response<Customer | DeletedCustomer>, and the
+    // `lastResponse` intersection stops `deleted` from narrowing the union.
+    // A property check does narrow it: DeletedCustomer carries no email.
+    if (!("email" in customer)) return undefined;
+    return customer.email ?? undefined;
   } catch {
     return undefined;
   }

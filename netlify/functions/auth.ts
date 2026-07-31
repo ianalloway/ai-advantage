@@ -391,7 +391,7 @@ async function getEventually<T>(store: AuthStore, key: string) {
 async function getFirstEventually<T>(store: AuthStore, keys: string[]) {
   for (let attempt = 0; attempt < STORE_READ_ATTEMPTS; attempt += 1) {
     const values = await Promise.all(keys.map((key) => store.get<T>(key)));
-    const value = values.find((candidate): candidate is T => candidate !== null);
+    const value = values.find((candidate): candidate is Awaited<T> => candidate !== null);
     if (value !== undefined) return value;
     if (store.consistentReads) return null;
     if (attempt < STORE_READ_ATTEMPTS - 1) {
