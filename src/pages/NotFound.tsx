@@ -52,9 +52,9 @@ export default function NotFound() {
             >
               <span>
                 <span className="block text-sm font-semibold text-white">{item.label}</span>
-                <span className="mt-0.5 block text-xs text-slate-500">{item.detail}</span>
+                <span className="mt-0.5 block text-xs text-slate-400">{item.detail}</span>
               </span>
-              <span aria-hidden="true" className="text-slate-600 transition-colors group-hover:text-[#b9ff55]">
+              <span aria-hidden="true" className="text-slate-400 transition-colors group-hover:text-[#b9ff55]">
                 &rarr;
               </span>
             </Link>

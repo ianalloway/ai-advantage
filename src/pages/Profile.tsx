@@ -170,7 +170,7 @@ export default function Profile() {
             Create or log into a site account first. Once signed in, this page becomes your saved profile hub for username, bankroll, sports preferences, and desk settings.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <Button asChild className="bg-brand-600 text-white hover:bg-brand-700">
+            <Button asChild className="bg-brand-700 text-white hover:bg-brand-800">
               <Link to="/signup">Create account</Link>
             </Button>
             <Button asChild variant="outline" className="border-white/10 text-zinc-200 hover:bg-white/[0.06]">
@@ -413,7 +413,7 @@ export default function Profile() {
             </div>
 
             <div className="flex flex-wrap gap-3">
-              <Button className="bg-brand-600 text-white hover:bg-brand-700" onClick={handleSave}>
+              <Button className="bg-brand-700 text-white hover:bg-brand-800" onClick={handleSave}>
                 <Save className="mr-2 h-4 w-4" />
                 Save profile
               </Button>

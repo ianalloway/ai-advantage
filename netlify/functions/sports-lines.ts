@@ -500,7 +500,11 @@ function getOddsCacheStore(blobsReady: boolean) {
   }
 }
 
-function isFresh(entry: OddsCacheEntry | null | undefined): entry is OddsCacheEntry {
+// Deliberately not a type predicate. Freshness is a property of the entry's
+// value, not its type, so `entry is OddsCacheEntry` made the false branch claim
+// the entry was absent — which erased the stale-cache fallback below, the very
+// path that keeps the desk alive when the provider quota is exhausted.
+function isFresh(entry: OddsCacheEntry | null | undefined): boolean {
   return Boolean(entry && Date.now() - entry.fetchedAt < ODDS_CACHE_MINUTES * 60_000);
 }
 
@@ -529,8 +533,8 @@ async function fetchOddsApiMarkets(sport: Sport, blobsReady: boolean) {
     };
   }
 
-  const memoryHit = oddsMemoryCache.get(sport);
-  if (isFresh(memoryHit)) {
+  const memoryHit = oddsMemoryCache.get(sport) ?? null;
+  if (memoryHit && isFresh(memoryHit)) {
     return { configured: true, markets: toMarkets(memoryHit.events), cache: cacheMeta(memoryHit), error: null };
   }
 
@@ -539,7 +543,7 @@ async function fetchOddsApiMarkets(sport: Sport, blobsReady: boolean) {
   if (cacheStore) {
     try {
       const cached = (await cacheStore.get(cacheKey, { type: "json" })) as OddsCacheEntry | null;
-      if (isFresh(cached)) {
+      if (cached && isFresh(cached)) {
         oddsMemoryCache.set(sport, cached);
         return { configured: true, markets: toMarkets(cached.events), cache: cacheMeta(cached), error: null };
       }
@@ -571,7 +575,7 @@ async function fetchOddsApiMarkets(sport: Sport, blobsReady: boolean) {
     return { configured: true, markets: toMarkets(events), cache: cacheMeta(entry), error: null };
   } catch (error) {
     // Quota exhaustion or upstream failure: serve stale cache if any exists.
-    const stale = memoryHit ?? null;
+    const stale = memoryHit;
     const message = error instanceof Error ? error.message : "Unable to fetch odds provider.";
     if (stale) {
       return { configured: true, markets: toMarkets(stale.events), cache: cacheMeta(stale, true), error: null };

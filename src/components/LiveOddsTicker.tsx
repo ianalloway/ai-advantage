@@ -33,7 +33,7 @@ function OddsChip({ game }: { game: LiveMarketGame }) {
       }`}
     >
       <span className="font-semibold tracking-[0.16em] text-[#b9ff55]">{game.sportLabel}</span>
-      <span className="text-slate-600">{game.status.state === "in" ? game.status.shortDetail : game.displayTime}</span>
+      <span className="text-slate-400">{game.status.state === "in" ? game.status.shortDetail : game.displayTime}</span>
 
       <div className="flex items-center gap-1.5">
         <span className="text-slate-300">{game.awayAbbr}</span>
@@ -41,7 +41,7 @@ function OddsChip({ game }: { game: LiveMarketGame }) {
         <span className="font-mono tabular-nums text-cyan-200">{formatOdds(game.odds.awayMoneyline)}</span>
       </div>
 
-      <div className="flex items-center gap-2 text-slate-600">
+      <div className="flex items-center gap-2 text-slate-400">
         {game.odds.drawMoneyline !== undefined ? (
           <span>Draw <span className="font-mono tabular-nums text-slate-400">{formatOdds(game.odds.drawMoneyline)}</span></span>
         ) : (
@@ -118,12 +118,12 @@ export default function LiveOddsTicker({ speed = 40, pauseOnHover = true }: Live
       </div>
 
       {hasError ? (
-        <div className="flex items-center gap-2 px-4 text-[10px] text-slate-500">
+        <div className="flex items-center gap-2 px-4 text-[10px] text-slate-400">
           <AlertCircle className="h-3.5 w-3.5" />
           Live odds temporarily unavailable
         </div>
       ) : games.length === 0 ? (
-        <div className="px-4 text-[10px] uppercase tracking-[0.12em] text-slate-500">
+        <div className="px-4 text-[10px] uppercase tracking-[0.12em] text-slate-400">
           Syncing the current market board
         </div>
       ) : (
@@ -145,7 +145,7 @@ export default function LiveOddsTicker({ speed = 40, pauseOnHover = true }: Live
         </div>
       )}
 
-      <div className="relative z-10 hidden h-full shrink-0 items-center border-l border-white/10 bg-[#0b1510] px-5 text-[9px] uppercase tracking-[0.12em] text-slate-600 md:flex">
+      <div className="relative z-10 hidden h-full shrink-0 items-center border-l border-white/10 bg-[#0b1510] px-5 text-[9px] uppercase tracking-[0.12em] text-slate-400 md:flex">
         {hasError
           ? "Feed offline"
           : updatedAt

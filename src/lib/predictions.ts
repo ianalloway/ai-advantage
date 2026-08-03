@@ -604,8 +604,14 @@ export async function fetchLiveOdds(sport: Sport, apiKey: string): Promise<LiveO
       throw new Error(`API error: ${response.status}`);
     }
     
-    const data = await response.json();
-    
+    // The DOM lib types response.json() as `any`, which hid the fact that this
+    // maps an unvalidated provider payload. An error object here would throw a
+    // TypeError rather than fall through to the catch below.
+    const data: unknown = await response.json();
+    if (!Array.isArray(data)) {
+      throw new Error("Odds provider returned an unexpected payload.");
+    }
+
     return data.map((game: {
       id: string;
       home_team: string;

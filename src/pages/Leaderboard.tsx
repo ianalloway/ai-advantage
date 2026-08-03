@@ -514,7 +514,7 @@ export default function Leaderboard() {
                 key={sport}
                 size="sm"
                 variant={sportFilter === sport ? "default" : "outline"}
-                className={sportFilter === sport ? "bg-brand-600 text-white" : "border-white/10 text-zinc-400"}
+                className={sportFilter === sport ? "bg-brand-700 text-white" : "border-white/10 text-zinc-400"}
                 onClick={() => setSportFilter(sport)}
               >
                 {sport}
@@ -664,7 +664,7 @@ export default function Leaderboard() {
                   <p className="max-w-xl text-sm leading-6 text-zinc-300">
                     The live board stays public, but the historical execution archive, snapshot counts, and full proof trail are part of the monthly terminal.
                   </p>
-                  <Button className="bg-brand-600 text-white hover:bg-brand-700" onClick={() => void redirectToCheckout("premium")}>
+                  <Button className="bg-brand-700 text-white hover:bg-brand-800" onClick={() => void redirectToCheckout("premium")}>
                     <Crown className="mr-2 h-4 w-4 text-yellow-300" />
                     Unlock historical ledger
                   </Button>

@@ -57,7 +57,7 @@ export default function MobileNav({
           </DialogPrimitive.Description>
 
           <div className="flex items-center justify-between gap-4">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Menu</div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Menu</div>
             <DialogPrimitive.Close asChild>
               <button
                 type="button"

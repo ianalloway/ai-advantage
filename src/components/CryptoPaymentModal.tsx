@@ -230,7 +230,7 @@ export default function CryptoPaymentModal({
             </div>
 
             <Button
-              className="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold h-11"
+              className="w-full bg-brand-700 hover:bg-brand-800 text-white font-semibold h-11"
               onClick={() => setStep("pay")}
             >
               <Zap className="w-4 h-4 mr-2" />
@@ -294,7 +294,7 @@ export default function CryptoPaymentModal({
             </p>
 
             <Button
-              className="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold h-11"
+              className="w-full bg-brand-700 hover:bg-brand-800 text-white font-semibold h-11"
               onClick={() => setStep("verify")}
             >
               I've sent the payment →
@@ -360,7 +360,7 @@ export default function CryptoPaymentModal({
             </div>
 
             <Button
-              className="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold h-11"
+              className="w-full bg-brand-700 hover:bg-brand-800 text-white font-semibold h-11"
               onClick={verifyTransaction}
               disabled={isVerifying}
             >
@@ -398,7 +398,7 @@ export default function CryptoPaymentModal({
               </p>
             </div>
             <Button
-              className="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold h-11"
+              className="w-full bg-brand-700 hover:bg-brand-800 text-white font-semibold h-11"
               onClick={handleClose}
             >
               Start Exploring →

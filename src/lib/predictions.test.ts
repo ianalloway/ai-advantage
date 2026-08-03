@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   americanToDecimal,
   americanToImpliedProb,
@@ -9,6 +9,7 @@ import {
   getWorldCupRating,
   generateBacktestData,
   calculateBacktestSummary,
+  fetchLiveOdds,
 } from "./predictions";
 
 describe("odds conversions", () => {
@@ -138,5 +139,59 @@ describe("backtest simulation", () => {
       calculateBacktestSummary(generateBacktestData(sport, 6)),
     );
     expect(sports.some((summary) => summary.totalProfit < 0)).toBe(true);
+  });
+});
+
+describe("fetchLiveOdds payload handling", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const respond = (body: unknown) =>
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, status: 200, json: async () => body })),
+    );
+
+  it("maps a well-formed array payload", async () => {
+    respond([
+      {
+        id: "g1",
+        home_team: "Los Angeles Lakers",
+        away_team: "Boston Celtics",
+        commence_time: "2026-01-01T00:00:00Z",
+        bookmakers: [
+          {
+            key: "draftkings",
+            markets: [
+              {
+                key: "h2h",
+                outcomes: [
+                  { name: "Los Angeles Lakers", price: -130 },
+                  { name: "Boston Celtics", price: 110 },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+
+    const games = await fetchLiveOdds("nba", "test-key");
+    expect(games).toHaveLength(1);
+    expect(games[0].homeOdds).toBe(-130);
+    expect(games[0].bookmaker).toBe("draftkings");
+  });
+
+  // response.json() is typed `any` under the DOM lib, so a non-array payload
+  // used to reach .map() and throw a TypeError instead of degrading to [].
+  it("returns an empty slate when the provider sends a non-array payload", async () => {
+    respond({ message: "quota exceeded" });
+    await expect(fetchLiveOdds("nba", "test-key")).resolves.toEqual([]);
+  });
+
+  it("returns an empty slate when the provider sends null", async () => {
+    respond(null);
+    await expect(fetchLiveOdds("nba", "test-key")).resolves.toEqual([]);
   });
 });

@@ -220,6 +220,7 @@ export default function KellySimulator() {
                 </div>
                 <div className="mt-3 flex items-center gap-3">
                   <Slider
+                    aria-label="Kelly fraction"
                     min={0.1}
                     max={1.0}
                     step={0.05}

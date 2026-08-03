@@ -312,12 +312,27 @@ async function getRecords(store: EntitlementStore, ids: string[]) {
   return records.filter(isRecord);
 }
 
-export async function upsertEntitlement(store: EntitlementStore, input: Omit<EntitlementRecord, "updatedAt">) {
+export async function upsertEntitlement(
+  store: EntitlementStore,
+  input: Omit<EntitlementRecord, "updatedAt">,
+  options?: { keepActive?: boolean },
+) {
   const now = new Date().toISOString();
   const existing = await getRecord(store, input.id);
+  // "pending" means "not confirmed yet", never "revoked" — real revocation goes
+  // through cancelled/expired/revoked. Stripe neither guarantees event order nor
+  // delivers exactly once, and this webhook returns 500 on store errors, so an
+  // unpaid checkout.session.completed can be retried *after*
+  // async_payment_succeeded already granted access. Letting that replay win
+  // would revoke a paying customer's access.
+  const status =
+    options?.keepActive && input.status === "pending" && existing?.status === "active"
+      ? "active"
+      : input.status;
   const record: EntitlementRecord = {
     ...existing,
     ...input,
+    status,
     email: input.email ? normalizeEmail(input.email) : existing?.email,
     walletAddress: input.walletAddress ? normalizeWallet(input.walletAddress) : existing?.walletAddress,
     cryptoTxHash: input.cryptoTxHash ? normalizeHash(input.cryptoTxHash) : existing?.cryptoTxHash,
@@ -494,7 +509,7 @@ export async function upsertStripeCheckoutSessionEntitlement(
       unlock_type: session.metadata?.unlock_type ?? "",
       plan_label: session.metadata?.plan_label ?? label,
     },
-  });
+  }, { keepActive: true });
 }
 
 export async function upsertStripeSubscriptionEntitlement(
