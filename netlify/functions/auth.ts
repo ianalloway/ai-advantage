@@ -48,7 +48,7 @@ const PASSWORD_KEY_LENGTH = 32;
 const PASSWORD_DIGEST = "sha256";
 const STORE_READ_ATTEMPTS = 8;
 const STORE_READ_RETRY_MS = 250;
-const LOCAL_AUTH_SECRET = "ai-advantage-local-development-auth-secret";
+export const LOCAL_AUTH_SECRET = "ai-advantage-local-development-auth-secret";
 
 let redisClient: Redis | null | undefined;
 let activeStoreMode = "none";
@@ -217,11 +217,11 @@ function getAuthStore(event: NetlifyEvent): AuthStore | null {
   };
 }
 
-function normalizeEmail(value: string) {
+export function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
 }
 
-function normalizeUsername(value: string) {
+export function normalizeUsername(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, "");
 }
 
@@ -314,7 +314,7 @@ function clearSessionCookie(event: NetlifyEvent) {
   return parts.join("; ");
 }
 
-function validationError(input: { email: string; username: string; password: string }) {
+export function validationError(input: { email: string; username: string; password: string }) {
   if (!input.email.includes("@")) return "Enter a valid email address.";
   if (!/^[a-zA-Z0-9_-]{3,20}$/.test(input.username)) {
     return "Username must be 3-20 characters using letters, numbers, underscores, or hyphens.";
@@ -323,9 +323,30 @@ function validationError(input: { email: string; username: string; password: str
   return null;
 }
 
+let warnedAboutBorrowedSecret = false;
+
 function getAuthSecret() {
-  const secret = process.env.AUTH_SECRET || process.env.SESSION_SECRET || process.env.UPSTASH_REDIS_REST_TOKEN;
+  const secret = process.env.AUTH_SECRET || process.env.SESSION_SECRET;
   if (secret) return secret;
+
+  // The secret is a pepper mixed into every password hash, and only the
+  // local-dev secret has a migration path in verifyPassword. Borrowing the
+  // Upstash token means rotating that database credential — an ordinary
+  // operation — silently invalidates every stored password and locks out every
+  // account, irreversibly. Kept as a fallback so deployments already relying on
+  // it keep working, but it must not stay silent.
+  const borrowed = process.env.UPSTASH_REDIS_REST_TOKEN;
+  if (borrowed) {
+    if (!warnedAboutBorrowedSecret) {
+      warnedAboutBorrowedSecret = true;
+      console.warn(
+        "[auth] AUTH_SECRET is not set; falling back to UPSTASH_REDIS_REST_TOKEN to hash passwords. " +
+          "Rotating that token will lock out every account. Set AUTH_SECRET to a dedicated value.",
+      );
+    }
+    return borrowed;
+  }
+
   return canUseLocalAuthStore() ? LOCAL_AUTH_SECRET : null;
 }
 
@@ -340,7 +361,7 @@ async function hashPasswordWith(secret: string, password: string, salt: string) 
   return derived.toString("hex");
 }
 
-async function hashPassword(password: string, salt: string) {
+export async function hashPassword(password: string, salt: string) {
   const secret = getAuthSecret();
   if (!secret) {
     throw new Error("AUTH_SECRET or SESSION_SECRET must be configured for production auth.");
@@ -355,7 +376,7 @@ function hashesMatch(storedHash: string, candidateHash: string) {
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
-async function verifyPassword(password: string, user: StoredSiteUser) {
+export async function verifyPassword(password: string, user: StoredSiteUser) {
   const nextHash = await hashPassword(password, user.passwordSalt);
   if (hashesMatch(user.passwordHash, nextHash)) {
     return { ok: true, needsRehash: false };
