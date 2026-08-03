@@ -899,7 +899,6 @@ export default function DailyPicks() {
               <Slider
                 aria-label="Minimum execution edge"
                 className="mt-3"
-                aria-label="Minimum execution edge"
                 valueText={`${minExecEdge.toFixed(0)}%`}
                 min={0}
                 max={12}
