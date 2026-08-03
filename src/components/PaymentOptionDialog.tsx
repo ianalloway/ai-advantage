@@ -1,6 +1,10 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { CreditCard, Coins, ShieldCheck, Flame } from "lucide-react";
+import { formatPlanPrice, getPlan, TRIAL_DAYS } from "@/lib/pricing";
+
+const premiumPlan = getPlan("premium");
+const eventPlan = getPlan("one-time");
 
 interface PaymentOptionDialogProps {
   open: boolean;
@@ -42,14 +46,14 @@ export default function PaymentOptionDialog({
                 <CreditCard className="h-5 w-5" />
               </div>
               <div>
-                <div className="text-sm font-semibold">Start 7-day Pro trial</div>
-                <div className="text-xs font-normal text-zinc-400">Then $15/mo — cancel in the portal anytime</div>
+                <div className="text-sm font-semibold">Start {TRIAL_DAYS}-day Pro trial</div>
+                <div className="text-xs font-normal text-zinc-400">Then {formatPlanPrice(premiumPlan)}/mo — cancel in the portal anytime</div>
               </div>
             </Button>
           ) : null}
 
           <div className="flex items-center justify-center gap-2 rounded-2xl border border-white/5 bg-white/[0.02] p-4 text-center">
-            <div className="text-3xl font-extrabold text-white">$10</div>
+            <div className="text-3xl font-extrabold text-white">{formatPlanPrice(eventPlan)}</div>
             <div className="text-xs text-zinc-400">One-time / 72-hour pass</div>
           </div>
 
@@ -63,7 +67,7 @@ export default function PaymentOptionDialog({
               </div>
               <div>
                 <div className="text-sm font-semibold">Event pass with card</div>
-                <div className="text-xs font-normal text-zinc-400">Secure Stripe checkout · $10</div>
+                <div className="text-xs font-normal text-zinc-400">Secure Stripe checkout · {formatPlanPrice(eventPlan)}</div>
               </div>
             </Button>
 

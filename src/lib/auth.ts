@@ -1,3 +1,4 @@
+
 export interface SiteUser {
   id: string;
   email: string;
@@ -16,6 +17,51 @@ interface AuthResponse {
   message?: string;
   user?: SiteUser | null;
 }
+
+// Access-state keys — crypto access is cleared alongside the auth session so
+// shared devices don't retain entitlement leaks. The names mirror the keys in
+// src/lib/stripe.ts (defined there as STORAGE_KEY, LEGACY_STORAGE_KEY,
+// CRYPTO_SESSION_KEY) to prevent a silent mismatch when the sign-out flows
+// clear the same local storage entries from two different modules.
+
+const ACCESS_STORAGE_KEY = "ai_advantage_access_v2";
+const STRIPE_CRYPTO_SESSION_KEY = "ai_advantage_crypto_session_v1";
+
+function emitAccessChange(): void {
+  // Mirrors the event emitted by src/lib/stripe.ts so that in-memory callers
+  // do not depend on a circular auth↔stripe import.
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("ai-advantage-access-changed"));
+  }
+}
+
+function clearAccess(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(ACCESS_STORAGE_KEY);
+  localStorage.removeItem("ai_advantage_premium");  // mirrors LEGACY_STORAGE_KEY in stripe.ts
+  emitAccessChange();
+}
+
+// Deprecated: move sign-out handling here to break the circular dependency
+// between auth.ts ↔ stripe.ts (stripe.ts dynamically imports this at logout
+// time, but is already eagerly bundled by App.tsx and six page components,
+// making the dynamic import purely cosmetic).
+export function signOutAccessSession(): void {
+  if (typeof window === "undefined") return;
+  void fetch("/api/entitlements/me", { method: "POST", credentials: "include" }).catch(() => undefined);
+  localStorage.removeItem(STRIPE_CRYPTO_SESSION_KEY);
+  clearAccess();
+}
+
+// Back-compat re-exports consumed by existing page-level imports.
+// Migrate callers to `auth.ts` directly; these aliases will be removed in v2.0.
+export { activateAccess, getAccessState, isAccessHydrated, syncEntitlementAccess } from "@/lib/stripe";
+/** @deprecated `clearAccess` lives in `src/lib/stripe.ts`; import from there or migrate to `src/lib/access.ts`. */
+export { clearAccess } from "@/lib/stripe";
+/** @deprecated `emitAccessChange` lives in `src/lib/stripe.ts`; import from there. */
+export { emitAccessChange } from "@/lib/stripe";
+
+// ——— Auth state ———————————————————————————————————————————————————————————————
 
 const AUTH_CHANGE_EVENT = "ai-advantage-auth-changed";
 
@@ -295,13 +341,9 @@ export function signOutSiteUser(): void {
 
   void requestAuth("logout", { method: "POST", body: "{}" }).catch(() => undefined);
   setCachedUser(null);
-  // Paid access is a separate cookie/local cache — clear it on account logout so
-  // shared devices don't keep the premium board unlocked.
-  void import("@/lib/stripe")
-    .then(({ signOutAccessSession }) => {
-      signOutAccessSession();
-    })
-    .catch(() => undefined);
+  // Clear any lingering paid-access session so shared devices don't keep
+  // premium entitlements unlocked after the auth session ends.
+  signOutAccessSession();
   emitAuthChange();
 }
 

@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from "react";
+import DeskNav from "@/components/DeskNav";
+import { useDocumentMeta } from "@/lib/useDocumentMeta";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +18,6 @@ import {
   RefreshCw,
   Star,
   Target,
-  Trophy,
   User,
   Zap,
 } from "lucide-react";
@@ -640,6 +641,13 @@ function PickCard({
 }
 
 export default function DailyPicks() {
+  useDocumentMeta({
+    title: "Daily Picks — AI Advantage Sports",
+    description:
+      "The full execution board: every qualified play with model probability, execution-adjusted edge, recommended stake, and entry window.",
+    canonicalPath: "/daily-picks",
+  });
+
   const [access, setAccess] = useState(getAccessState());
   const [cryptoAccount, setCryptoAccount] = useState(getCurrentCryptoAccount());
   const [siteUser, setSiteUser] = useState<SiteUser | null>(getCurrentSiteUser());
@@ -840,10 +848,7 @@ export default function DailyPicks() {
               Back
             </Link>
           </Button>
-          <div className="flex items-center gap-2 text-sm font-semibold text-white">
-            <Trophy className="h-5 w-5 text-yellow-300" />
-            Daily Picks
-          </div>
+          <DeskNav current="/daily-picks" />
           <div className="w-16" />
         </div>
 
@@ -894,6 +899,8 @@ export default function DailyPicks() {
               <Slider
                 aria-label="Minimum execution edge"
                 className="mt-3"
+                aria-label="Minimum execution edge"
+                valueText={`${minExecEdge.toFixed(0)}%`}
                 min={0}
                 max={12}
                 step={1}

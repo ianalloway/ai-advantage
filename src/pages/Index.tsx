@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { useDocumentMeta } from "@/lib/useDocumentMeta";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -61,13 +62,26 @@ import {
   signOutAccessSession,
   type BillingStatus,
 } from "@/lib/stripe";
+import { formatPlanPrice, getPlan, TRIAL_DAYS } from "@/lib/pricing";
 import CryptoPaymentModal, { type UnlockType } from "@/components/CryptoPaymentModal";
 import AccessSessionDialog from "@/components/AccessSessionDialog";
 import SubstackEmbed from "@/components/SubstackEmbed";
+import MobileNav from "@/components/MobileNav";
 import { createExecutionBoardEntry } from "@/lib/executionBoard";
 const BacktestChart = lazy(() => import("@/components/BacktestChart"));
 
 const ETH_DONATION_ADDRESS = "0x6f278ce76ba5ed31fd9be646d074863e126836e9";
+
+const NAV_LINKS = [
+  { label: "Live desk", href: "#live-desk" },
+  { label: "Proof ledger", href: "#proof" },
+  { label: "Model lab", href: "#model-lab" },
+  { label: "Pricing", href: "#pricing" },
+];
+
+const freePlan = getPlan("free");
+const premiumPlan = getPlan("premium");
+const eventPlan = getPlan("one-time");
 
 const productProof = [
   {
@@ -271,6 +285,13 @@ function formatMarketAudit(game: LiveMarketGame) {
 }
 
 function Index() {
+  useDocumentMeta({
+    title: "AI Advantage Sports — Live Lines, Model Edge, Kelly Sizing",
+    description:
+      "Execution-first sports betting intelligence: live lines, model probabilities, execution-adjusted edge, and quarter-Kelly stake guidance for NBA, NFL, MLB, and the World Cup.",
+    canonicalPath: "/",
+  });
+
   const [gameInput, setGameInput] = useState("");
   const [bettingAdvice, setBettingAdvice] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -579,19 +600,20 @@ Bet responsibly. This is model output, not a guarantee.`);
             </div>
           </Link>
 
-          <nav className="hidden items-center gap-7 text-xs font-medium text-slate-400 lg:flex">
-            <a href="#live-desk" className="text-[#b9ff55] transition-colors hover:text-[#d7ff9a]">
-              Live desk
-            </a>
-            <a href="#proof" className="transition-colors hover:text-white">
-              Proof ledger
-            </a>
-            <a href="#model-lab" className="transition-colors hover:text-white">
-              Model lab
-            </a>
-            <a href="#pricing" className="transition-colors hover:text-white">
-              Pricing
-            </a>
+          <nav aria-label="Primary" className="hidden items-center gap-7 text-xs font-medium text-slate-400 lg:flex">
+            {NAV_LINKS.map((link, index) => (
+              <a
+                key={link.href}
+                href={link.href}
+                className={
+                  index === 0
+                    ? "text-[#b9ff55] transition-colors hover:text-[#d7ff9a]"
+                    : "transition-colors hover:text-white"
+                }
+              >
+                {link.label}
+              </a>
+            ))}
           </nav>
 
           <div className="flex items-center gap-2">
@@ -647,6 +669,13 @@ Bet responsibly. This is model output, not a guarantee.`);
                 <ChevronRight className="ml-1 h-3.5 w-3.5" />
               </Button>
             )}
+            <MobileNav
+              links={NAV_LINKS}
+              siteUser={siteUser}
+              hasPaidAccess={hasPaidAccess}
+              onOpenDesk={() => void handleUpgrade("premium")}
+              onRestoreAccess={() => setShowAccessDialog(true)}
+            />
           </div>
         </div>
       </header>
@@ -754,11 +783,16 @@ Bet responsibly. This is model output, not a guarantee.`);
                         Model, market, edge, and stake in one decision row.
                       </p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-1 rounded-lg border border-white/10 bg-white/[0.025] p-1">
+                    <div
+                      role="group"
+                      aria-label="Sport"
+                      className="flex flex-wrap items-center gap-1 rounded-lg border border-white/10 bg-white/[0.025] p-1"
+                    >
                       {LIVE_DESK_SPORTS.map((sport) => (
                         <button
                           key={sport}
                           type="button"
+                          aria-pressed={selectedSport === sport}
                           className={`rounded-md px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors ${
                             selectedSport === sport
                               ? "bg-[#b9ff55] text-[#0b1007]"
@@ -831,7 +865,13 @@ Bet responsibly. This is model output, not a guarantee.`);
                     </table>
                   </div>
 
-                  <div className="flex items-center justify-between border-t border-white/10 px-5 py-3 text-[10px] uppercase tracking-[0.12em] text-slate-400">
+                  {/* The board repolls every 60s. Announcing the table itself would
+                      be relentless, so this compact status line carries the update. */}
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    className="flex items-center justify-between border-t border-white/10 px-5 py-3 text-[10px] uppercase tracking-[0.12em] text-slate-400"
+                  >
                     <span>{postedLineCount} posted lines · {liveCount} live</span>
                     <span>{liveSlateUpdatedAt ? `Sync ${liveSlateUpdatedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Syncing"}</span>
                   </div>
@@ -857,8 +897,9 @@ Bet responsibly. This is model output, not a guarantee.`);
                         <span className="font-mono text-lg font-semibold tabular-nums text-white">{formatMoney(bankroll)}</span>
                       </div>
                       <Slider
-                        aria-label="Bankroll"
                         className="[&_[role=slider]]:border-[#b9ff55] [&_[role=slider]]:bg-[#05070d] [&_[data-orientation=horizontal]>span]:bg-[#b9ff55]"
+                        aria-label="Bankroll"
+                        valueText={formatMoney(bankroll)}
                         value={[bankroll]}
                         onValueChange={(v) => setBankroll(v[0])}
                         min={100}
@@ -876,7 +917,15 @@ Bet responsibly. This is model output, not a guarantee.`);
                         <span className="text-xs text-slate-400">Minimum edge</span>
                         <span className="font-mono text-lg font-semibold tabular-nums text-cyan-200">{minEdge}%</span>
                       </div>
-                      <Slider aria-label="Minimum edge" value={[minEdge]} onValueChange={(v) => setMinEdge(v[0])} min={0} max={10} step={0.5} />
+                      <Slider
+                        aria-label="Minimum edge"
+                        valueText={`${minEdge}%`}
+                        value={[minEdge]}
+                        onValueChange={(v) => setMinEdge(v[0])}
+                        min={0}
+                        max={10}
+                        step={0.5}
+                      />
                     </div>
 
                     <div>
@@ -888,6 +937,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                       </div>
                       <Slider
                         aria-label="Kelly fraction"
+                        valueText={`${(kellyFraction * 100).toFixed(0)}%`}
                         value={[kellyFraction]}
                         onValueChange={(v) => setKellyFraction(v[0])}
                         min={0.1}
@@ -986,13 +1036,14 @@ Bet responsibly. This is model output, not a guarantee.`);
                 title="A usable slate, not a wall of hype."
                 description="Pick a sport, inspect current games, and only act when the model and the execution filters agree."
               />
-              <div className="flex rounded-lg border border-white/10 bg-white/[0.035] p-1">
+              <div role="group" aria-label="Sport" className="flex rounded-lg border border-white/10 bg-white/[0.035] p-1">
                 {LIVE_DESK_SPORTS.map((sport) => (
                   <Button
                     key={sport}
                     type="button"
                     size="sm"
                     variant="ghost"
+                    aria-pressed={selectedSport === sport}
                     className={
                       selectedSport === sport
                         ? "bg-cyan-300 text-slate-950 hover:bg-cyan-200"
@@ -1053,10 +1104,26 @@ Bet responsibly. This is model output, not a guarantee.`);
                               <div className="flex items-center gap-3">
                                 <div className="flex -space-x-2">
                                   {game.awayLogo ? (
-                                    <img src={game.awayLogo} alt="" className="h-8 w-8 rounded-full bg-white p-1" />
+                                    <img
+                                      src={game.awayLogo}
+                                      alt=""
+                                      width={32}
+                                      height={32}
+                                      loading="lazy"
+                                      decoding="async"
+                                      className="h-8 w-8 rounded-full bg-white p-1"
+                                    />
                                   ) : null}
                                   {game.homeLogo ? (
-                                    <img src={game.homeLogo} alt="" className="h-8 w-8 rounded-full bg-white p-1" />
+                                    <img
+                                      src={game.homeLogo}
+                                      alt=""
+                                      width={32}
+                                      height={32}
+                                      loading="lazy"
+                                      decoding="async"
+                                      className="h-8 w-8 rounded-full bg-white p-1"
+                                    />
                                   ) : null}
                                 </div>
                                 <div>
@@ -1162,7 +1229,15 @@ Bet responsibly. This is model output, not a guarantee.`);
                         </span>
                         <span className="font-semibold text-white">{formatMoney(bankroll)}</span>
                       </div>
-                      <Slider aria-label="Bankroll" value={[bankroll]} onValueChange={(v) => setBankroll(v[0])} min={100} max={10000} step={100} />
+                      <Slider
+                        aria-label="Bankroll"
+                        valueText={formatMoney(bankroll)}
+                        value={[bankroll]}
+                        onValueChange={(v) => setBankroll(v[0])}
+                        min={100}
+                        max={10000}
+                        step={100}
+                      />
                     </div>
                     <div>
                       <div className="mb-3 flex items-center justify-between text-sm">
@@ -1171,7 +1246,15 @@ Bet responsibly. This is model output, not a guarantee.`);
                         </span>
                         <span className="font-semibold text-white">{minEdge}%</span>
                       </div>
-                      <Slider aria-label="Minimum edge" value={[minEdge]} onValueChange={(v) => setMinEdge(v[0])} min={0} max={10} step={0.5} />
+                      <Slider
+                        aria-label="Minimum edge"
+                        valueText={`${minEdge}%`}
+                        value={[minEdge]}
+                        onValueChange={(v) => setMinEdge(v[0])}
+                        min={0}
+                        max={10}
+                        step={0.5}
+                      />
                     </div>
                     <div>
                       <div className="mb-3 flex items-center justify-between text-sm">
@@ -1180,7 +1263,15 @@ Bet responsibly. This is model output, not a guarantee.`);
                         </span>
                         <span className="font-semibold text-white">{(kellyFraction * 100).toFixed(0)}%</span>
                       </div>
-                      <Slider aria-label="Kelly fraction" value={[kellyFraction]} onValueChange={(v) => setKellyFraction(v[0])} min={0.1} max={1} step={0.05} />
+                      <Slider
+                        aria-label="Kelly fraction"
+                        valueText={`${(kellyFraction * 100).toFixed(0)}%`}
+                        value={[kellyFraction]}
+                        onValueChange={(v) => setKellyFraction(v[0])}
+                        min={0.1}
+                        max={1}
+                        step={0.05}
+                      />
                     </div>
                   </div>
                 </div>
@@ -1507,10 +1598,10 @@ The report will show:
             <div className="mt-8 grid gap-5 lg:grid-cols-3">
               <div className="rounded-xl border border-white/10 bg-white/[0.035] p-6 transition-all duration-300 hover:-translate-y-1 hover:border-slate-500/40 hover:bg-white/[0.05]">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-2xl font-semibold text-white">Free Desk</h3>
-                  <Badge className="border-white/10 bg-white/[0.05] text-slate-300">Open</Badge>
+                  <h3 className="text-2xl font-semibold text-white">{freePlan.name}</h3>
+                  <Badge className="border-white/10 bg-white/[0.05] text-slate-300">{freePlan.badge}</Badge>
                 </div>
-                <div className="mt-6 text-4xl font-semibold text-white">$0</div>
+                <div className="mt-6 text-4xl font-semibold text-white">{formatPlanPrice(freePlan)}</div>
                 <ul className="mt-6 space-y-3">
                   {FREE_FEATURES.map((feature) => (
                     <li key={feature} className="flex gap-3 text-sm leading-6 text-slate-400">
@@ -1526,11 +1617,11 @@ The report will show:
 
               <div className="rounded-xl border border-cyan-300/25 bg-cyan-300/[0.06] p-6 shadow-[0_24px_80px_rgba(34,211,238,0.08)] transition-all duration-300 hover:-translate-y-1 hover:border-cyan-300/40 hover:shadow-[0_32px_96px_rgba(34,211,238,0.16)]">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-2xl font-semibold text-white">Pro Monthly</h3>
-                  <Badge className="border-cyan-300/30 bg-cyan-300/10 text-cyan-100">Best fit</Badge>
+                  <h3 className="text-2xl font-semibold text-white">{premiumPlan.name}</h3>
+                  <Badge className="border-cyan-300/30 bg-cyan-300/10 text-cyan-100">{premiumPlan.badge}</Badge>
                 </div>
-                <div className="mt-6 text-4xl font-semibold text-white">$15</div>
-                <div className="mt-2 text-sm text-slate-400">per month after 7-day free trial</div>
+                <div className="mt-6 text-4xl font-semibold text-white">{formatPlanPrice(premiumPlan)}</div>
+                <div className="mt-2 text-sm text-slate-400">{premiumPlan.cadence}</div>
                 <ul className="mt-6 space-y-3">
                   {PREMIUM_FEATURES.slice(0, 5).map((feature) => (
                     <li key={feature} className="flex gap-3 text-sm leading-6 text-slate-300">
@@ -1541,17 +1632,17 @@ The report will show:
                 </ul>
                 <Button className="mt-8 w-full bg-cyan-300 text-slate-950 hover:bg-cyan-200" onClick={() => void handleUpgrade("premium")}>
                   <Crown className="mr-2 h-4 w-4" />
-                  Start 7-day trial
+                  Start {TRIAL_DAYS}-day trial
                 </Button>
               </div>
 
               <div className="rounded-xl border border-amber-300/20 bg-amber-300/[0.055] p-6 transition-all duration-300 hover:-translate-y-1 hover:border-amber-300/45 hover:bg-amber-300/[0.075]">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-2xl font-semibold text-white">Event Pass</h3>
-                  <Badge className="border-amber-300/30 bg-amber-300/10 text-amber-100">72 hours</Badge>
+                  <h3 className="text-2xl font-semibold text-white">{eventPlan.name}</h3>
+                  <Badge className="border-amber-300/30 bg-amber-300/10 text-amber-100">{eventPlan.badge}</Badge>
                 </div>
-                <div className="mt-6 text-4xl font-semibold text-white">$10</div>
-                <div className="mt-2 text-sm text-slate-400">One-time card or crypto unlock</div>
+                <div className="mt-6 text-4xl font-semibold text-white">{formatPlanPrice(eventPlan)}</div>
+                <div className="mt-2 text-sm text-slate-400">{eventPlan.cadence}</div>
                 <ul className="mt-6 space-y-3">
                   {PREMIUM_FEATURES.slice(0, 4).map((feature) => (
                     <li key={feature} className="flex gap-3 text-sm leading-6 text-slate-300">

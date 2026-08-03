@@ -14,6 +14,13 @@ import { dirname, join } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const indexPath = join(here, "..", "dist", "index.html");
+const pricingPath = join(here, "..", "src", "data", "pricing.json");
+
+// Prices come from the same JSON the pricing cards render from, so the
+// prerendered copy and the JSON-LD offers can never advertise a number that
+// checkout does not charge.
+const pricing = JSON.parse(await readFile(pricingPath, "utf8"));
+const planById = (id) => pricing.plans.find((plan) => plan.id === id);
 
 const sections = [
   {
@@ -39,11 +46,10 @@ const valueProps = [
   ["Kelly sizing", "Quarter-Kelly stake guidance keeps conviction from turning reckless."],
 ];
 
-const pricing = [
-  ["Free Desk", "$0", "Live board, model leans, and the public proof ledger."],
-  ["Event Pass", "$10", "Unlock the full execution board for a single slate."],
-  ["Pro Monthly", "$19", "Deeper boards, historical ledgers, and workflow tools."],
-];
+const pricingRows = ["free", "one-time", "premium"]
+  .map(planById)
+  .filter(Boolean)
+  .map((plan) => [plan.name, `$${plan.price}`, plan.seoBlurb]);
 
 function esc(value) {
   return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -87,7 +93,7 @@ const prerenderHtml = `
       <div style="text-transform:uppercase;letter-spacing:0.2em;font-size:12px;color:#22d3ee;">Pricing</div>
       <h2 style="color:#fff;font-size:24px;margin-top:8px;">Upgrade only when the product earns the click.</h2>
       <ul style="margin-top:12px;padding-left:18px;line-height:1.7;color:#cbd5e1;">
-        ${pricing.map(([name, price, body]) => `<li><strong style="color:#fff;">${esc(name)} — ${esc(price)}:</strong> ${esc(body)}</li>`).join("\n        ")}
+        ${pricingRows.map(([name, price, body]) => `<li><strong style="color:#fff;">${esc(name)} — ${esc(price)}:</strong> ${esc(body)}</li>`).join("\n        ")}
       </ul>
     </section>
   </main>
@@ -98,13 +104,56 @@ const prerenderHtml = `
 
 const ROOT_EMPTY = '<div id="root"></div>';
 
+// Rewrite the WebApplication JSON-LD `offers` array from pricing.json. index.html
+// is hand-maintained, so this makes the shipped structured data authoritative
+// even if someone edits a price there and forgets the JSON.
+function syncStructuredDataOffers(html) {
+  const offers = pricing.plans.map((plan) => ({
+    "@type": "Offer",
+    name: plan.name,
+    price: String(plan.price),
+    priceCurrency: pricing.currency,
+  }));
+
+  const scriptPattern = /<script type="application\/ld\+json">\s*([\s\S]*?)\s*<\/script>/;
+  const match = html.match(scriptPattern);
+  if (!match) {
+    console.warn("[prerender] No JSON-LD block found; leaving structured data untouched.");
+    return html;
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(match[1]);
+  } catch {
+    console.warn("[prerender] JSON-LD block is not valid JSON; leaving structured data untouched.");
+    return html;
+  }
+
+  if (parsed["@type"] !== "WebApplication") return html;
+
+  parsed.offers = offers;
+  const serialized = JSON.stringify(parsed, null, 2)
+    .split("\n")
+    .map((line, index) => (index === 0 ? line : `      ${line}`))
+    .join("\n");
+
+  // Function replacer: the payload contains `$` (prices), which a string
+  // replacement would treat as a capture-group escape.
+  return html.replace(
+    scriptPattern,
+    () => `<script type="application/ld+json">\n      ${serialized}\n    </script>`,
+  );
+}
+
 try {
   const html = await readFile(indexPath, "utf8");
   if (!html.includes(ROOT_EMPTY)) {
     console.warn("[prerender] '<div id=\"root\"></div>' not found in dist/index.html; skipping injection.");
     process.exit(0);
   }
-  const next = html.replace(ROOT_EMPTY, `<div id="root">${prerenderHtml}</div>`);
+  let next = html.replace(ROOT_EMPTY, () => `<div id="root">${prerenderHtml}</div>`);
+  next = syncStructuredDataOffers(next);
   await writeFile(indexPath, next);
   console.log("[prerender] Injected static homepage marketing content into dist/index.html");
 } catch (error) {

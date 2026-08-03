@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import DeskNav from "@/components/DeskNav";
+import { useDocumentMeta } from "@/lib/useDocumentMeta";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -128,6 +130,13 @@ function HistoryTable({ rows }: { rows: HistoricalExecutionLedgerEntry[] }) {
 }
 
 export default function Leaderboard() {
+  useDocumentMeta({
+    title: "Proof Ledger — AI Advantage Sports",
+    description:
+      "The public settled record: graded picks, closing-line value, and calibration history for every recommendation the desk has made.",
+    canonicalPath: "/leaderboard",
+  });
+
   const [access, setAccess] = useState(getAccessState());
   const [games, setGames] = useState<LiveMarketGame[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -351,10 +360,7 @@ export default function Leaderboard() {
               Back
             </Link>
           </Button>
-          <div className="flex items-center gap-2 text-sm font-semibold text-white">
-            <ShieldCheck className="h-5 w-5 text-brand-300" />
-            Proof Ledger
-          </div>
+          <DeskNav current="/leaderboard" />
           <Button
             size="sm"
             variant="outline"
