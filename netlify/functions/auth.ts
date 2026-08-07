@@ -341,7 +341,8 @@ function getAuthSecret() {
       warnedAboutBorrowedSecret = true;
       console.warn(
         "[auth] AUTH_SECRET is not set; falling back to UPSTASH_REDIS_REST_TOKEN to hash passwords. " +
-          "Rotating that token will lock out every account. Set AUTH_SECRET to a dedicated value.",
+          "Set AUTH_SECRET to a dedicated value — existing logins keep working, because the " +
+          "borrowed token stays accepted for verification and each password is re-hashed on next login.",
       );
     }
     return borrowed;
@@ -376,17 +377,49 @@ function hashesMatch(storedHash: string, candidateHash: string) {
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
+/** Cap the pbkdf2 work a single login can trigger. */
+const MAX_PREVIOUS_SECRETS = 4;
+
+/**
+ * Secrets accepted for verification but never for hashing.
+ *
+ * The secret is a pepper mixed into every password hash, so changing it makes
+ * every stored hash unverifiable. Without a list like this, rotating it locks
+ * out every account permanently — and `getAuthSecret` falls back to
+ * `UPSTASH_REDIS_REST_TOKEN`, which made rotating an ordinary database
+ * credential do exactly that.
+ *
+ * Anything matched here is re-hashed with the active secret on next login, so a
+ * rotation drains itself as users return.
+ */
+export function getPreviousAuthSecrets(): string[] {
+  const active = getAuthSecret();
+  const candidates = [
+    ...(process.env.AUTH_SECRET_PREVIOUS || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+    // Accounts created before AUTH_SECRET was set were hashed with the public
+    // local-dev constant, or with the borrowed Upstash token.
+    LOCAL_AUTH_SECRET,
+    process.env.UPSTASH_REDIS_REST_TOKEN || "",
+  ].filter(Boolean);
+
+  return Array.from(new Set(candidates))
+    .filter((secret) => secret !== active)
+    .slice(0, MAX_PREVIOUS_SECRETS);
+}
+
 export async function verifyPassword(password: string, user: StoredSiteUser) {
   const nextHash = await hashPassword(password, user.passwordSalt);
   if (hashesMatch(user.passwordHash, nextHash)) {
     return { ok: true, needsRehash: false };
   }
 
-  // Migration: accounts created before AUTH_SECRET was configured were hashed with the
-  // public local-dev constant. Accept those once and re-hash with the active secret.
-  const activeSecret = getAuthSecret();
-  if (activeSecret && activeSecret !== LOCAL_AUTH_SECRET) {
-    const legacyHash = await hashPasswordWith(LOCAL_AUTH_SECRET, password, user.passwordSalt);
+  // Accept a hash made under a superseded secret once, then let the caller
+  // re-hash it with the active one.
+  for (const previous of getPreviousAuthSecrets()) {
+    const legacyHash = await hashPasswordWith(previous, password, user.passwordSalt);
     if (hashesMatch(user.passwordHash, legacyHash)) {
       return { ok: true, needsRehash: true };
     }
