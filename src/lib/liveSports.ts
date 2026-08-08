@@ -364,10 +364,38 @@ async function fetchEspnLiveGamesForSport(sport: Sport, date = new Date()): Prom
     });
 }
 
+/**
+ * Every market source failed, so the board has no idea what today's slate is.
+ *
+ * This is deliberately distinct from "the sources answered and there are no
+ * games": callers must be able to tell an outage from a quiet day. See
+ * fetchLiveGamesForSports for why that distinction matters here.
+ */
+export class LiveMarketUnavailableError extends Error {
+  constructor(message = "Live market board unavailable right now.") {
+    super(message);
+    this.name = "LiveMarketUnavailableError";
+  }
+}
+
 export async function fetchLiveGamesForSport(sport: Sport, date = new Date()): Promise<LiveMarketGame[]> {
   return fetchLiveGamesForSports([sport], date);
 }
 
+/**
+ * Resolves with the slate, or throws LiveMarketUnavailableError when no source
+ * could be reached.
+ *
+ * This used to swallow every failure and resolve with `[]`: the primary call sat
+ * in a catch-all, and the ESPN fallback mapped rejected slates to empty arrays.
+ * The error branches on the homepage, Daily Picks, and the Proof Ledger were
+ * therefore unreachable — a total feed outage rendered as "no execution-qualified
+ * rows, the desk is passing instead of inventing a signal."
+ *
+ * That is the one thing this product must not say when it isn't true. Passing is
+ * a model judgement; having no data is not. An empty resolve still means a real
+ * empty slate, so a quiet Tuesday reads exactly as it did before.
+ */
 export async function fetchLiveGamesForSports(sports: Sport[], date = new Date()): Promise<LiveMarketGame[]> {
   const dateKey = toDateKey(date);
   const params = new URLSearchParams({
@@ -390,9 +418,19 @@ export async function fetchLiveGamesForSports(sports: Sport[], date = new Date()
       return payload.games;
     }
   } catch {
-    // Keep local Vite development useful when Netlify functions are not running.
+    // Fall through to ESPN. This keeps local Vite development useful when the
+    // Netlify functions are not running, and covers a provider blip in prod.
   }
 
+  if (sports.length === 0) return [];
+
   const slates = await Promise.allSettled(sports.map((sport) => fetchEspnLiveGamesForSport(sport, date)));
+
+  // The primary API already failed to get us here. If the fallback did not land
+  // for a single requested sport either, we know nothing about the slate.
+  if (slates.every((slate) => slate.status === "rejected")) {
+    throw new LiveMarketUnavailableError();
+  }
+
   return slates.flatMap((slate) => (slate.status === "fulfilled" ? slate.value : []));
 }
