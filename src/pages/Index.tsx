@@ -702,22 +702,29 @@ Bet responsibly. This is model output, not a guarantee.`);
                         }`}
                       >
                         <span className={`h-1.5 w-1.5 rounded-full ${featuredEntry ? "bg-[#b9ff55]" : "bg-amber-300"}`} />
-                        {featuredEntry ? "Qualified" : "Pass"}
+                        {featuredEntry ? "Qualified" : liveSlateError ? "No feed" : "Pass"}
                       </span>
                     </div>
 
                     <h1 className="mt-4 max-w-4xl text-3xl font-bold tracking-[-0.035em] text-white sm:text-4xl lg:text-[42px]">
-                      {featuredEntry?.eventLabel ?? "The desk is passing the current slate"}
+                      {featuredEntry?.eventLabel ??
+                        (liveSlateError
+                          ? "The market feed is unavailable"
+                          : "The desk is passing the current slate")}
                     </h1>
                     <div className="mt-2 font-mono text-xs font-semibold uppercase tracking-[0.08em] text-cyan-200 sm:text-sm">
                       {featuredEntry
                         ? `${featuredEntry.recommendedSide} ${featuredEntry.summary.line} · ${featuredEntry.bookmaker ?? "Public consensus"}`
-                        : `No edge clears ${minEdge}% after execution filters`}
+                        : liveSlateError
+                          ? "No verified market data to price against"
+                          : `No edge clears ${minEdge}% after execution filters`}
                     </div>
                     <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-400">
                       {featuredEntry
                         ? `The model remains ${formatEdge(featuredEntry.executionAdjustedEdge)} above the implied market after timing, volatility, and liquidity discounts.`
-                        : "No fabricated signal. Adjust the controls or wait for the next verified market update."}
+                        : liveSlateError
+                          ? "This is an outage, not a pass. The desk will not call a slate it cannot see."
+                          : "No fabricated signal. Adjust the controls or wait for the next verified market update."}
                     </p>
                   </div>
 
@@ -733,7 +740,11 @@ Bet responsibly. This is model output, not a guarantee.`);
                       },
                       {
                         label: "Execution edge",
-                        value: featuredEntry ? formatEdge(featuredEntry.executionAdjustedEdge) : "Pass",
+                        value: featuredEntry
+                          ? formatEdge(featuredEntry.executionAdjustedEdge)
+                          : liveSlateError
+                            ? "—"
+                            : "Pass",
                       },
                       {
                         label: "Kelly stake",
@@ -958,7 +969,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                     </div>
                     <div>
                       <div className="font-mono text-lg font-semibold text-white">
-                        {executionBoardEntries.length ? formatEdge(avgEdge) : "Pass"}
+                        {executionBoardEntries.length ? formatEdge(avgEdge) : liveSlateError ? "—" : "Pass"}
                       </div>
                       <div className="mt-1 text-[9px] uppercase tracking-[0.12em] text-slate-400">Avg edge</div>
                     </div>
