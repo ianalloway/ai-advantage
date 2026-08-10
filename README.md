@@ -85,6 +85,8 @@ Production does **not** fall back to Payment Links when Checkout Sessions fail (
 
 The homepage form posts to `/api/newsletter-subscribe`, which creates a Notion entry, emails a notification, and redirects into the Substack subscribe flow.
 
+For publishing *into* Substack (posting content, as opposed to capturing subscribers), see [`docs/hermes-substack.md`](docs/hermes-substack.md) — a standalone script the Hermes agent runs to push posts to `allowayai.substack.com`.
+
 ```bash
 NOTION_API_KEY=***
 NOTION_PARENT_PAGE_ID=...
