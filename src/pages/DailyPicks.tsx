@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from "react";
 import DeskNav from "@/components/DeskNav";
 import { useDocumentMeta } from "@/lib/useDocumentMeta";
+import { routeMeta } from "@/lib/routeSeo";
 import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -641,12 +642,7 @@ function PickCard({
 }
 
 export default function DailyPicks() {
-  useDocumentMeta({
-    title: "Daily Picks — AI Advantage Sports",
-    description:
-      "The full execution board: every qualified play with model probability, execution-adjusted edge, recommended stake, and entry window.",
-    canonicalPath: "/daily-picks",
-  });
+  useDocumentMeta(routeMeta("/daily-picks"));
 
   const [access, setAccess] = useState(getAccessState());
   const [cryptoAccount, setCryptoAccount] = useState(getCurrentCryptoAccount());

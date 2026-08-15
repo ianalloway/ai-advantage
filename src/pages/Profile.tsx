@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useDocumentMeta } from "@/lib/useDocumentMeta";
+import { routeMeta } from "@/lib/routeSeo";
 import { Link, useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -57,12 +58,7 @@ function shorten(value: string, start = 8, end = 6): string {
 }
 
 export default function Profile() {
-  useDocumentMeta({
-    title: "Your Account — AI Advantage Sports",
-    description: "Manage your AI Advantage Sports subscription, bankroll defaults, and session.",
-    canonicalPath: "/profile",
-    robots: "noindex,follow",
-  });
+  useDocumentMeta(routeMeta("/profile"));
 
   const navigate = useNavigate();
   const [access, setAccess] = useState<AccessState>(getAccessState());

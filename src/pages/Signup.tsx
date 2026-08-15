@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useDocumentMeta } from "@/lib/useDocumentMeta";
+import { routeMeta } from "@/lib/routeSeo";
 import { Link, useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,11 +12,7 @@ import { Check, Sparkles, UserPlus } from "lucide-react";
 import BrandedHeader from "@/components/BrandedHeader";
 
 export default function Signup() {
-  useDocumentMeta({
-    title: "Create Account — AI Advantage Sports",
-    description: "Create an AI Advantage Sports account to track picks, sizing, and settled proof.",
-    canonicalPath: "/signup",
-  });
+  useDocumentMeta(routeMeta("/signup"));
 
   const navigate = useNavigate();
   const { toast } = useToast();
