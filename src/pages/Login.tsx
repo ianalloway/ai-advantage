@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useDocumentMeta } from "@/lib/useDocumentMeta";
+import { routeMeta } from "@/lib/routeSeo";
 import { Link, useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,11 +12,7 @@ import { KeyRound, LockOpen, UserCircle2 } from "lucide-react";
 import BrandedHeader from "@/components/BrandedHeader";
 
 export default function Login() {
-  useDocumentMeta({
-    title: "Log In — AI Advantage Sports",
-    description: "Log in to AI Advantage Sports to reach your execution desk and proof ledger.",
-    canonicalPath: "/login",
-  });
+  useDocumentMeta(routeMeta("/login"));
 
   const navigate = useNavigate();
   const { toast } = useToast();

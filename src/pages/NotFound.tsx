@@ -2,6 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 import { ArrowLeft, Compass } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useDocumentMeta } from "@/lib/useDocumentMeta";
+import { notFoundMeta } from "@/lib/routeSeo";
 
 const SUGGESTIONS = [
   { to: "/", label: "Live desk", detail: "Current slate, model edge, and Kelly sizing" },
@@ -19,10 +20,7 @@ export default function NotFound() {
 
   // The SPA fallback serves this at a 200, so the status code can't say "gone".
   // The robots tag is what actually keeps mistyped URLs out of the index.
-  useDocumentMeta({
-    title: "Page not found — AI Advantage Sports",
-    robots: "noindex,follow",
-  });
+  useDocumentMeta(notFoundMeta);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#05070d] px-5 py-16 text-slate-100">

@@ -1,0 +1,66 @@
+{
+  "origin": "https://aiadvantagesports.com",
+  "siteName": "AI Advantage Sports",
+  "socialImage": "/ai-advantage-social-card.png",
+  "routes": [
+    {
+      "path": "/",
+      "title": "AI Advantage Sports — Live Lines, Model Edge, Kelly Sizing",
+      "description": "Execution-first sports betting intelligence: live lines, model probabilities, execution-adjusted edge, and quarter-Kelly stake guidance for NBA, NFL, MLB, and the World Cup.",
+      "robots": "index,follow",
+      "prerender": false,
+      "sitemap": { "priority": 1.0, "changefreq": "daily" }
+    },
+    {
+      "path": "/daily-picks",
+      "title": "Daily Picks — AI Advantage Sports",
+      "description": "The full execution board: every qualified play with model probability, execution-adjusted edge, recommended stake, and entry window.",
+      "h1": "Daily Picks",
+      "intro": "The full execution board — every qualified play graded on model probability, execution-adjusted edge, recommended stake, and entry window.",
+      "robots": "index,follow",
+      "prerender": true,
+      "sitemap": { "priority": 0.9, "changefreq": "daily" }
+    },
+    {
+      "path": "/leaderboard",
+      "title": "Proof Ledger — AI Advantage Sports",
+      "description": "The public settled record: graded picks, closing-line value, and calibration history for every recommendation the desk has made.",
+      "h1": "Proof Ledger",
+      "intro": "The public settled record — graded picks, closing-line value, and calibration history for every recommendation the desk has made.",
+      "robots": "index,follow",
+      "prerender": true,
+      "sitemap": { "priority": 0.8, "changefreq": "daily" }
+    },
+    {
+      "path": "/login",
+      "title": "Log In — AI Advantage Sports",
+      "description": "Log in to AI Advantage Sports to reach your execution desk and proof ledger.",
+      "h1": "Log In",
+      "intro": "Log in to reach your execution desk, saved bankroll defaults, and proof ledger.",
+      "robots": "index,follow",
+      "prerender": true,
+      "sitemap": { "priority": 0.4, "changefreq": "monthly" }
+    },
+    {
+      "path": "/signup",
+      "title": "Create Account — AI Advantage Sports",
+      "description": "Create an AI Advantage Sports account to track picks, sizing, and settled proof.",
+      "h1": "Create Your Account",
+      "intro": "Create an account to track picks, size stakes with quarter-Kelly, and follow the settled proof ledger.",
+      "robots": "index,follow",
+      "prerender": true,
+      "sitemap": { "priority": 0.4, "changefreq": "monthly" }
+    },
+    {
+      "path": "/profile",
+      "title": "Your Account — AI Advantage Sports",
+      "description": "Manage your AI Advantage Sports subscription, bankroll defaults, and session.",
+      "robots": "noindex,follow",
+      "prerender": false
+    }
+  ],
+  "notFound": {
+    "title": "Page not found — AI Advantage Sports",
+    "robots": "noindex,follow"
+  }
+}

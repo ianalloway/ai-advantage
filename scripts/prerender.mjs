@@ -1,26 +1,46 @@
-// Build-time prerender of the homepage marketing content.
+// Build-time prerender + static SEO generation.
 //
 // The app is a client-rendered SPA, so a raw `dist/index.html` ships an empty
 // `<div id="root">` — invisible to crawlers, no-JS viewers, and "view source".
-// This injects the real, static marketing copy into #root so the initial HTML
-// is meaningful. main.tsx uses createRoot().render() (not hydrate), so React
-// cleanly replaces this content once the bundle loads — no hydration mismatch.
+// This step makes the served HTML meaningful for every route:
 //
-// Pure string injection: no headless browser, no network. If anything is off,
-// it logs and exits 0 so a prerender hiccup can never fail the production build.
-import { readFile, writeFile } from "node:fs/promises";
+//   1. Homepage: injects the real marketing copy into #root and keeps the
+//      WebApplication `offers` JSON-LD in sync with pricing.json.
+//   2. Subroutes (from src/data/seo.json): writes dist/<route>/index.html with a
+//      per-route <head> (title, description, canonical, Open Graph, per-page
+//      structured data) and a small crawler-facing body. Without this, the SPA
+//      fallback hands every subroute the homepage's head — including a canonical
+//      that points back at "/", telling crawlers each page is a homepage dupe.
+//   3. sitemap.xml: regenerated from seo.json with a fresh lastmod.
+//
+// main.tsx uses createRoot().render() (not hydrate), so React cleanly replaces
+// any injected content once the bundle loads — no hydration mismatch.
+//
+// Pure string injection: no headless browser, no network. Each stage is wrapped
+// so a hiccup logs and is skipped rather than failing the production build.
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import {
+  buildSitemapXml,
+  prerenderRoutes,
+  renderSubroute,
+} from "./lib/seo.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const indexPath = join(here, "..", "dist", "index.html");
+const distDir = join(here, "..", "dist");
+const indexPath = join(distDir, "index.html");
 const pricingPath = join(here, "..", "src", "data", "pricing.json");
+const seoPath = join(here, "..", "src", "data", "seo.json");
 
 // Prices come from the same JSON the pricing cards render from, so the
 // prerendered copy and the JSON-LD offers can never advertise a number that
 // checkout does not charge.
 const pricing = JSON.parse(await readFile(pricingPath, "utf8"));
 const planById = (id) => pricing.plans.find((plan) => plan.id === id);
+
+const seo = JSON.parse(await readFile(seoPath, "utf8"));
+const seoConfig = { origin: seo.origin, siteName: seo.siteName, socialImage: seo.socialImage };
 
 const sections = [
   {
@@ -106,7 +126,9 @@ const ROOT_EMPTY = '<div id="root"></div>';
 
 // Rewrite the WebApplication JSON-LD `offers` array from pricing.json. index.html
 // is hand-maintained, so this makes the shipped structured data authoritative
-// even if someone edits a price there and forgets the JSON.
+// even if someone edits a price there and forgets the JSON. It targets the first
+// JSON-LD block (WebApplication); the Organization block that follows is left as
+// written.
 function syncStructuredDataOffers(html) {
   const offers = pricing.plans.map((plan) => ({
     "@type": "Offer",
@@ -146,10 +168,47 @@ function syncStructuredDataOffers(html) {
   );
 }
 
+// Regenerate dist/sitemap.xml from seo.json with today's date, so lastmod tracks
+// the deploy instead of a hand-edited constant that silently goes stale.
+async function writeSitemap() {
+  const lastmod = new Date().toISOString().slice(0, 10);
+  const xml = buildSitemapXml(seo.routes, seo.origin, lastmod);
+  await writeFile(join(distDir, "sitemap.xml"), xml);
+  console.log(`[prerender] Wrote dist/sitemap.xml (${lastmod})`);
+}
+
+// Emit dist/<route>/index.html for each opted-in route. Directory-index files
+// are served by Netlify at the clean URL and take precedence over the SPA
+// fallback rewrite; if this stage is skipped the fallback still serves the app.
+async function writeSubroutes(baseHtml) {
+  for (const route of prerenderRoutes(seo.routes)) {
+    const html = renderSubroute(baseHtml, route, seoConfig, ROOT_EMPTY);
+    const outDir = join(distDir, route.path.replace(/^\/+/, ""));
+    await mkdir(outDir, { recursive: true });
+    await writeFile(join(outDir, "index.html"), html);
+    console.log(`[prerender] Wrote dist${route.path}/index.html`);
+  }
+}
+
 try {
   const html = await readFile(indexPath, "utf8");
+
+  // Independent of the SPA root marker, so run it first and on its own.
+  try {
+    await writeSitemap();
+  } catch (error) {
+    console.warn("[prerender] sitemap skipped (non-fatal):", error?.message ?? error);
+  }
+
+  // Subroutes derive from the pristine (empty-root, homepage-head) index.html.
+  try {
+    await writeSubroutes(html);
+  } catch (error) {
+    console.warn("[prerender] subroutes skipped (non-fatal):", error?.message ?? error);
+  }
+
   if (!html.includes(ROOT_EMPTY)) {
-    console.warn("[prerender] '<div id=\"root\"></div>' not found in dist/index.html; skipping injection.");
+    console.warn("[prerender] '<div id=\"root\"></div>' not found in dist/index.html; skipping homepage injection.");
     process.exit(0);
   }
   let next = html.replace(ROOT_EMPTY, () => `<div id="root">${prerenderHtml}</div>`);

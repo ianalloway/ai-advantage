@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { useDocumentMeta } from "@/lib/useDocumentMeta";
+import { routeMeta } from "@/lib/routeSeo";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -285,12 +286,7 @@ function formatMarketAudit(game: LiveMarketGame) {
 }
 
 function Index() {
-  useDocumentMeta({
-    title: "AI Advantage Sports — Live Lines, Model Edge, Kelly Sizing",
-    description:
-      "Execution-first sports betting intelligence: live lines, model probabilities, execution-adjusted edge, and quarter-Kelly stake guidance for NBA, NFL, MLB, and the World Cup.",
-    canonicalPath: "/",
-  });
+  useDocumentMeta(routeMeta("/"));
 
   const [gameInput, setGameInput] = useState("");
   const [bettingAdvice, setBettingAdvice] = useState("");
