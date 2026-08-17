@@ -33,6 +33,12 @@
 
   html {
     scroll-behavior: smooth;
+    /* This is a dark-only UI, but nothing declared that, so browsers treated it
+       as a light page and styled everything they own to match: scrollbars,
+       native form controls, and — most visibly — the autofill wash over the
+       login and signup inputs. Declaring the scheme is what makes those pick
+       the dark treatment. */
+    color-scheme: dark;
   }
 
   body {
