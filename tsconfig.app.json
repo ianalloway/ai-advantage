@@ -15,6 +15,11 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
+    /* TS 7 no longer implicitly pulls every package in node_modules/@types
+       into the program, so the Node built-ins used by colocated *.test.ts
+       files under src/ must be requested explicitly. */
+    "types": ["node", "vite/client"],
+
     /* Linting */
     "strict": false,
     "noUnusedLocals": false,
@@ -23,7 +28,6 @@
     "noFallthroughCasesInSwitch": false,
 
     "ignoreDeprecations": "5.0",
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     }
