@@ -15,7 +15,7 @@
     "hermes:publish": "node scripts/hermes-substack-publish.mjs"
   },
   "dependencies": {
-    "@netlify/blobs": "^10.7.11",
+    "@netlify/blobs": "^11.0.1",
     "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-label": "^2.1.15",
     "@radix-ui/react-slider": "^1.4.7",
