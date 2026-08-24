@@ -4,13 +4,39 @@
  */
 import { describe, expect, it } from "vitest";
 
+/**
+ * Retry a fetch against production a few times before giving up. The scheduled
+ * smoke runs hit the live site from GitHub runners, and 18 of the last 30 runs
+ * failed on a single connect-timeout to /api/billing-status while the site was
+ * healthy — transient network blips between runner and host, not outages.
+ */
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit = {},
+  attempts = 3,
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await fetch(url, {
+        ...init,
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch (err) {
+      lastError = err;
+      if (attempt < attempts) {
+        await new Promise((r) => setTimeout(r, 2000 * attempt));
+      }
+    }
+  }
+  throw lastError;
+}
+
 const BASE_URL = (process.env.SMOKE_BASE_URL || "https://aiadvantagesports.com").replace(/\/$/, "");
 
 describe("production billing + auth smoke", () => {
   it("exposes billing-status with a coherent checkout readiness shape", async () => {
-    const response = await fetch(`${BASE_URL}/api/billing-status`, {
-      signal: AbortSignal.timeout(15000),
-    });
+    const response = await fetchWithRetry(`${BASE_URL}/api/billing-status`);
     expect(response.status).toBe(200);
     const status = (await response.json()) as Record<string, unknown>;
 
