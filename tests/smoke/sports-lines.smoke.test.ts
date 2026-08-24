@@ -3,6 +3,34 @@
  * Run: npm run test:smoke
  */
 import { describe, expect, it } from "vitest";
+
+/**
+ * Retry a fetch against production a few times before giving up. Scheduled
+ * smoke runs hit the live site from GitHub runners and occasionally hit a
+ * transient connect-timeout while the site is healthy (same root cause as
+ * PR #111 for billing-auth smoke).
+ */
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit = {},
+  attempts = 3,
+): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await fetch(url, {
+        ...init,
+        signal: AbortSignal.timeout(20000),
+      });
+    } catch (err) {
+      lastError = err;
+      if (attempt < attempts) {
+        await new Promise((r) => setTimeout(r, 2000 * attempt));
+      }
+    }
+  }
+  throw lastError;
+}
 import { analyzeGame } from "@/lib/predictions";
 import {
   ageSeconds,
@@ -56,7 +84,7 @@ type SmokePayload = {
 
 async function fetchSportsLines(): Promise<{ status: number; payload: SmokePayload; cacheControl: string | null }> {
   const url = `${BASE_URL}/api/sports-lines?sports=nba,mlb,nfl,wc`;
-  const response = await fetch(url, { signal: AbortSignal.timeout(20000) });
+  const response = await fetchWithRetry(url);
   const payload = (await response.json()) as SmokePayload;
   return {
     status: response.status,
@@ -162,7 +190,7 @@ describe("production sports-lines smoke", () => {
   }, 30000);
 
   it("serves Daily Picks HTML shell", async () => {
-    const response = await fetch(`${BASE_URL}/daily-picks`, { signal: AbortSignal.timeout(15000) });
+    const response = await fetchWithRetry(`${BASE_URL}/daily-picks`);
     expect(response.status).toBe(200);
     const html = await response.text();
     expect(html.toLowerCase()).toContain("ai advantage");
