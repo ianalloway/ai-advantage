@@ -5,7 +5,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
 
 export default [
-  { ignores: ["dist"] },
+  { ignores: ["dist", "**/*.d.ts"] },
   {
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
@@ -29,8 +29,25 @@ export default [
     },
     rules: {
       ...js.configs.recommended.rules,
-      ...reactHooks.configs.recommended.rules,
+      // Core rules that misfire on TypeScript (typescript-eslint eslint-recommended).
+      "constructor-super": "off",
+      "getter-return": "off",
+      "no-class-assign": "off",
+      "no-const-assign": "off",
+      "no-dupe-args": "off",
+      "no-dupe-class-members": "off",
+      "no-dupe-keys": "off",
+      "no-func-assign": "off",
+      "no-import-assign": "off",
+      "no-new-native-nonconstructor": "off",
+      "no-obj-calls": "off",
+      "no-redeclare": "off",
+      "no-setter-return": "off",
+      "no-this-before-super": "off",
       "no-undef": "off",
+      "no-unreachable": "off",
+      "no-unsafe-negation": "off",
+      ...reactHooks.configs.recommended.rules,
       "react-hooks/set-state-in-effect": "off",
       "react-hooks/purity": "off",
       "react-refresh/only-export-components": [
