@@ -9,12 +9,15 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -27,7 +30,24 @@ jobs:
         run: npx tsc -b --force
 
       - name: Lint
-        run: npm run lint
+        run: |
+          set -o pipefail
+          npm run lint 2>&1 | tee lint-output.txt
+
+      - name: Comment lint output on failure
+        if: failure() && github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "Lint failed on ${GITHUB_SHA:0:7}:"
+            echo
+            echo '```'
+            cat lint-output.txt
+            echo '```'
+          } > /tmp/lint-comment.md
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/lint-comment.md
 
       - name: Test
         run: npm test

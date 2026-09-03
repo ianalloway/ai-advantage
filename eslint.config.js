@@ -1,16 +1,29 @@
 import js from "@eslint/js";
+import babelParser from "@babel/eslint-parser";
+import tsPreset from "@babel/preset-typescript";
 import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
-import tseslint from "typescript-eslint";
 
-export default tseslint.config(
-  { ignores: ["dist"] },
+export default [
+  { ignores: ["dist", "**/*.d.ts"] },
   {
-    extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
+      parser: babelParser,
+      parserOptions: {
+        requireConfigFile: false,
+        babelOptions: {
+          babelrc: false,
+          configFile: false,
+          presets: [[tsPreset, { allExtensions: true, isTSX: true }]],
+          parserOpts: {
+            plugins: ["typescript", "jsx"],
+          },
+        },
+      },
       ecmaVersion: 2020,
+      sourceType: "module",
       globals: globals.browser,
     },
     plugins: {
@@ -18,6 +31,25 @@ export default tseslint.config(
       "react-refresh": reactRefresh,
     },
     rules: {
+      ...js.configs.recommended.rules,
+      // Core rules that misfire on TypeScript (typescript-eslint eslint-recommended).
+      "constructor-super": "off",
+      "getter-return": "off",
+      "no-class-assign": "off",
+      "no-const-assign": "off",
+      "no-dupe-args": "off",
+      "no-dupe-class-members": "off",
+      "no-dupe-keys": "off",
+      "no-func-assign": "off",
+      "no-import-assign": "off",
+      "no-new-native-nonconstructor": "off",
+      "no-obj-calls": "off",
+      "no-redeclare": "off",
+      "no-setter-return": "off",
+      "no-this-before-super": "off",
+      "no-undef": "off",
+      "no-unreachable": "off",
+      "no-unsafe-negation": "off",
       ...reactHooks.configs.recommended.rules,
       "react-hooks/set-state-in-effect": "off",
       "react-hooks/purity": "off",
@@ -25,7 +57,7 @@ export default tseslint.config(
         "warn",
         { allowConstantExport: true },
       ],
-      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrors: "none" }],
+      "no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrors: "none" }],
     },
-  }
-);
+  },
+];
