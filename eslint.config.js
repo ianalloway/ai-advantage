@@ -1,5 +1,6 @@
 import js from "@eslint/js";
 import babelParser from "@babel/eslint-parser";
+import tsPreset from "@babel/preset-typescript";
 import globals from "globals";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
@@ -12,11 +13,13 @@ export default [
       parser: babelParser,
       parserOptions: {
         requireConfigFile: false,
-        sourceType: "module",
         babelOptions: {
           babelrc: false,
           configFile: false,
-          presets: [["@babel/preset-typescript", { allExtensions: true, isTSX: true }]],
+          presets: [[tsPreset, { allExtensions: true, isTSX: true }]],
+          parserOpts: {
+            plugins: ["typescript", "jsx"],
+          },
         },
       },
       ecmaVersion: 2020,
