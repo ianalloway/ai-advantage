@@ -38,7 +38,9 @@
     "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
-    "@eslint/js": "^10.0.1",
+    "@babel/eslint-parser": "^7.28.4",
+    "@babel/preset-typescript": "^7.27.1",
+    "@eslint/js": "^9.36.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/typography": "^0.5.19",
     "@types/node": "^26.1.2",
@@ -46,14 +48,13 @@
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react-swc": "^4.3.3",
     "autoprefixer": "^10.5.4",
-    "eslint": "^10.8.0",
+    "eslint": "^9.36.0",
     "eslint-plugin-react-hooks": "^7.1.0",
     "eslint-plugin-react-refresh": "^0.5.3",
     "globals": "^17.9.0",
     "postcss": "^8.5.19",
     "tailwindcss": "^4.3.0",
-    "typescript": "~5.9.3",
-    "typescript-eslint": "^8.66.0",
+    "typescript": "^7.0.2",
     "vite": "^8.2.0",
     "vitest": "^4.1.10"
   },
@@ -62,6 +63,6 @@
     "@opentelemetry/resources": "2.10.0",
     "@opentelemetry/sdk-trace-base": "2.10.0",
     "@opentelemetry/sdk-trace-node": "2.10.0",
-    "brace-expansion": "5.0.9"
+    "brace-expansion": "1.1.12"
   }
 }
