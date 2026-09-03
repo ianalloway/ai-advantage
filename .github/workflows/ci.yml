@@ -30,7 +30,9 @@ jobs:
         run: npx tsc -b --force
 
       - name: Lint
-        run: npm run lint 2>&1 | tee lint-output.txt
+        run: |
+          set -o pipefail
+          npm run lint 2>&1 | tee lint-output.txt
 
       - name: Comment lint output on failure
         if: failure() && github.event_name == 'pull_request'
@@ -39,7 +41,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           {
-            echo "Lint failed on `${GITHUB_SHA:0:7}`:"
+            echo "Lint failed on ${GITHUB_SHA:0:7}:"
             echo
             echo '```'
             cat lint-output.txt
