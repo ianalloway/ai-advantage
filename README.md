@@ -110,4 +110,4 @@ SUBSTACK_PUBLICATION_URL=https://allowayai.substack.com
 
 ## License
 
-Proprietary. All rights reserved.
+MIT — see [LICENSE](LICENSE). This commercial product is open-sourced for portfolio transparency.
