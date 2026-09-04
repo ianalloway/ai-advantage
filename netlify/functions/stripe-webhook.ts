@@ -15,7 +15,7 @@ type NetlifyEvent = {
   isBase64Encoded?: boolean;
 };
 
-const API_VERSION = "2026-06-24.dahlia";
+const API_VERSION = "2026-08-26.dahlia";
 
 let stripeClient: Stripe | null = null;
 
