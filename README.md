@@ -24,6 +24,8 @@ AI Advantage turns model output into a decision a user can actually act on:
 
 It's the product layer of a larger sports-analytics stack — the modeling lives in adjacent repos, this is where it meets a user.
 
+**Stack layering:** [nba-ratings](https://github.com/ianalloway/nba-ratings) (Python ratings / win-prob) → [kelly-js](https://github.com/ianalloway/kelly-js) (TypeScript Kelly / odds math) → [sports-betting-ml](https://github.com/ianalloway/sports-betting-ml) (training / value-bet demo) → **ai-advantage** (live product).
+
 ## Feature tour
 
 | Area | What it does |
@@ -100,9 +102,9 @@ SUBSTACK_PUBLICATION_URL=https://allowayai.substack.com
 
 | Repo | Role |
 |------|------|
-| [sports-betting-ml](https://github.com/ianalloway/sports-betting-ml) | Models — logistic regression, XGBoost, ensembles |
-| [nba-ratings](https://github.com/ianalloway/nba-ratings) | Ratings + win-probability library |
-| [kelly-js](https://github.com/ianalloway/kelly-js) | Kelly / odds / bankroll math (TS) |
+| [nba-ratings](https://github.com/ianalloway/nba-ratings) | Ratings + win-probability library (PyPI: `nba-edge`) |
+| [kelly-js](https://github.com/ianalloway/kelly-js) | Kelly / odds / bankroll math (TS; npm publish pending) |
+| [sports-betting-ml](https://github.com/ianalloway/sports-betting-ml) | Training / value-bet Streamlit demo (synthetic metrics) |
 
 ## Author
 
