@@ -17,6 +17,8 @@ git clone https://github.com/ianalloway/ai-advantage
 cd ai-advantage
 npm install
 npm run dev
+npm test          # unit tests must pass before opening a PR
+npm run lint
 ```
 
 ## Code Style
