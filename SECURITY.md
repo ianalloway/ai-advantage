@@ -4,8 +4,8 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.x.x   | :white_check_mark: |
-| < 1.0   | :x:                |
+| `main` / 0.x | :white_check_mark: |
+| unreleased forks | :x:                |
 
 ## Reporting a Vulnerability
 

@@ -2,6 +2,28 @@
   "name": "ai-advantage",
   "private": true,
   "version": "0.0.0",
+  "description": "Sports betting platform with ML predictions, Kelly Criterion bet sizing, live odds, and daily AI picks. NBA, NFL, MLB.",
+  "author": "Ian Alloway <ian@allowayllc.com>",
+  "license": "MIT",
+  "homepage": "https://aiadvantagesports.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ianalloway/ai-advantage.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ianalloway/ai-advantage/issues"
+  },
+  "keywords": [
+    "sports-betting",
+    "machine-learning",
+    "kelly-criterion",
+    "react",
+    "typescript",
+    "vite",
+    "nba",
+    "nfl",
+    "mlb"
+  ],
   "type": "module",
   "engines": {
     "node": ">=22.18.0"

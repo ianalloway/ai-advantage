@@ -3,9 +3,12 @@
 ![AI Advantage Sports](assets/social-preview.png)
 
 [![Live Site](https://img.shields.io/badge/Live-aiadvantagesports.com-00D100?style=for-the-badge&logo=google-chrome&logoColor=white)](https://aiadvantagesports.com)
-[![React](https://img.shields.io/badge/React-20232A?style=flat&logo=react&logoColor=61DAFB)](https://reactjs.org/)
+[![CI](https://github.com/ianalloway/ai-advantage/actions/workflows/ci.yml/badge.svg)](https://github.com/ianalloway/ai-advantage/actions/workflows/ci.yml)
+[![React](https://img.shields.io/badge/React-19-20232A?style=flat&logo=react&logoColor=61DAFB)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-8-646CFF?style=flat&logo=vite&logoColor=white)](https://vitejs.dev/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=flat&logo=tailwind-css&logoColor=white)](https://tailwindcss.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 > ML-driven sports betting product: predictions, Kelly-based bet sizing, live odds, and a real subscription surface. Live at **[aiadvantagesports.com](https://aiadvantagesports.com)**.
 
@@ -40,9 +43,9 @@ It's the product layer of a larger sports-analytics stack — the modeling lives
 
 ## Stack
 
-`React` · `TypeScript` · `Vite` · `Tailwind CSS` · `shadcn/ui`
+`React 19` · `TypeScript` · `Vite 8` · `Tailwind CSS` · `shadcn/ui` · `Netlify Functions`
 
-Netlify Functions handle Stripe checkout, newsletter capture, and the shared execution ledger so previews and production stay fully functional.
+Netlify Functions handle Stripe checkout, newsletter capture, and the shared execution ledger so previews and production stay fully functional. Live product: **[aiadvantagesports.com](https://aiadvantagesports.com)**.
 
 ## Run it locally
 
@@ -50,10 +53,12 @@ Netlify Functions handle Stripe checkout, newsletter capture, and the shared exe
 git clone https://github.com/ianalloway/ai-advantage.git
 cd ai-advantage
 npm install
-npm run dev
+npm run dev      # http://localhost:8080
+npm test         # unit tests (vitest)
+npm run build    # production build + prerender
 ```
 
-Open `http://localhost:8080`.
+Copy `env.example` → `.env.local` for Stripe / newsletter / auth secrets when exercising server flows.
 
 ## Deployment
 
