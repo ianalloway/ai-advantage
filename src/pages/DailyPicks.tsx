@@ -47,6 +47,8 @@ import { getEdgeBadge } from "@/lib/edgeBadge";
 import { getCurrentUserProfile } from "@/lib/profile";
 import { buildLinePath, closeLineValuePts, closeVerdict, formatCloseBadge, formatPathLabel } from "@/lib/linePath";
 import { stressKellyStake } from "@/lib/kellyStress";
+import { decomposeEdge, devigMarket, findFairOutcome, formatHold } from "@/lib/devig";
+import HedgeCalculator from "@/components/HedgeCalculator";
 import { deskRowsFromPicks, downloadCsv, toCsv } from "@/lib/exportDesk";
 import type { RiskPosition } from "@/lib/portfolioRisk";
 import { Slider } from "@/components/ui/slider";
@@ -354,6 +356,20 @@ function PickCard({
     entryForClv !== undefined && pathOdds.close !== undefined
       ? closeLineValuePts(entryForClv, pathOdds.close)
       : undefined;
+  // Strip the book's margin out of the posted market so "edge" means edge over a
+  // fair line rather than over a price that already includes the hold.
+  const fairMarket = game.odds
+    ? devigMarket([
+        { label: "Home", americanOdds: game.odds.homeMoneyline },
+        { label: "Away", americanOdds: game.odds.awayMoneyline },
+        ...(game.odds.drawMoneyline !== undefined
+          ? [{ label: "Draw", americanOdds: game.odds.drawMoneyline }]
+          : []),
+      ])
+    : null;
+  const fairSide = fairMarket ? findFairOutcome(fairMarket, sideLocation) : undefined;
+  const sideModelProb = prediction.valueBet?.modelProb ?? winnerProb;
+  const edgeSplit = fairSide ? decomposeEdge(sideModelProb, fairSide) : undefined;
   const stress = prediction.valueBet
     ? stressKellyStake({
         winProb: prediction.valueBet.modelProb,
@@ -549,6 +565,49 @@ function PickCard({
                 </div>
               </div>
             </div>
+
+            {fairMarket && fairSide && edgeSplit ? (
+              <div className="mt-4 rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.06] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] uppercase tracking-[0.24em] text-cyan-200/80">No-vig fair price</div>
+                  <span className="rounded-full border border-white/10 bg-black/30 px-2.5 py-0.5 font-mono text-[10px] text-zinc-300">
+                    {formatHold(fairMarket.holdPct)}
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-xl border border-white/8 bg-black/25 p-2">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Posted</div>
+                    <div className="mt-1 font-mono text-sm font-semibold text-sky-300">
+                      {formatOdds(fairSide.americanOdds)}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-white/8 bg-black/25 p-2">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Fair</div>
+                    <div className="mt-1 font-mono text-sm font-semibold text-cyan-200">
+                      {formatOdds(fairSide.fairOdds)}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-white/8 bg-black/25 p-2">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Net edge</div>
+                    <div
+                      className={`mt-1 font-mono text-sm font-semibold ${
+                        edgeSplit.clearsVig ? "text-emerald-300" : "text-red-300"
+                      }`}
+                    >
+                      {formatEdge(edgeSplit.netEdgePts)}
+                    </div>
+                  </div>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-zinc-500">
+                  Model {formatProb(sideModelProb)} vs fair {formatProb(fairSide.fairProb)} on{" "}
+                  {prediction.valueBet?.team ?? prediction.predictedWinner} — {formatEdge(edgeSplit.disagreementPts)}{" "}
+                  disagreement, {edgeSplit.vigPts.toFixed(2)} pts of it eaten by the hold.
+                  {edgeSplit.clearsVig
+                    ? " What is left is the edge you actually get paid on."
+                    : " The disagreement does not survive the price."}
+                </p>
+              </div>
+            ) : null}
 
             {linePath.length >= 2 ? (
               <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.03] p-4">
@@ -821,6 +880,29 @@ export default function DailyPicks() {
         },
       ];
     });
+  }, [filteredGames, freePicks, hasPremiumBoard]);
+
+  // The hedge desk prefills from the strongest actionable two-way ticket on the
+  // board — a three-way soccer market has no single opposing side to lay.
+  const hedgeContext = useMemo(() => {
+    const actionable = hasPremiumBoard ? filteredGames : freePicks;
+    const candidate = actionable.find(({ game, prediction }) => {
+      const bet = prediction.valueBet;
+      if (!bet || !game.odds || game.odds.drawMoneyline !== undefined) return false;
+      return bet.location === "Home" || bet.location === "Away";
+    });
+    if (!candidate || !candidate.prediction.valueBet || !candidate.game.odds) return null;
+
+    const { game, prediction } = candidate;
+    const bet = prediction.valueBet;
+    const opposingOdds = bet.location === "Home" ? game.odds.awayMoneyline : game.odds.homeMoneyline;
+    return {
+      entryOdds: bet.odds,
+      stake: Math.max(1, Math.round(bet.suggestedBet)),
+      hedgeOdds: opposingOdds,
+      modelProb: bet.modelProb,
+      label: `${bet.team} ${formatOdds(bet.odds)} · ${game.awayTeam} at ${game.homeTeam}`,
+    };
   }, [filteredGames, freePicks, hasPremiumBoard]);
 
   const exportDesk = () => {
@@ -1116,6 +1198,13 @@ export default function DailyPicks() {
                 onUnlock={() => setShowPaymentOptionModal(true)}
               />
               <KellySimulator />
+              <HedgeCalculator
+                defaultEntryOdds={hedgeContext?.entryOdds}
+                defaultStake={hedgeContext?.stake}
+                defaultHedgeOdds={hedgeContext?.hedgeOdds}
+                defaultModelProb={hedgeContext?.modelProb}
+                contextLabel={hedgeContext?.label}
+              />
             </div>
           </div>
         )}
