@@ -28,6 +28,7 @@ import PaymentOptionDialog from "@/components/PaymentOptionDialog";
 import { useToast } from "@/components/ui/use-toast";
 import KellySimulator from "@/components/KellySimulator";
 import PortfolioRiskView from "@/components/PortfolioRiskView";
+import ClvBookPanel from "@/components/ClvBookPanel";
 import {
   getAuthChangeEventName,
   getCurrentSiteUser,
@@ -50,6 +51,7 @@ import { stressKellyStake } from "@/lib/kellyStress";
 import { decomposeEdge, devigMarket, findFairOutcome, formatHold } from "@/lib/devig";
 import HedgeCalculator from "@/components/HedgeCalculator";
 import { deskRowsFromPicks, downloadCsv, toCsv } from "@/lib/exportDesk";
+import type { ClvRollupEntry } from "@/lib/clvRollup";
 import type { RiskPosition } from "@/lib/portfolioRisk";
 import { Slider } from "@/components/ui/slider";
 
@@ -860,9 +862,40 @@ export default function DailyPicks() {
 
   // Risk is measured over the bets this user can actually place — the open board
   // alone until premium unlocks the rest of the slate.
+  const deskForPanels = hasPremiumBoard ? filteredGames : freePicks;
+
+  const clvBookEntries = useMemo<ClvRollupEntry[]>(() => {
+    return deskForPanels.map(({ game, prediction }) => {
+      const sideLocation =
+        prediction.valueBet?.location ??
+        (prediction.predictedWinner === game.homeTeam
+          ? "Home"
+          : prediction.predictedWinner === game.awayTeam
+            ? "Away"
+            : "Draw");
+      const current =
+        sideLocation === "Home"
+          ? game.odds?.homeMoneyline
+          : sideLocation === "Away"
+            ? game.odds?.awayMoneyline
+            : game.odds?.drawMoneyline;
+      const close =
+        sideLocation === "Home"
+          ? game.odds?.homeMoneylineClose
+          : sideLocation === "Away"
+            ? game.odds?.awayMoneylineClose
+            : undefined;
+      return {
+        entryOdds: prediction.valueBet?.odds ?? current,
+        closeOdds: close,
+        sport: game.sport,
+        date: game.date,
+      };
+    });
+  }, [deskForPanels]);
+
   const riskPositions = useMemo<RiskPosition[]>(() => {
-    const actionable = hasPremiumBoard ? filteredGames : freePicks;
-    return actionable.flatMap(({ game, prediction }) => {
+    return deskForPanels.flatMap(({ game, prediction }) => {
       const bet = prediction.valueBet;
       if (!bet || bet.suggestedBet <= 0) return [];
       return [
@@ -880,7 +913,7 @@ export default function DailyPicks() {
         },
       ];
     });
-  }, [filteredGames, freePicks, hasPremiumBoard]);
+  }, [deskForPanels]);
 
   // The hedge desk prefills from the strongest actionable two-way ticket on the
   // board — a three-way soccer market has no single opposing side to lay.
@@ -1190,6 +1223,7 @@ export default function DailyPicks() {
                 kellyFraction={userKellyFraction}
                 riskLabel={userProfile?.riskProfile === "conservative" ? "Conservative" : userProfile?.riskProfile === "aggressive" ? "Aggressive" : "Balanced"}
               />
+              <ClvBookPanel entries={clvBookEntries} />
               <PortfolioRiskView
                 positions={riskPositions}
                 bankroll={userBankroll}
