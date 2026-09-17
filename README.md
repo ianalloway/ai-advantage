@@ -36,6 +36,9 @@ It's the product layer of a larger sports-analytics stack — the modeling lives
 | Game analyzer | Enter a matchup, get an analysis and a recommendation |
 | Live odds | Track lines and movement across the slate |
 | Kelly sizing | Translate edge + bankroll into a stake |
+| Fair price | De-vigs the market, shows the no-vig line, book hold, and the edge that survives it |
+| Hedge desk | Prices a live ticket against the other side: lock stake, guaranteed profit, lock-vs-ride verdict |
+| Model calibration | Brier score and reliability bands over the graded ledger — are the probabilities honest? |
 | Portfolio risk | Correlated exposure by team, game, sport, and narrative, with a stake haircut |
 | Multi-sport | NBA, NFL, MLB workflows |
 | Premium | Stripe subscription + one-time checkout |

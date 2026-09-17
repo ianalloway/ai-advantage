@@ -1,5 +1,7 @@
 /** CSV helpers for desk / proof-ledger exports. */
 
+import { decomposeEdge, devigMarket, findFairOutcome } from "@/lib/devig";
+
 export function toCsv(rows: Array<Record<string, string | number | boolean | undefined | null>>): string {
   if (rows.length === 0) return "";
   const headers = Array.from(
@@ -74,6 +76,21 @@ export function deskRowsFromPicks(
       side === "Home" ? game.odds?.homeMoneylineOpen : side === "Away" ? game.odds?.awayMoneylineOpen : undefined;
     const close =
       side === "Home" ? game.odds?.homeMoneylineClose : side === "Away" ? game.odds?.awayMoneylineClose : undefined;
+
+    // Fair (no-vig) reference for the recommended side, so an exported row can be
+    // audited against a de-vigged line rather than only the posted one.
+    const fairMarket = game.odds
+      ? devigMarket([
+          { label: "Home", americanOdds: game.odds.homeMoneyline },
+          { label: "Away", americanOdds: game.odds.awayMoneyline },
+          ...(game.odds.drawMoneyline !== undefined
+            ? [{ label: "Draw", americanOdds: game.odds.drawMoneyline }]
+            : []),
+        ])
+      : null;
+    const fairSide = fairMarket && side ? findFairOutcome(fairMarket, side) : undefined;
+    const edgeSplit = fairSide && vb ? decomposeEdge(vb.modelProb, fairSide) : undefined;
+
     return {
       gameId: game.id,
       sport: game.sport,
@@ -92,6 +109,11 @@ export function deskRowsFromPicks(
       suggestedStake: vb ? Number(vb.suggestedBet.toFixed(2)) : "",
       openOdds: open ?? "",
       closeOdds: close ?? "",
+      marketHoldPct: fairMarket ? Number(fairMarket.holdPct.toFixed(3)) : "",
+      fairProb: fairSide ? Number(fairSide.fairProb.toFixed(4)) : "",
+      fairOdds: fairSide ? fairSide.fairOdds : "",
+      disagreementPts: edgeSplit ? Number(edgeSplit.disagreementPts.toFixed(2)) : "",
+      netEdgeAfterVig: edgeSplit ? Number(edgeSplit.netEdgePts.toFixed(2)) : "",
       reference: "ESPN PickCenter / public line",
     };
   });

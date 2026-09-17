@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import DeskNav from "@/components/DeskNav";
+import CalibrationPanel from "@/components/CalibrationPanel";
 import { useDocumentMeta } from "@/lib/useDocumentMeta";
 import { routeMeta } from "@/lib/routeSeo";
 import { Link } from "react-router-dom";
@@ -268,6 +269,16 @@ export default function Leaderboard() {
     return hasFeatureAccess("historical_ledger", access) ? rows.slice(0, 40) : rows.slice(0, 5);
   }, [access, historicalEntries, sportFilter]);
 
+  // Calibration reads the persisted archive rather than the live board: only
+  // graded rows carry information about whether a probability was honest.
+  const calibrationEntries = useMemo(() => {
+    const rows =
+      sportFilter === "ALL"
+        ? historicalEntries
+        : historicalEntries.filter((entry) => entry.sportLabel === sportFilter);
+    return rows.map((entry) => ({ modelProb: entry.modelProb, ledgerOutcome: entry.ledgerOutcome }));
+  }, [historicalEntries, sportFilter]);
+
   const stats = useMemo(() => {
     const settled = filteredEntries.filter((entry) => entry.ledgerOutcome !== "pending");
     const clvEntries = filteredEntries.filter((entry) => entry.closeLineValue !== undefined);
@@ -460,6 +471,10 @@ export default function Leaderboard() {
               Avg CLV {stats.avgClv !== undefined ? formatClv(stats.avgClv) : "—"}. Sample {stats.clvSample}. Wins {stats.wins}/{stats.settled}.
             </div>
           </div>
+        </div>
+
+        <div className="mt-8">
+          <CalibrationPanel entries={calibrationEntries} />
         </div>
 
         {chartData.length > 0 ? (
