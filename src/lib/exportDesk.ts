@@ -1,6 +1,7 @@
 /** CSV helpers for desk / proof-ledger exports. */
 
 import { decomposeEdge, devigMarket, findFairOutcome } from "@/lib/devig";
+import { closeLineValuePts } from "@/lib/linePath";
 
 export function toCsv(rows: Array<Record<string, string | number | boolean | undefined | null>>): string {
   if (rows.length === 0) return "";
@@ -71,11 +72,26 @@ export function deskRowsFromPicks(
 ) {
   return picks.map(({ game, prediction }) => {
     const vb = prediction.valueBet;
-    const side = vb?.location ?? "";
+    const side =
+      vb?.location ??
+      (prediction.predictedWinner === game.homeTeam
+        ? "Home"
+        : prediction.predictedWinner === game.awayTeam
+          ? "Away"
+          : prediction.predictedWinner
+            ? "Draw"
+            : "");
     const open =
       side === "Home" ? game.odds?.homeMoneylineOpen : side === "Away" ? game.odds?.awayMoneylineOpen : undefined;
     const close =
       side === "Home" ? game.odds?.homeMoneylineClose : side === "Away" ? game.odds?.awayMoneylineClose : undefined;
+    const current =
+      side === "Home" ? game.odds?.homeMoneyline : side === "Away" ? game.odds?.awayMoneyline : game.odds?.drawMoneyline;
+    const entryOdds = vb?.odds ?? current;
+    const clvPts =
+      entryOdds !== undefined && close !== undefined
+        ? Number(closeLineValuePts(entryOdds, close).toFixed(3))
+        : "";
 
     // Fair (no-vig) reference for the recommended side, so an exported row can be
     // audited against a de-vigged line rather than only the posted one.
@@ -102,13 +118,14 @@ export function deskRowsFromPicks(
       confidence: Number(prediction.confidence.toFixed(4)),
       execEdge: Number(prediction.executionAdjustedEdge.toFixed(2)),
       valueSide: vb?.team ?? "",
-      entryOdds: vb?.odds ?? "",
+      entryOdds: entryOdds ?? "",
       modelProb: vb ? Number(vb.modelProb.toFixed(4)) : "",
       rawEdge: vb ? Number(vb.rawEdge.toFixed(2)) : "",
       kellyPct: vb ? Number((vb.kellyPct * 100).toFixed(2)) : "",
       suggestedStake: vb ? Number(vb.suggestedBet.toFixed(2)) : "",
       openOdds: open ?? "",
       closeOdds: close ?? "",
+      clvPts,
       marketHoldPct: fairMarket ? Number(fairMarket.holdPct.toFixed(3)) : "",
       fairProb: fairSide ? Number(fairSide.fairProb.toFixed(4)) : "",
       fairOdds: fairSide ? fairSide.fairOdds : "",

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { deskRowsFromPicks, toCsv } from "./exportDesk";
+import { closeLineValuePts } from "./linePath";
 
 describe("toCsv", () => {
   it("escapes commas and quotes", () => {
@@ -57,5 +58,69 @@ describe("deskRowsFromPicks", () => {
     expect(row.marketHoldPct).toBe("");
     expect(row.fairOdds).toBe("");
     expect(row.netEdgeAfterVig).toBe("");
+  });
+
+  it("adds clvPts when entry and close are known", () => {
+    const rows = deskRowsFromPicks([
+      {
+        game: {
+          id: "g1",
+          sport: "nba",
+          homeTeam: "Lakers",
+          awayTeam: "Celtics",
+          date: "2026-03-15T00:00:00.000Z",
+          odds: {
+            homeMoneyline: -140,
+            awayMoneyline: 120,
+            homeMoneylineClose: -150,
+            awayMoneylineClose: 130,
+          },
+        },
+        prediction: {
+          predictedWinner: "Lakers",
+          confidence: 0.6,
+          executionAdjustedEdge: 4.2,
+          valueBet: {
+            team: "Lakers",
+            location: "Home",
+            odds: -130,
+            modelProb: 0.62,
+            rawEdge: 5,
+            executionAdjustedEdge: 4.2,
+            kellyPct: 0.03,
+            suggestedBet: 30,
+          },
+        },
+      },
+    ]);
+
+    expect(rows[0]!.clvPts).toBe(Number(closeLineValuePts(-130, -150).toFixed(3)));
+  });
+
+  it("leaves clvPts blank when close is pending", () => {
+    const rows = deskRowsFromPicks([
+      {
+        game: {
+          id: "g2",
+          sport: "nba",
+          homeTeam: "Lakers",
+          awayTeam: "Celtics",
+          date: "2026-03-15T00:00:00.000Z",
+          odds: {
+            homeMoneyline: -110,
+            awayMoneyline: -110,
+          },
+        },
+        prediction: {
+          predictedWinner: "Lakers",
+          confidence: 0.55,
+          executionAdjustedEdge: 2,
+          valueBet: null,
+        },
+      },
+    ]);
+
+    expect(rows[0]!.clvPts).toBe("");
+    expect(rows[0]!.entryOdds).toBe(-110);
   });
 });
