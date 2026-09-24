@@ -29,6 +29,7 @@ import { useToast } from "@/components/ui/use-toast";
 import KellySimulator from "@/components/KellySimulator";
 import PortfolioRiskView from "@/components/PortfolioRiskView";
 import ClvBookPanel from "@/components/ClvBookPanel";
+import SteamLensPanel from "@/components/SteamLensPanel";
 import {
   getAuthChangeEventName,
   getCurrentSiteUser,
@@ -47,6 +48,14 @@ import { fetchLiveGamesForSports, type LiveMarketGame } from "@/lib/liveSports";
 import { getEdgeBadge } from "@/lib/edgeBadge";
 import { getCurrentUserProfile } from "@/lib/profile";
 import { buildLinePath, closeLineValuePts, closeVerdict, formatCloseBadge, formatPathLabel } from "@/lib/linePath";
+import {
+  classifySteam,
+  formatSteamBadge,
+  formatSteamChip,
+  formatSteamPath,
+  steamChipClassName,
+  type SteamDeskEntry,
+} from "@/lib/steamLens";
 import { stressKellyStake } from "@/lib/kellyStress";
 import { decomposeEdge, devigMarket, findFairOutcome, formatHold } from "@/lib/devig";
 import HedgeCalculator from "@/components/HedgeCalculator";
@@ -352,6 +361,9 @@ function PickCard({
     return { open: undefined, current: game.odds.drawMoneyline, close: undefined };
   })();
   const linePath = buildLinePath(pathOdds);
+  const steam = classifySteam({ openOdds: pathOdds.open, currentOdds: pathOdds.current });
+  const steamChip = formatSteamChip(steam);
+  const steamTitle = [formatSteamBadge(steam), formatSteamPath(steam)].filter(Boolean).join(" · ");
   const entryForClv = prediction.valueBet?.odds ?? pathOdds.current;
   const verdict = closeVerdict(entryForClv, pathOdds.close);
   const clvPts =
@@ -390,6 +402,14 @@ function PickCard({
           <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ${edgeBadge.className}`}>
             {edgeBadge.shortLabel}
           </span>
+          {steamChip ? (
+            <span
+              className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ${steamChipClassName(steam.classification)}`}
+              title={steamTitle || undefined}
+            >
+              {steamChip}
+            </span>
+          ) : null}
           <Badge variant="outline" className="border-brand-400/30 bg-brand-400/10 text-[11px] tracking-[0.24em] text-brand-300">
             {game.sportLabel}
           </Badge>
@@ -894,6 +914,36 @@ export default function DailyPicks() {
     });
   }, [deskForPanels]);
 
+  const steamDeskEntries = useMemo<SteamDeskEntry[]>(() => {
+    return deskForPanels.map(({ game, prediction }) => {
+      const sideLocation =
+        prediction.valueBet?.location ??
+        (prediction.predictedWinner === game.homeTeam
+          ? "Home"
+          : prediction.predictedWinner === game.awayTeam
+            ? "Away"
+            : "Draw");
+      const open =
+        sideLocation === "Home"
+          ? game.odds?.homeMoneylineOpen
+          : sideLocation === "Away"
+            ? game.odds?.awayMoneylineOpen
+            : undefined;
+      const current =
+        sideLocation === "Home"
+          ? game.odds?.homeMoneyline
+          : sideLocation === "Away"
+            ? game.odds?.awayMoneyline
+            : game.odds?.drawMoneyline;
+      return {
+        openOdds: open,
+        currentOdds: current,
+        sport: game.sport,
+        label: prediction.valueBet?.team ?? prediction.predictedWinner,
+      };
+    });
+  }, [deskForPanels]);
+
   const riskPositions = useMemo<RiskPosition[]>(() => {
     return deskForPanels.flatMap(({ game, prediction }) => {
       const bet = prediction.valueBet;
@@ -1224,6 +1274,7 @@ export default function DailyPicks() {
                 riskLabel={userProfile?.riskProfile === "conservative" ? "Conservative" : userProfile?.riskProfile === "aggressive" ? "Aggressive" : "Balanced"}
               />
               <ClvBookPanel entries={clvBookEntries} />
+              <SteamLensPanel entries={steamDeskEntries} />
               <PortfolioRiskView
                 positions={riskPositions}
                 bankroll={userBankroll}
