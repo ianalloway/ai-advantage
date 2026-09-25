@@ -53,6 +53,7 @@ import { decomposeEdge, devigMarket, findFairOutcome, formatHold } from "@/lib/d
 import HedgeCalculator from "@/components/HedgeCalculator";
 import ParlayBuilder from "@/components/ParlayBuilder";
 import BetLogPanel from "@/components/BetLogPanel";
+import SlateSimulationPanel from "@/components/SlateSimulationPanel";
 import { buildCalibrationReport, calibrationSamplesFromLedger, type CalibrationReport } from "@/lib/calibration";
 import { sizeWithCalibration } from "@/lib/calibratedSizing";
 import type { ParlayLeg } from "@/lib/parlay";
@@ -1456,6 +1457,7 @@ export default function DailyPicks() {
                 locked={!hasPremiumBoard}
                 onUnlock={() => setShowPaymentOptionModal(true)}
               />
+              <SlateSimulationPanel positions={riskPositions} bankroll={userBankroll} />
               <ParlayBuilder
                 legs={parlayLegs}
                 bankroll={userBankroll}
