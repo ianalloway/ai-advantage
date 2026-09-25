@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import DeskNav from "@/components/DeskNav";
 import CalibrationPanel from "@/components/CalibrationPanel";
+import StakingPlanPanel from "@/components/StakingPlanPanel";
+import SegmentBreakdown from "@/components/SegmentBreakdown";
 import { useDocumentMeta } from "@/lib/useDocumentMeta";
 import { routeMeta } from "@/lib/routeSeo";
 import { Link } from "react-router-dom";
@@ -279,6 +281,14 @@ export default function Leaderboard() {
     return rows.map((entry) => ({ modelProb: entry.modelProb, ledgerOutcome: entry.ledgerOutcome }));
   }, [historicalEntries, sportFilter]);
 
+  // The replay and the attribution cut both run over the persisted archive
+  // rather than the live board, for the same reason calibration does.
+  const analyticsRows = useMemo(() => {
+    return sportFilter === "ALL"
+      ? historicalEntries
+      : historicalEntries.filter((entry) => entry.sportLabel === sportFilter);
+  }, [historicalEntries, sportFilter]);
+
   const stats = useMemo(() => {
     const settled = filteredEntries.filter((entry) => entry.ledgerOutcome !== "pending");
     const clvEntries = filteredEntries.filter((entry) => entry.closeLineValue !== undefined);
@@ -475,6 +485,11 @@ export default function Leaderboard() {
 
         <div className="mt-8">
           <CalibrationPanel entries={calibrationEntries} />
+        </div>
+
+        <div className="mt-8 grid gap-6 xl:grid-cols-2">
+          <StakingPlanPanel entries={analyticsRows} bankroll={BANKROLL} />
+          <SegmentBreakdown entries={analyticsRows} />
         </div>
 
         {chartData.length > 0 ? (

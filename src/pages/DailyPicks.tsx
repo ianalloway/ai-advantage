@@ -14,7 +14,9 @@ import {
   Crown,
   Download,
   Flame,
+  Layers,
   Lock,
+  NotebookPen,
   Radar,
   RefreshCw,
   Star,
@@ -59,6 +61,21 @@ import {
 import { stressKellyStake } from "@/lib/kellyStress";
 import { decomposeEdge, devigMarket, findFairOutcome, formatHold } from "@/lib/devig";
 import HedgeCalculator from "@/components/HedgeCalculator";
+import ParlayBuilder from "@/components/ParlayBuilder";
+import BetLogPanel from "@/components/BetLogPanel";
+import SlateSimulationPanel from "@/components/SlateSimulationPanel";
+import { buildCalibrationReport, calibrationSamplesFromLedger, type CalibrationReport } from "@/lib/calibration";
+import { sizeWithCalibration } from "@/lib/calibratedSizing";
+import type { ParlayLeg } from "@/lib/parlay";
+import {
+  createBetLogEntry,
+  settleBetLogEntry,
+  type BetLogEntry,
+  type BetLogOutcome,
+} from "@/lib/betLog";
+import { listBetLogEntries, putBetLogEntries, putBetLogEntry, removeBetLogEntry } from "@/lib/betLogStore";
+import { listExecutionLedgerArchive } from "@/lib/executionLedgerStore";
+import { gradeOutcome } from "@/lib/executionBoard";
 import { deskRowsFromPicks, downloadCsv, toCsv } from "@/lib/exportDesk";
 import type { ClvRollupEntry } from "@/lib/clvRollup";
 import type { RiskPosition } from "@/lib/portfolioRisk";
@@ -319,11 +336,21 @@ function PickCard({
   locked,
   onUnlock,
   bankroll,
+  kellyFraction,
+  calibration,
+  inParlay,
+  onToggleParlayLeg,
+  onLogBet,
 }: {
   entry: PickEntry;
   locked: boolean;
   onUnlock: () => void;
   bankroll: number;
+  kellyFraction: number;
+  calibration: CalibrationReport | null;
+  inParlay: boolean;
+  onToggleParlayLeg: (entry: PickEntry) => void;
+  onLogBet: (entry: PickEntry) => void;
 }) {
   const { game, prediction } = entry;
   const winnerOdds = prediction.predictedWinnerOdds;
@@ -384,6 +411,17 @@ function PickCard({
   const fairSide = fairMarket ? findFairOutcome(fairMarket, sideLocation) : undefined;
   const sideModelProb = prediction.valueBet?.modelProb ?? winnerProb;
   const edgeSplit = fairSide ? decomposeEdge(sideModelProb, fairSide) : undefined;
+  // Size off what the model has actually proven in this probability band, not
+  // off the probability it states.
+  const calibratedSizing = prediction.valueBet
+    ? sizeWithCalibration({
+        modelProb: prediction.valueBet.modelProb,
+        americanOdds: prediction.valueBet.odds,
+        bankroll,
+        kellyFraction,
+        calibration,
+      })
+    : null;
   const stress = prediction.valueBet
     ? stressKellyStake({
         winProb: prediction.valueBet.modelProb,
@@ -683,6 +721,31 @@ function PickCard({
                       <div className="text-xs text-zinc-400">fractional Kelly</div>
                     </div>
                   </div>
+                  {calibratedSizing && calibratedSizing.confidence !== "unmeasured" ? (
+                    <div className="mt-3 border-t border-white/10 pt-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-[11px] uppercase tracking-[0.2em] text-cyan-200/80">
+                          Calibrated stake
+                        </div>
+                        <div
+                          className={`font-mono text-sm font-semibold ${
+                            calibratedSizing.stillPositive ? "text-cyan-200" : "text-red-300"
+                          }`}
+                        >
+                          {calibratedSizing.stillPositive
+                            ? `$${calibratedSizing.calibratedStake.toFixed(0)}`
+                            : "No bet"}
+                          {calibratedSizing.stakeDeltaPct !== 0 && calibratedSizing.stillPositive ? (
+                            <span className="ml-1.5 text-[11px] text-zinc-500">
+                              {calibratedSizing.stakeDeltaPct > 0 ? "+" : ""}
+                              {calibratedSizing.stakeDeltaPct.toFixed(0)}%
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-zinc-500">{calibratedSizing.note}</p>
+                    </div>
+                  ) : null}
                 </div>
                 {stress ? (
                   <div className="rounded-2xl border border-white/8 bg-black/25 p-4">
@@ -709,6 +772,32 @@ function PickCard({
                     </div>
                   </div>
                 ) : null}
+                {/* A locked card is only blurred behind an overlay — don't leave live
+                    controls under it that could pull a premium pick onto the ticket. */}
+                {locked ? null : (
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className={`flex-1 border-white/10 text-zinc-300 hover:bg-white/[0.06] ${
+                        inParlay ? "border-cyan-300/40 bg-cyan-300/10 text-cyan-100" : ""
+                      }`}
+                      onClick={() => onToggleParlayLeg(entry)}
+                    >
+                      <Layers className="mr-1.5 h-3.5 w-3.5" />
+                      {inParlay ? "In parlay" : "Add to parlay"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 border-white/10 text-zinc-300 hover:bg-white/[0.06]"
+                      onClick={() => onLogBet(entry)}
+                    >
+                      <NotebookPen className="mr-1.5 h-3.5 w-3.5" />
+                      Log bet
+                    </Button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.03] p-4 text-sm text-zinc-400">
@@ -737,6 +826,9 @@ export default function DailyPicks() {
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [hasError, setHasError] = useState(false);
   const [minExecEdge, setMinExecEdge] = useState(3);
+  const [calibration, setCalibration] = useState<CalibrationReport | null>(null);
+  const [betLog, setBetLog] = useState<BetLogEntry[]>([]);
+  const [parlayLegIds, setParlayLegIds] = useState<string[]>([]);
   const { toast } = useToast();
 
   const syncAccessUi = () => {
@@ -803,6 +895,30 @@ export default function DailyPicks() {
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
+    };
+  }, []);
+
+  // Calibration comes from the graded ledger and feeds stake sizing below.
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadSupportingData = async () => {
+      try {
+        const [archive, log] = await Promise.all([
+          listExecutionLedgerArchive(250).catch(() => []),
+          listBetLogEntries().catch(() => []),
+        ]);
+        if (cancelled) return;
+        setCalibration(buildCalibrationReport(calibrationSamplesFromLedger(archive), { buckets: 5 }));
+        setBetLog(log);
+      } catch {
+        // The desk still works without history; sizing just falls back to raw model numbers.
+      }
+    };
+
+    void loadSupportingData();
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -987,6 +1103,140 @@ export default function DailyPicks() {
       label: `${bet.team} ${formatOdds(bet.odds)} · ${game.awayTeam} at ${game.homeTeam}`,
     };
   }, [filteredGames, freePicks, hasPremiumBoard]);
+
+  const parlayLegs = useMemo<ParlayLeg[]>(() => {
+    return parlayLegIds.flatMap((id) => {
+      const pick = analyzedGames.find(({ game }) => game.id === id);
+      const bet = pick?.prediction.valueBet;
+      if (!pick || !bet || !pick.game.odds) return [];
+
+      const market = devigMarket([
+        { label: "Home", americanOdds: pick.game.odds.homeMoneyline },
+        { label: "Away", americanOdds: pick.game.odds.awayMoneyline },
+        ...(pick.game.odds.drawMoneyline !== undefined
+          ? [{ label: "Draw", americanOdds: pick.game.odds.drawMoneyline }]
+          : []),
+      ]);
+
+      return [
+        {
+          id: pick.game.id,
+          label: `${bet.team} ${formatOdds(bet.odds)}`,
+          americanOdds: bet.odds,
+          modelProb: bet.modelProb,
+          fairProb: findFairOutcome(market, bet.location)?.fairProb,
+          gameId: pick.game.id,
+          sport: pick.game.sport,
+        },
+      ];
+    });
+  }, [analyzedGames, parlayLegIds]);
+
+  const toggleParlayLeg = (pick: PickEntry) => {
+    setParlayLegIds((current) =>
+      current.includes(pick.game.id)
+        ? current.filter((id) => id !== pick.game.id)
+        : [...current, pick.game.id],
+    );
+  };
+
+  const logBet = async (pick: PickEntry) => {
+    const bet = pick.prediction.valueBet;
+    if (!bet) return;
+
+    const entry = createBetLogEntry({
+      gameId: pick.game.id,
+      sport: pick.game.sport,
+      sportLabel: pick.game.sportLabel,
+      eventLabel: `${pick.game.awayTeam} at ${pick.game.homeTeam}`,
+      side: bet.team,
+      sideLocation: bet.location,
+      americanOdds: bet.odds,
+      stake: Number(bet.suggestedBet.toFixed(2)),
+      deskOdds: bet.odds,
+      commenceTime: pick.game.date,
+      bookmaker: pick.game.bookmaker,
+      modelProb: bet.modelProb,
+    });
+
+    setBetLog((current) => [entry, ...current]);
+    try {
+      await putBetLogEntry(entry);
+    } catch {
+      // An unavailable IndexedDB should not cost the user the row on screen.
+    }
+    toast({
+      title: "Bet logged",
+      description: `${bet.team} ${formatOdds(bet.odds)} for $${entry.stake.toFixed(2)}. Edit the outcome once it settles.`,
+    });
+  };
+
+  const settleBet = async (id: string, outcome: BetLogOutcome) => {
+    let updated: BetLogEntry | undefined;
+    setBetLog((current) =>
+      current.map((entry) => {
+        if (entry.id !== id) return entry;
+        updated = settleBetLogEntry(entry, outcome);
+        return updated;
+      }),
+    );
+    if (updated) {
+      await putBetLogEntry(updated).catch(() => undefined);
+    }
+  };
+
+  const updateBet = async (id: string, changes: { americanOdds?: number; stake?: number }) => {
+    let updated: BetLogEntry | undefined;
+    setBetLog((current) =>
+      current.map((entry) => {
+        if (entry.id !== id) return entry;
+        const americanOdds = changes.americanOdds ?? entry.americanOdds;
+        const stake = changes.stake ?? entry.stake;
+        updated = {
+          ...entry,
+          americanOdds: Number.isFinite(americanOdds) ? americanOdds : entry.americanOdds,
+          stake: Number.isFinite(stake) && stake >= 0 ? stake : entry.stake,
+        };
+        return updated;
+      }),
+    );
+    if (updated) {
+      await putBetLogEntry(updated).catch(() => undefined);
+    }
+  };
+
+  const removeBet = async (id: string) => {
+    setBetLog((current) => current.filter((entry) => entry.id !== id));
+    await removeBetLogEntry(id).catch(() => undefined);
+  };
+
+  // Grade logged bets off the live board as games go final, reusing the same
+  // grading the execution ledger uses so a draw is handled per sport.
+  useEffect(() => {
+    if (betLog.length === 0 || games.length === 0) return;
+
+    const graded = betLog.flatMap((entry) => {
+      if (entry.outcome !== "pending") return [];
+      const game = games.find((candidate) => candidate.id === entry.gameId);
+      if (!game || game.status.state !== "post") return [];
+      if (game.homeScore === undefined || game.awayScore === undefined) return [];
+
+      const outcome = gradeOutcome(game.sport, game.homeScore, game.awayScore, entry.side, entry.sideLocation);
+      const closeOdds =
+        entry.sideLocation === "Home"
+          ? game.odds?.homeMoneylineClose
+          : entry.sideLocation === "Away"
+            ? game.odds?.awayMoneylineClose
+            : undefined;
+      return [settleBetLogEntry(entry, outcome, closeOdds)];
+    });
+
+    if (graded.length === 0) return;
+
+    const byId = new Map(graded.map((entry) => [entry.id, entry]));
+    setBetLog((current) => current.map((entry) => byId.get(entry.id) ?? entry));
+    void putBetLogEntries(graded).catch(() => undefined);
+  }, [betLog, games]);
 
   const exportDesk = () => {
     const csv = toCsv(deskRowsFromPicks(filteredGames));
@@ -1210,6 +1460,11 @@ export default function DailyPicks() {
                       entry={entry}
                       locked={false}
                       bankroll={userBankroll}
+                      kellyFraction={userKellyFraction}
+                      calibration={calibration}
+                      inParlay={parlayLegIds.includes(entry.game.id)}
+                      onToggleParlayLeg={toggleParlayLeg}
+                      onLogBet={(pick) => void logBet(pick)}
                       onUnlock={() => setShowCryptoModal(true)}
                     />
                   ))}
@@ -1260,6 +1515,11 @@ export default function DailyPicks() {
                         entry={entry}
                         locked={!hasPremiumBoard}
                         bankroll={userBankroll}
+                        kellyFraction={userKellyFraction}
+                        calibration={calibration}
+                        inParlay={parlayLegIds.includes(entry.game.id)}
+                        onToggleParlayLeg={toggleParlayLeg}
+                        onLogBet={(pick) => void logBet(pick)}
                         onUnlock={() => setShowPaymentOptionModal(true)}
                       />
                     ))}
@@ -1281,6 +1541,20 @@ export default function DailyPicks() {
                 riskProfile={userProfile?.riskProfile ?? "balanced"}
                 locked={!hasPremiumBoard}
                 onUnlock={() => setShowPaymentOptionModal(true)}
+              />
+              <SlateSimulationPanel positions={riskPositions} bankroll={userBankroll} />
+              <ParlayBuilder
+                legs={parlayLegs}
+                bankroll={userBankroll}
+                kellyFraction={userKellyFraction}
+                onRemoveLeg={(id) => setParlayLegIds((current) => current.filter((legId) => legId !== id))}
+                onClear={() => setParlayLegIds([])}
+              />
+              <BetLogPanel
+                entries={betLog}
+                onSettle={(id, outcome) => void settleBet(id, outcome)}
+                onRemove={(id) => void removeBet(id)}
+                onUpdate={(id, changes) => void updateBet(id, changes)}
               />
               <KellySimulator />
               <HedgeCalculator

@@ -21,7 +21,8 @@ export interface KellyStressResult {
   expectedBankroll: number;
 }
 
-function mulberry32(seed: number) {
+/** Small deterministic PRNG, shared by the simulations so runs are reproducible. */
+export function mulberry32(seed: number) {
   let t = seed >>> 0;
   return () => {
     t += 0x6d2b79f5;

@@ -39,6 +39,12 @@ It's the product layer of a larger sports-analytics stack — the modeling lives
 | Fair price | De-vigs the market, shows the no-vig line, book hold, and the edge that survives it |
 | Hedge desk | Prices a live ticket against the other side: lock stake, guaranteed profit, lock-vs-ride verdict |
 | Model calibration | Brier score and reliability bands over the graded ledger — are the probabilities honest? |
+| Calibrated sizing | Corrects the model's probability by its measured bias before Kelly sizes the stake |
+| Parlay desk | Prices a multi-leg ticket: compounded hold, leg correlation, and whether the legs are better bet straight |
+| Bet log | Your actual tickets — realised P&L, price taken vs the board's quote, and CLV |
+| Staking replay | The same graded history under flat, percent, and Kelly disciplines, calibrated walk-forward |
+| Edge attribution | Where the return comes from by sport, edge band, side, and timing — thin samples marked |
+| Slate outlook | Correlated Monte Carlo of tonight's sized slate over a month: spread, drawdown, risk of ruin |
 | Portfolio risk | Correlated exposure by team, game, sport, and narrative, with a stake haircut |
 | Multi-sport | NBA, NFL, MLB workflows |
 | Premium | Stripe subscription + one-time checkout |
