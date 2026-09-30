@@ -64,6 +64,8 @@ import HedgeCalculator from "@/components/HedgeCalculator";
 import ParlayBuilder from "@/components/ParlayBuilder";
 import BetLogPanel from "@/components/BetLogPanel";
 import SlateSimulationPanel from "@/components/SlateSimulationPanel";
+import { fitCloseDrift, driftSamplesFromLedger, projectClose, formatCloseRecommendation, type DriftFit } from "@/lib/closeForecast";
+import { translateEdgeToPoints, formatLine } from "@/lib/spreadTranslation";
 import { buildCalibrationReport, calibrationSamplesFromLedger, type CalibrationReport } from "@/lib/calibration";
 import { sizeWithCalibration } from "@/lib/calibratedSizing";
 import type { ParlayLeg } from "@/lib/parlay";
@@ -338,6 +340,7 @@ function PickCard({
   bankroll,
   kellyFraction,
   calibration,
+  driftFit,
   inParlay,
   onToggleParlayLeg,
   onLogBet,
@@ -348,6 +351,7 @@ function PickCard({
   bankroll: number;
   kellyFraction: number;
   calibration: CalibrationReport | null;
+  driftFit: DriftFit;
   inParlay: boolean;
   onToggleParlayLeg: (entry: PickEntry) => void;
   onLogBet: (entry: PickEntry) => void;
@@ -411,6 +415,17 @@ function PickCard({
   const fairSide = fairMarket ? findFairOutcome(fairMarket, sideLocation) : undefined;
   const sideModelProb = prediction.valueBet?.modelProb ?? winnerProb;
   const edgeSplit = fairSide ? decomposeEdge(sideModelProb, fairSide) : undefined;
+  // The same edge, said in the unit a bettor argues in.
+  const inPoints = translateEdgeToPoints({
+    modelProb: sideModelProb,
+    americanOdds: prediction.valueBet?.odds ?? winnerOdds,
+    sport: game.sport,
+    fairProb: fairSide?.fairProb,
+  });
+  const closeProjection = projectClose(driftFit, {
+    openOdds: pathOdds.open,
+    nowOdds: pathOdds.current ?? winnerOdds,
+  });
   // Size off what the model has actually proven in this probability band, not
   // off the probability it states.
   const calibratedSizing = prediction.valueBet
@@ -669,6 +684,41 @@ function PickCard({
               </div>
             ) : null}
 
+            {inPoints.applicable ? (
+              <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+                <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">In points</div>
+                <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-xl border border-white/8 bg-black/25 p-2">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Model</div>
+                    <div className="mt-1 font-mono text-sm font-semibold text-emerald-300">
+                      {formatLine(inPoints.modelPoints)}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-white/8 bg-black/25 p-2">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Market</div>
+                    <div className="mt-1 font-mono text-sm font-semibold text-sky-300">
+                      {inPoints.marketPoints !== undefined ? formatLine(inPoints.marketPoints) : "—"}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-white/8 bg-black/25 p-2">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Room</div>
+                    <div
+                      className={`mt-1 font-mono text-sm font-semibold ${
+                        inPoints.marginOfSafetyPoints > 0.5
+                          ? "text-emerald-300"
+                          : inPoints.marginOfSafetyPoints > 0
+                            ? "text-amber-300"
+                            : "text-red-300"
+                      }`}
+                    >
+                      {inPoints.marginOfSafetyPoints.toFixed(1)} {inPoints.unit}
+                    </div>
+                  </div>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-zinc-500">{inPoints.note}</p>
+              </div>
+            ) : null}
+
             {linePath.length >= 2 ? (
               <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.03] p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -686,6 +736,32 @@ function PickCard({
                   </span>
                 </div>
                 <div className="mt-2 font-mono text-xs text-sky-200/90">{formatPathLabel(linePath)}</div>
+                {closeProjection.recommendation !== "no-signal" && closeProjection.projectedCloseOdds !== undefined ? (
+                  <div className="mt-3 rounded-xl border border-white/8 bg-black/25 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+                        Projected close
+                      </span>
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] ${
+                          closeProjection.recommendation === "take-now"
+                            ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                            : "border-amber-400/30 bg-amber-400/10 text-amber-200"
+                        }`}
+                      >
+                        {formatCloseRecommendation(closeProjection.recommendation)}
+                      </span>
+                    </div>
+                    <div className="mt-1.5 font-mono text-xs text-cyan-200">
+                      {formatOdds(closeProjection.projectedCloseOdds)}
+                      <span className="ml-2 text-zinc-500">
+                        {closeProjection.expectedClvPts > 0 ? "+" : ""}
+                        {closeProjection.expectedClvPts.toFixed(1)} pts CLV
+                      </span>
+                    </div>
+                    <p className="mt-1.5 text-[11px] leading-5 text-zinc-500">{closeProjection.rationale}</p>
+                  </div>
+                ) : null}
                 <div className="mt-3 flex items-end gap-1">
                   {linePath.map((point, index) => {
                     const values = linePath.map((p) => Math.abs(p.odds));
@@ -827,6 +903,7 @@ export default function DailyPicks() {
   const [hasError, setHasError] = useState(false);
   const [minExecEdge, setMinExecEdge] = useState(3);
   const [calibration, setCalibration] = useState<CalibrationReport | null>(null);
+  const [driftFit, setDriftFit] = useState<DriftFit>(() => fitCloseDrift([]));
   const [betLog, setBetLog] = useState<BetLogEntry[]>([]);
   const [parlayLegIds, setParlayLegIds] = useState<string[]>([]);
   const { toast } = useToast();
@@ -910,6 +987,9 @@ export default function DailyPicks() {
         ]);
         if (cancelled) return;
         setCalibration(buildCalibrationReport(calibrationSamplesFromLedger(archive), { buckets: 5 }));
+        // The same archive answers a second question: how much of a line move
+        // has historically carried on into the close.
+        setDriftFit(fitCloseDrift(driftSamplesFromLedger(archive)));
         setBetLog(log);
       } catch {
         // The desk still works without history; sizing just falls back to raw model numbers.
@@ -1462,6 +1542,7 @@ export default function DailyPicks() {
                       bankroll={userBankroll}
                       kellyFraction={userKellyFraction}
                       calibration={calibration}
+                      driftFit={driftFit}
                       inParlay={parlayLegIds.includes(entry.game.id)}
                       onToggleParlayLeg={toggleParlayLeg}
                       onLogBet={(pick) => void logBet(pick)}
@@ -1517,6 +1598,7 @@ export default function DailyPicks() {
                         bankroll={userBankroll}
                         kellyFraction={userKellyFraction}
                         calibration={calibration}
+                        driftFit={driftFit}
                         inParlay={parlayLegIds.includes(entry.game.id)}
                         onToggleParlayLeg={toggleParlayLeg}
                         onLogBet={(pick) => void logBet(pick)}
