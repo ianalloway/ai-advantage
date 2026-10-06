@@ -29,19 +29,30 @@ function json(statusCode: number, body: unknown, headers: Record<string, string 
 
 export const handler = async (event: NetlifyEvent) => {
   if (event.httpMethod === "POST") {
-    const token = getEntitlementSessionToken(event.headers);
-    if (token) {
-      const store = getEntitlementStore(event);
-      if (!store) return json(503, { success: false, message: "Unable to revoke paid access session." });
-      await revokeEntitlementSession(store, token);
+    const headers = { "Set-Cookie": clearEntitlementSessionCookie(event.headers) };
+    try {
+      const token = getEntitlementSessionToken(event.headers);
+      if (token) {
+        const store = getEntitlementStore(event);
+        if (!store) throw new Error("Entitlement store unavailable");
+        await revokeEntitlementSession(store, token);
+      }
+      return json(200, {
+        success: true,
+        revoked: true,
+        access: accessStateFromEntitlement(null),
+        message: "Paid access session cleared.",
+      }, headers);
+    } catch {
+      // Expire the browser cookie even when server-side revocation cannot be
+      // confirmed. Do not claim a retained copy of the token was invalidated.
+      return json(503, {
+        success: false,
+        revoked: false,
+        access: accessStateFromEntitlement(null),
+        message: "Browser session cleared, but server revocation could not be confirmed.",
+      }, headers);
     }
-    return json(200, {
-      success: true,
-      access: accessStateFromEntitlement(null),
-      message: "Paid access session cleared.",
-    }, {
-      "Set-Cookie": clearEntitlementSessionCookie(event.headers),
-    });
   }
 
   if (event.httpMethod !== "GET") {

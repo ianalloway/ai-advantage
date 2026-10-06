@@ -67,3 +67,22 @@ webhook signature and delivery, storage persistence, refresh/re-login, expiry or
 cancellation, and logout. Check both monthly and event plans, including interruption
 on an actual mobile browser. Provider mocks and device emulation do not prove those
 external integrations. Never use live charges as a substitute for test-mode validation.
+
+### Logout failures and concurrent refreshes
+
+Entitlement logout always sends the expiring HttpOnly cookie, including when the
+store is unavailable or deletion throws. In that case it returns HTTP 503 with
+`success: false` and `revoked: false`: the browser cookie is cleared, but a retained
+copy of the old token may still be valid. Server revocation is not claimed.
+
+The client locks access immediately and reports unconfirmed logout in its toast.
+A deny-only browser-storage marker blocks background entitlement refreshes across
+reloads until explicit sign-in or a newly initiated checkout. It cannot grant
+access. This also protects the browser when a transport failure prevents receipt
+of the cookie-expiry response. Explicit reauthentication can restore legitimate
+paid access. Do not describe a failed revocation as invalidating every token copy.
+
+Refresh ordering uses a latest-request sequence independently of explicit session
+invalidation. An ordinary free response does not invalidate a newer authenticated
+request. Tests cover both completion orders, overlapping bootstrap/login/focus,
+late failures, logout during refresh, backend recovery, and page reload.

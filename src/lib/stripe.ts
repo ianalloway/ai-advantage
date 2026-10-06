@@ -84,6 +84,7 @@ interface EntitlementStatusResponse {
 
 const STORAGE_KEY = "ai_advantage_access_v2";
 const LEGACY_STORAGE_KEY = "ai_advantage_premium";
+const SIGNED_OUT_KEY = "ai_advantage_access_signed_out";
 const CHECKOUT_SYNC_KEY = "ai_advantage_checkout_sync";
 const CRYPTO_ACCOUNT_STORAGE_KEY = "ai_advantage_crypto_accounts_v1";
 const CRYPTO_SESSION_KEY = "ai_advantage_crypto_session_v1";
@@ -106,6 +107,18 @@ let accessHydrated = false;
 let serverAccess: AccessState = FREE_ACCESS;
 // Invalidate requests that began before access was cleared (especially logout).
 let accessRevision = 0;
+let refreshSequence = 0;
+
+function isAccessSessionSignedOut(): boolean {
+  return typeof window !== "undefined" && localStorage.getItem(SIGNED_OUT_KEY) === "true";
+}
+
+/** Only explicit sign-in or a new checkout may end the local logout barrier. */
+export function resumeAccessSession(): void {
+  if (typeof window === "undefined") return;
+  accessRevision += 1;
+  localStorage.removeItem(SIGNED_OUT_KEY);
+}
 
 function getEventAccessExpiry(hours = EVENT_ACCESS_DURATION_HOURS) {
   return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
@@ -257,7 +270,7 @@ async function verifyCheckoutSession(sessionId: string): Promise<CheckoutSession
 }
 
 export function activateAccess(access: AccessState): void {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined" || isAccessSessionSignedOut()) return;
   serverAccess = access;
   accessHydrated = true;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(access));
@@ -266,15 +279,19 @@ export function activateAccess(access: AccessState): void {
   emitAccessChange();
 }
 
-/** @deprecated Import from `src/lib/auth.ts` to avoid circular auth↔stripe dependency. */
-export function clearAccess(): void {
+function resetAccessState(): void {
   if (typeof window === "undefined") return;
-  accessRevision += 1;
   serverAccess = FREE_ACCESS;
   accessHydrated = true;
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(LEGACY_STORAGE_KEY);
   emitAccessChange();
+}
+
+/** Explicit session invalidation, unlike an ordinary free refresh result. */
+export function clearAccess(): void {
+  accessRevision += 1;
+  resetAccessState();
 }
 
 /**
@@ -285,12 +302,12 @@ export function getAccessState(): AccessState {
   if (typeof window === "undefined") return FREE_ACCESS;
   localStorage.removeItem(LEGACY_STORAGE_KEY);
 
-  if (!accessHydrated) {
+  if (!accessHydrated || isAccessSessionSignedOut()) {
     return FREE_ACCESS;
   }
 
   if (isExpired(serverAccess)) {
-    clearAccess();
+    resetAccessState();
     return FREE_ACCESS;
   }
 
@@ -302,7 +319,9 @@ export function isAccessHydrated(): boolean {
 }
 
 export async function syncEntitlementAccess(): Promise<AccessState> {
+  if (isAccessSessionSignedOut()) return FREE_ACCESS;
   const revision = accessRevision;
+  const sequence = ++refreshSequence;
   try {
     const response = await fetch("/api/entitlements/me", {
       credentials: "include",
@@ -312,26 +331,26 @@ export async function syncEntitlementAccess(): Promise<AccessState> {
     if (!response.ok) throw new Error("Unable to load entitlement status.");
     const status = (await response.json()) as EntitlementStatusResponse;
     // A late response from before logout must never restore the old session.
-    if (revision !== accessRevision) return getAccessState();
+    if (revision !== accessRevision || sequence !== refreshSequence) return getAccessState();
 
-    if (!status.configured) {
-      clearAccess();
+    if (status.configured !== true) {
+      resetAccessState();
       return FREE_ACCESS;
     }
     const access = normalizeServerAccess(status.access);
-    if (access.tier === "free") clearAccess();
+    if (access.tier === "free") resetAccessState();
     else activateAccess(access);
     return access;
   } catch (error) {
     // Previously verified access is not authority for a failed refresh.
-    if (revision === accessRevision) clearAccess();
+    if (revision === accessRevision && sequence === refreshSequence) resetAccessState();
     throw error;
   }
 }
 
 export function hasFeatureAccess(feature: AccessFeature, access = getAccessState()): boolean {
   // Deny all paid features until the server has answered at least once.
-  if (!accessHydrated) {
+  if (!accessHydrated || isAccessSessionSignedOut()) {
     return false;
   }
 
@@ -408,12 +427,26 @@ export function saveCryptoAccessAccount(input: {
   return account;
 }
 
-/** @deprecated Export moved to `src/lib/auth.ts` (breaks circular auth↔stripe import). */
-export function signOutAccessSession(): void {
-  if (typeof window === "undefined") return;
-  void fetch("/api/entitlements/me", { method: "POST", credentials: "include" }).catch(() => undefined);
+export async function signOutAccessSession(): Promise<{ success: boolean; message: string }> {
+  if (typeof window === "undefined") return { success: true, message: "No browser session." };
+  // This marker can only deny access. Keep it across reloads if transport or
+  // revocation fails, until the user explicitly signs in again.
+  localStorage.setItem(SIGNED_OUT_KEY, "true");
   localStorage.removeItem(CRYPTO_SESSION_KEY);
   clearAccess();
+  try {
+    const response = await fetch("/api/entitlements/me", { method: "POST", credentials: "include" });
+    const result = await response.json() as { success?: boolean; revoked?: boolean };
+    if (response.ok && result.success === true && result.revoked !== false) {
+      return { success: true, message: "Paid access session cleared." };
+    }
+  } catch {
+    // Remain locked and let the caller report that logout was not confirmed.
+  }
+  return {
+    success: false,
+    message: "Paid access is locked on this browser, but server logout could not be confirmed. This browser stays locked until you explicitly sign in again.",
+  };
 }
 
 export async function signInWithCryptoAccount(input: {
@@ -447,6 +480,7 @@ export async function signInWithCryptoAccount(input: {
 
   localStorage.setItem(CRYPTO_SESSION_KEY, account.id);
 
+  const revision = accessRevision;
   // Re-verify on-chain and mint a server entitlement cookie — never unlock from localStorage alone.
   try {
     const unlockType = account.tier === "premium" ? "knowledge-vault" : "big-game";
@@ -469,6 +503,8 @@ export async function signInWithCryptoAccount(input: {
         account,
       };
     }
+    if (revision !== accessRevision) return { success: false, message: "Session changed during verification." };
+    resumeAccessSession();
     await syncEntitlementAccess();
   } catch {
     return {
@@ -486,7 +522,8 @@ export async function signInWithCryptoAccount(input: {
 }
 
 export async function syncAccessFromUrl(): Promise<AccessState | null> {
-  if (typeof window === "undefined") return null;
+  if (typeof window === "undefined" || isAccessSessionSignedOut()) return null;
+  const revision = accessRevision;
 
   const url = new URL(window.location.href);
   const checkout = url.searchParams.get("checkout");
@@ -511,7 +548,7 @@ export async function syncAccessFromUrl(): Promise<AccessState | null> {
 
     try {
       const session = await verifyCheckoutSession(sessionId);
-      if (!session.paid) {
+      if (!session.paid || revision !== accessRevision) {
         return null;
       }
 
@@ -522,6 +559,7 @@ export async function syncAccessFromUrl(): Promise<AccessState | null> {
         activatedAt: session.entitlement.activatedAt,
         expiresAt: session.entitlement.expiresAt,
       } : await syncEntitlementAccess().catch(() => buildAccessLabel(session.mode)));
+      if (revision !== accessRevision) return null;
       activateAccess(access);
       cleanupCheckoutParams(url);
       return access;
@@ -608,6 +646,7 @@ export const redirectToCheckout = async (
   type: CheckoutMode = "premium",
   options: { trial?: boolean } = {},
 ): Promise<void> => {
+  const revision = accessRevision;
   try {
     const siteUser = getCurrentSiteUser();
     const response = await fetch("/api/create-checkout-session", {
@@ -629,6 +668,8 @@ export const redirectToCheckout = async (
     }
     const data = (await response.json()) as CheckoutSessionResponse & { url?: string };
     if (!data.url) throw new Error("Stripe checkout session did not return a redirect URL.");
+    if (revision !== accessRevision) throw new Error("Session changed. Start checkout again.");
+    resumeAccessSession();
     window.location.assign(data.url);
     return;
   } catch (error) {

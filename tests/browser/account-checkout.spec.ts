@@ -5,7 +5,7 @@ const free = { tier: 'free', source: 'manual', label: 'Free access' };
 const premium = { tier: 'premium', source: 'stripe', label: 'Mock Pro Monthly' };
 
 async function mockBackend(page: Page) {
-  const state = { signedIn: false, paid: false, accountCreated: false, checkout: 'paid', verifyCalls: 0, checkoutCalls: 0 };
+  const state = { signedIn: false, paid: false, accountCreated: false, checkout: 'paid', verifyCalls: 0, checkoutCalls: 0, logoutFails: false };
   // No requests reach Stripe, storage, email, live sports providers, or production.
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url());
@@ -28,7 +28,8 @@ async function mockBackend(page: Page) {
     if (path === '/api/auth/logout') { state.signedIn = false; return json({ success: true }); }
     if (path === '/api/auth/me') return json({ user: state.signedIn ? user : null });
     if (path === '/api/entitlements/me') {
-      if (post) state.paid = false;
+      if (post && state.logoutFails) return json({ success: false, revoked: false }, 503);
+      if (post) { state.paid = false; return json({ success: true, revoked: true }); }
       return json({ configured: true, serverVerified: true, access: state.paid ? premium : free });
     }
     if (path === '/api/create-checkout-session') {
@@ -110,4 +111,26 @@ test('cancelled, unpaid and failed checkout stay free; forged storage does not u
   await expect(page.getByRole('button', { name: 'Start 7-day Pro trial' })).toBeEnabled();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
   expect(overflow).toBe(false);
+});
+
+
+test('failed logout is reported and remains locked after backend recovery and reload', async ({ page }) => {
+  const state = await mockBackend(page);
+  await signup(page);
+  state.paid = true;
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Manage billing (portal)' })).toBeVisible();
+  state.logoutFails = true;
+  await page.getByRole('button', { name: 'Log out account' }).click();
+  await expect(page.getByText('Logout not confirmed', { exact: true })).toBeVisible();
+  await expect(page.getByText('Free access', { exact: true })).toBeVisible();
+  state.logoutFails = false;
+  // The mock backend still holds the paid session; the client must stay locked.
+  expect(state.paid).toBe(true);
+  await page.reload();
+  await expect(page.getByText('Free access', { exact: true })).toBeVisible();
+  await page.getByLabel('Email or username').fill(user.username);
+  await page.getByLabel('Password', { exact: true }).fill('ephemeral-test-password');
+  await page.getByRole('button', { name: 'Log in', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Manage billing (portal)' })).toBeVisible();
 });

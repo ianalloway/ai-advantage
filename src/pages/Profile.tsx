@@ -212,11 +212,12 @@ export default function Profile() {
             <Button
               variant="outline"
               className="border-white/10 text-zinc-200 hover:bg-white/[0.06]"
-              onClick={() => {
-                signOutSiteUser();
+              onClick={async () => {
+                const result = await signOutSiteUser();
                 toast({
-                  title: "Logged out",
-                  description: "Site account and paid access session cleared on this device.",
+                  title: result.success ? "Logged out" : "Logout not confirmed",
+                  description: result.message,
+                  variant: result.success ? "default" : "destructive",
                 });
                 navigate("/login");
               }}
@@ -552,11 +553,12 @@ export default function Profile() {
                   <Button
                     variant="outline"
                     className="w-full border-white/10 text-zinc-200 hover:bg-white/[0.06]"
-                    onClick={() => {
-                      signOutAccessSession();
+                    onClick={async () => {
+                      const result = await signOutAccessSession();
                       toast({
-                        title: "Paid access cleared",
-                        description: "The paid access session on this browser has been removed.",
+                        title: result.success ? "Paid access cleared" : "Logout not confirmed",
+                        description: result.message,
+                        variant: result.success ? "default" : "destructive",
                       });
                       navigate("/login");
                     }}

@@ -1,5 +1,5 @@
 // Use the same state owner as paid feature gates so logout clears memory and storage.
-import { signOutAccessSession } from "@/lib/stripe";
+import { resumeAccessSession, signOutAccessSession } from "@/lib/stripe";
 export { signOutAccessSession } from "@/lib/stripe";
 
 export interface SiteUser {
@@ -250,6 +250,7 @@ export async function signUpSiteUser(input: {
       return { success: false, message: payload.message || "Account created, but no user was returned." };
     }
 
+    resumeAccessSession();
     setCachedUser(payload.user);
     emitAuthChange();
     return {
@@ -289,6 +290,7 @@ export async function signInSiteUser(input: {
       return { success: false, message: payload.message || "Logged in, but no user was returned." };
     }
 
+    resumeAccessSession();
     setCachedUser(payload.user);
     emitAuthChange();
     return { success: true, message: payload.message || "Logged in successfully.", user: payload.user };
@@ -304,15 +306,18 @@ export async function signInSiteUser(input: {
   }
 }
 
-export function signOutSiteUser(): void {
-  if (typeof window === "undefined") return;
-
-  void requestAuth("logout", { method: "POST", body: "{}" }).catch(() => undefined);
+export async function signOutSiteUser(): Promise<{ success: boolean; message: string }> {
+  if (typeof window === "undefined") return { success: true, message: "No browser session." };
+  const authLogout = requestAuth("logout", { method: "POST", body: "{}" })
+    .then((result) => result.success === true, () => false);
   setCachedUser(null);
-  // Clear any lingering paid-access session so shared devices don't keep
-  // premium entitlements unlocked after the auth session ends.
-  signOutAccessSession();
+  const accessLogout = signOutAccessSession();
   emitAuthChange();
+  const [authCleared, accessResult] = await Promise.all([authLogout, accessLogout]);
+  if (!authCleared || !accessResult.success) {
+    return { success: false, message: "Access is locked on this browser, but server logout could not be confirmed. This browser stays locked until you explicitly sign in again." };
+  }
+  return { success: true, message: "Site account and paid access session cleared." };
 }
 
 export function updateCurrentSiteUser(updates: Partial<Pick<SiteUser, "email" | "username" | "displayName">>): {
