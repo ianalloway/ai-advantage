@@ -45,6 +45,9 @@ It's the product layer of a larger sports-analytics stack — the modeling lives
 | Staking replay | The same graded history under flat, percent, and Kelly disciplines, calibrated walk-forward |
 | Edge attribution | Where the return comes from by sport, edge band, side, and timing — thin samples marked |
 | Slate outlook | Correlated Monte Carlo of tonight's sized slate over a month: spread, drawdown, risk of ruin |
+| Significance | Exact binomial test on the graded ledger — could a break-even bettor have done this by luck? |
+| Close forecast | Projects the closing price from a drift fitted on the archive, and says take it or wait |
+| Lines in points | Model vs market as a spread, plus how far the model can be wrong and still be +EV |
 | Portfolio risk | Correlated exposure by team, game, sport, and narrative, with a stake haircut |
 | Multi-sport | NBA, NFL, MLB workflows |
 | Premium | Stripe subscription + one-time checkout |
