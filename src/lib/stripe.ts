@@ -104,6 +104,8 @@ const FREE_ACCESS: AccessState = {
 /** In-memory server truth — localStorage is cache only and never gates features alone. */
 let accessHydrated = false;
 let serverAccess: AccessState = FREE_ACCESS;
+// Invalidate requests that began before access was cleared (especially logout).
+let accessRevision = 0;
 
 function getEventAccessExpiry(hours = EVENT_ACCESS_DURATION_HOURS) {
   return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
@@ -267,6 +269,7 @@ export function activateAccess(access: AccessState): void {
 /** @deprecated Import from `src/lib/auth.ts` to avoid circular auth↔stripe dependency. */
 export function clearAccess(): void {
   if (typeof window === "undefined") return;
+  accessRevision += 1;
   serverAccess = FREE_ACCESS;
   accessHydrated = true;
   localStorage.removeItem(STORAGE_KEY);
@@ -299,34 +302,31 @@ export function isAccessHydrated(): boolean {
 }
 
 export async function syncEntitlementAccess(): Promise<AccessState> {
-  const response = await fetch("/api/entitlements/me", {
-    credentials: "include",
-    headers: {
-      Accept: "application/json",
-    },
-  });
+  const revision = accessRevision;
+  try {
+    const response = await fetch("/api/entitlements/me", {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
 
-  if (!response.ok) {
-    throw new Error("Unable to load entitlement status.");
+    if (!response.ok) throw new Error("Unable to load entitlement status.");
+    const status = (await response.json()) as EntitlementStatusResponse;
+    // A late response from before logout must never restore the old session.
+    if (revision !== accessRevision) return getAccessState();
+
+    if (!status.configured) {
+      clearAccess();
+      return FREE_ACCESS;
+    }
+    const access = normalizeServerAccess(status.access);
+    if (access.tier === "free") clearAccess();
+    else activateAccess(access);
+    return access;
+  } catch (error) {
+    // Previously verified access is not authority for a failed refresh.
+    if (revision === accessRevision) clearAccess();
+    throw error;
   }
-
-  const status = (await response.json()) as EntitlementStatusResponse & { serverVerified?: boolean };
-  if (!status.configured) {
-    // Store down: stay locked (free). Do not fall back to forgeable localStorage.
-    accessHydrated = true;
-    serverAccess = FREE_ACCESS;
-    emitAccessChange();
-    return FREE_ACCESS;
-  }
-
-  const access = normalizeServerAccess(status.access);
-  if (access.tier === "free") {
-    clearAccess();
-  } else {
-    activateAccess(access);
-  }
-
-  return access;
 }
 
 export function hasFeatureAccess(feature: AccessFeature, access = getAccessState()): boolean {

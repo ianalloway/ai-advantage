@@ -5,6 +5,7 @@ import {
   findBestEntitlement,
   getEntitlementSessionToken,
   getEntitlementStore,
+  revokeEntitlementSession,
 } from "./_lib/entitlements";
 import { maybeRecordD7Retention } from "../lib/funnel";
 
@@ -28,6 +29,12 @@ function json(statusCode: number, body: unknown, headers: Record<string, string 
 
 export const handler = async (event: NetlifyEvent) => {
   if (event.httpMethod === "POST") {
+    const token = getEntitlementSessionToken(event.headers);
+    if (token) {
+      const store = getEntitlementStore(event);
+      if (!store) return json(503, { success: false, message: "Unable to revoke paid access session." });
+      await revokeEntitlementSession(store, token);
+    }
     return json(200, {
       success: true,
       access: accessStateFromEntitlement(null),

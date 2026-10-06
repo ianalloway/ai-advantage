@@ -34,10 +34,13 @@
     "build:dev": "vite build --mode development && node scripts/prerender.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run --exclude 'tests/smoke/**'",
+    "test": "vitest run --exclude 'tests/smoke/**' --exclude 'tests/browser/**'",
     "test:smoke": "vitest run tests/smoke",
-    "test:all": "vitest run",
-    "hermes:publish": "node scripts/hermes-substack-publish.mjs"
+    "test:all": "vitest run --exclude 'tests/browser/**'",
+    "hermes:publish": "node scripts/hermes-substack-publish.mjs",
+    "test:readiness": "node scripts/check-readiness.mjs",
+    "test:journeys": "vitest run tests/journeys",
+    "test:browser": "npm run build && playwright test"
   },
   "dependencies": {
     "@netlify/blobs": "^11.1.1",
@@ -67,6 +70,7 @@
     "@babel/eslint-parser": "^8.0.6",
     "@babel/preset-typescript": "^8.0.1",
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@tailwindcss/typography": "^0.5.19",
     "@types/node": "^26.6.3",

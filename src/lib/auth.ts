@@ -1,3 +1,6 @@
+// Use the same state owner as paid feature gates so logout clears memory and storage.
+import { signOutAccessSession } from "@/lib/stripe";
+export { signOutAccessSession } from "@/lib/stripe";
 
 export interface SiteUser {
   id: string;
@@ -16,41 +19,6 @@ interface AuthResponse {
   success?: boolean;
   message?: string;
   user?: SiteUser | null;
-}
-
-// Access-state keys — crypto access is cleared alongside the auth session so
-// shared devices don't retain entitlement leaks. The names mirror the keys in
-// src/lib/stripe.ts (defined there as STORAGE_KEY, LEGACY_STORAGE_KEY,
-// CRYPTO_SESSION_KEY) to prevent a silent mismatch when the sign-out flows
-// clear the same local storage entries from two different modules.
-
-const ACCESS_STORAGE_KEY = "ai_advantage_access_v2";
-const STRIPE_CRYPTO_SESSION_KEY = "ai_advantage_crypto_session_v1";
-
-function emitAccessChange(): void {
-  // Mirrors the event emitted by src/lib/stripe.ts so that in-memory callers
-  // do not depend on a circular auth↔stripe import.
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("ai-advantage-access-changed"));
-  }
-}
-
-function clearAccess(): void {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(ACCESS_STORAGE_KEY);
-  localStorage.removeItem("ai_advantage_premium");  // mirrors LEGACY_STORAGE_KEY in stripe.ts
-  emitAccessChange();
-}
-
-// Deprecated: move sign-out handling here to break the circular dependency
-// between auth.ts ↔ stripe.ts (stripe.ts dynamically imports this at logout
-// time, but is already eagerly bundled by App.tsx and six page components,
-// making the dynamic import purely cosmetic).
-export function signOutAccessSession(): void {
-  if (typeof window === "undefined") return;
-  void fetch("/api/entitlements/me", { method: "POST", credentials: "include" }).catch(() => undefined);
-  localStorage.removeItem(STRIPE_CRYPTO_SESSION_KEY);
-  clearAccess();
 }
 
 // Back-compat re-exports consumed by existing page-level imports.

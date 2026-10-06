@@ -37,3 +37,7 @@ dist-ssr
 
 # TypeScript incremental build info (emitted by `tsc -b`)
 *.tsbuildinfo
+
+# Browser journey output
+/test-results/
+/playwright-report/
