@@ -53,9 +53,10 @@ browser traffic is blocked. Hosted Stripe checkout is replaced with a local retu
 URL. No card is submitted and no external account, entitlement, or payment is created.
 
 Existing CI runs `npm test`, including these handler/client/gate regressions, and
-checks the new TypeScript tests through the root project references. Browser tests
-are an explicit command requiring a downloaded Chromium browser; they are not run
-by the existing CI workflow. `test:all` retains its existing meaning (Vitest plus
+checks the new TypeScript tests through the root project references. The separate
+Browser journeys CI job installs Chromium and runs `test:browser` on pull requests and the configured branch pushes, using the same intercepted APIs
+and blocked external browser traffic as local tests. It needs no application secrets.
+Failure traces are retained for seven days. `test:all` retains its existing meaning (Vitest plus
 live smoke) and excludes Playwright specs. Browser traces on failure live under
 `test-results/` and are ignored by Git.
 
