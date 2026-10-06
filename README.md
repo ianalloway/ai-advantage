@@ -48,6 +48,9 @@ It's the product layer of a larger sports-analytics stack — the modeling lives
 | Significance | Exact binomial test on the graded ledger — could a break-even bettor have done this by luck? |
 | Close forecast | Projects the closing price from a drift fitted on the archive, and says take it or wait |
 | Lines in points | Model vs market as a spread, plus how far the model can be wrong and still be +EV |
+| Live win probability | In-game pricing from the lead and the clock, with live edge against the live number |
+| Market self-check | Moneyline against posted spread — when they disagree, one of them is stale |
+| Model vs the price | The blend of model and market that forecast best, judged on rows it never saw |
 | Portfolio risk | Correlated exposure by team, game, sport, and narrative, with a stake haircut |
 | Multi-sport | NBA, NFL, MLB workflows |
 | Premium | Stripe subscription + one-time checkout |
