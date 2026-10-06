@@ -66,6 +66,8 @@ import BetLogPanel from "@/components/BetLogPanel";
 import SlateSimulationPanel from "@/components/SlateSimulationPanel";
 import { fitCloseDrift, driftSamplesFromLedger, projectClose, formatCloseRecommendation, type DriftFit } from "@/lib/closeForecast";
 import { translateEdgeToPoints, formatLine } from "@/lib/spreadTranslation";
+import { liveWinProbability, liveEdgePts } from "@/lib/liveWinProbability";
+import { checkMarketConsistency, formatConsistencyVerdict } from "@/lib/marketConsistency";
 import { buildCalibrationReport, calibrationSamplesFromLedger, type CalibrationReport } from "@/lib/calibration";
 import { sizeWithCalibration } from "@/lib/calibratedSizing";
 import type { ParlayLeg } from "@/lib/parlay";
@@ -426,6 +428,47 @@ function PickCard({
     openOdds: pathOdds.open,
     nowOdds: pathOdds.current ?? winnerOdds,
   });
+
+  // Once a game is running, the pregame number is history: price it off the
+  // lead and the clock instead.
+  const live =
+    game.status.state === "in" && game.homeScore !== undefined && game.awayScore !== undefined
+      ? liveWinProbability(
+          {
+            sport: game.sport,
+            homeScore: game.homeScore,
+            awayScore: game.awayScore,
+            period: game.status.period,
+            clock: game.status.clock,
+            state: game.status.state,
+          },
+          { pregameHomeProb: prediction.homeProb },
+        )
+      : null;
+  const liveSideProb = live?.applicable
+    ? sideLocation === "Home"
+      ? live.homeWinProb
+      : sideLocation === "Away"
+        ? live.awayWinProb
+        : undefined
+    : undefined;
+  const liveSideEdge =
+    liveSideProb !== undefined && pathOdds.current !== undefined
+      ? liveEdgePts(liveSideProb, pathOdds.current)
+      : undefined;
+
+  // The moneyline and the spread are two statements of the same probability —
+  // but only before kickoff. The feed's spread is the pregame PickCenter number,
+  // so checking it against a live moneyline compares two different games.
+  const consistency =
+    game.odds && game.status.state === "pre"
+      ? checkMarketConsistency({
+          sport: game.sport,
+          homeMoneyline: game.odds.homeMoneyline,
+          awayMoneyline: game.odds.awayMoneyline,
+          homeSpread: game.odds.spread,
+        })
+      : null;
   // Size off what the model has actually proven in this probability band, not
   // off the probability it states.
   const calibratedSizing = prediction.valueBet
@@ -640,6 +683,74 @@ function PickCard({
                 </div>
               </div>
             </div>
+
+            {live?.applicable && liveSideProb !== undefined ? (
+              <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.07] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] uppercase tracking-[0.24em] text-emerald-200/80">Live win probability</div>
+                  <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-0.5 font-mono text-[10px] text-emerald-200">
+                    {Math.round(live.fractionRemaining * 100)}% left
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-xl border border-white/8 bg-black/25 p-2">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">
+                      {prediction.valueBet?.team ?? prediction.predictedWinner}
+                    </div>
+                    <div className="mt-1 font-mono text-sm font-semibold text-white">
+                      {formatProb(liveSideProb)}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-white/8 bg-black/25 p-2">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Live price</div>
+                    <div className="mt-1 font-mono text-sm font-semibold text-sky-300">
+                      {pathOdds.current !== undefined ? formatOdds(pathOdds.current) : "—"}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-white/8 bg-black/25 p-2">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Live edge</div>
+                    <div
+                      className={`mt-1 font-mono text-sm font-semibold ${
+                        (liveSideEdge ?? 0) >= 0 ? "text-emerald-300" : "text-red-300"
+                      }`}
+                    >
+                      {liveSideEdge !== undefined ? formatEdge(liveSideEdge) : "—"}
+                    </div>
+                  </div>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-zinc-500">
+                  {live.note} Priced off the lead and the clock — blind to possession, fouls and who has the ball.
+                </p>
+              </div>
+            ) : null}
+
+            {consistency?.applicable && consistency.verdict !== "aligned" ? (
+              <div
+                className={`mt-4 rounded-2xl border p-4 ${
+                  consistency.verdict === "contradictory"
+                    ? "border-red-400/20 bg-red-400/[0.07]"
+                    : "border-amber-400/20 bg-amber-400/[0.07]"
+                }`}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-400">Moneyline vs spread</div>
+                  <span
+                    className={`rounded-full border px-2.5 py-0.5 text-[10px] uppercase tracking-[0.14em] ${
+                      consistency.verdict === "contradictory"
+                        ? "border-red-400/30 bg-red-400/10 text-red-300"
+                        : "border-amber-400/30 bg-amber-400/10 text-amber-200"
+                    }`}
+                  >
+                    {formatConsistencyVerdict(consistency.verdict)}
+                  </span>
+                </div>
+                <div className="mt-2 font-mono text-xs text-zinc-300">
+                  Posted {game.odds?.spread !== undefined ? formatLine(-game.odds.spread) : "—"} · moneyline quotes{" "}
+                  {formatLine(-consistency.moneylineImpliedSpread)}
+                </div>
+                <p className="mt-1.5 text-xs leading-5 text-zinc-500">{consistency.note}</p>
+              </div>
+            ) : null}
 
             {fairMarket && fairSide && edgeSplit ? (
               <div className="mt-4 rounded-2xl border border-cyan-300/15 bg-cyan-300/[0.06] p-4">
