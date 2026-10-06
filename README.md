@@ -100,7 +100,14 @@ Paid access is **server-truth only** (`/api/entitlements/me`). localStorage is a
 
 Checkout includes a `STRIPE_TRIAL_DAYS` trial on Pro Monthly. Customer Portal: `/api/create-portal-session` (enable in Stripe Dashboard → Settings → Billing → Customer portal). Funnel events: `checkout_started` → `checkout_paid` → `d7_retained` → `cancel_reason` via `/api/funnel`. Hourly edge-alert emails: `send-edge-alerts` (needs `RESEND_*`).
 
-Check readiness: `curl -s https://aiadvantagesports.com/api/billing-status | jq`  
+Strict read-only configuration gate:
+`READINESS_BASE_URL=https://aiadvantagesports.com npm run test:readiness`.
+This requires every billing readiness flag; the existing health smoke remains permissive.
+See [billing readiness and mock journeys](docs/billing-readiness.md) for coverage,
+commands, and the distinction between mocked tests and live payment verification.
+
+Inspect flags: `curl -s https://aiadvantagesports.com/api/billing-status | jq`
+
 Production does **not** fall back to Payment Links when Checkout Sessions fail (that orphaned access).
 
 ### Newsletter capture

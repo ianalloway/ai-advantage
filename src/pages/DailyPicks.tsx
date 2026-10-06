@@ -1577,8 +1577,9 @@ export default function DailyPicks() {
                     size="sm"
                     variant="outline"
                     className="border-white/10 text-zinc-300 hover:bg-white/[0.06]"
-                    onClick={() => {
-                      signOutSiteUser();
+                    onClick={async () => {
+                      const result = await signOutSiteUser();
+                      if (!result.success) toast({ title: "Logout not confirmed", description: result.message, variant: "destructive" });
                       syncAccessUi();
                     }}
                   >

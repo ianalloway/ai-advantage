@@ -431,6 +431,10 @@ export async function createEntitlementSession(store: EntitlementStore, entitlem
   return { token, maxAge };
 }
 
+export async function revokeEntitlementSession(store: EntitlementStore, token: string) {
+  await store.delete(sessionKey(token));
+}
+
 export function entitlementSessionCookie(headers: EventLike["headers"], token: string, maxAge: number) {
   const parts = [
     `${SESSION_COOKIE}=${encodeURIComponent(token)}`,

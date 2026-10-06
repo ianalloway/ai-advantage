@@ -1,3 +1,6 @@
+// Use the same state owner as paid feature gates so logout clears memory and storage.
+import { resumeAccessSession, signOutAccessSession } from "@/lib/stripe";
+export { signOutAccessSession } from "@/lib/stripe";
 
 export interface SiteUser {
   id: string;
@@ -16,41 +19,6 @@ interface AuthResponse {
   success?: boolean;
   message?: string;
   user?: SiteUser | null;
-}
-
-// Access-state keys — crypto access is cleared alongside the auth session so
-// shared devices don't retain entitlement leaks. The names mirror the keys in
-// src/lib/stripe.ts (defined there as STORAGE_KEY, LEGACY_STORAGE_KEY,
-// CRYPTO_SESSION_KEY) to prevent a silent mismatch when the sign-out flows
-// clear the same local storage entries from two different modules.
-
-const ACCESS_STORAGE_KEY = "ai_advantage_access_v2";
-const STRIPE_CRYPTO_SESSION_KEY = "ai_advantage_crypto_session_v1";
-
-function emitAccessChange(): void {
-  // Mirrors the event emitted by src/lib/stripe.ts so that in-memory callers
-  // do not depend on a circular auth↔stripe import.
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent("ai-advantage-access-changed"));
-  }
-}
-
-function clearAccess(): void {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(ACCESS_STORAGE_KEY);
-  localStorage.removeItem("ai_advantage_premium");  // mirrors LEGACY_STORAGE_KEY in stripe.ts
-  emitAccessChange();
-}
-
-// Deprecated: move sign-out handling here to break the circular dependency
-// between auth.ts ↔ stripe.ts (stripe.ts dynamically imports this at logout
-// time, but is already eagerly bundled by App.tsx and six page components,
-// making the dynamic import purely cosmetic).
-export function signOutAccessSession(): void {
-  if (typeof window === "undefined") return;
-  void fetch("/api/entitlements/me", { method: "POST", credentials: "include" }).catch(() => undefined);
-  localStorage.removeItem(STRIPE_CRYPTO_SESSION_KEY);
-  clearAccess();
 }
 
 // Back-compat re-exports consumed by existing page-level imports.
@@ -282,6 +250,7 @@ export async function signUpSiteUser(input: {
       return { success: false, message: payload.message || "Account created, but no user was returned." };
     }
 
+    resumeAccessSession();
     setCachedUser(payload.user);
     emitAuthChange();
     return {
@@ -321,6 +290,7 @@ export async function signInSiteUser(input: {
       return { success: false, message: payload.message || "Logged in, but no user was returned." };
     }
 
+    resumeAccessSession();
     setCachedUser(payload.user);
     emitAuthChange();
     return { success: true, message: payload.message || "Logged in successfully.", user: payload.user };
@@ -336,15 +306,18 @@ export async function signInSiteUser(input: {
   }
 }
 
-export function signOutSiteUser(): void {
-  if (typeof window === "undefined") return;
-
-  void requestAuth("logout", { method: "POST", body: "{}" }).catch(() => undefined);
+export async function signOutSiteUser(): Promise<{ success: boolean; message: string }> {
+  if (typeof window === "undefined") return { success: true, message: "No browser session." };
+  const authLogout = requestAuth("logout", { method: "POST", body: "{}" })
+    .then((result) => result.success === true, () => false);
   setCachedUser(null);
-  // Clear any lingering paid-access session so shared devices don't keep
-  // premium entitlements unlocked after the auth session ends.
-  signOutAccessSession();
+  const accessLogout = signOutAccessSession();
   emitAuthChange();
+  const [authCleared, accessResult] = await Promise.all([authLogout, accessLogout]);
+  if (!authCleared || !accessResult.success) {
+    return { success: false, message: "Access is locked on this browser, but server logout could not be confirmed. This browser stays locked until you explicitly sign in again." };
+  }
+  return { success: true, message: "Site account and paid access session cleared." };
 }
 
 export function updateCurrentSiteUser(updates: Partial<Pick<SiteUser, "email" | "username" | "displayName">>): {

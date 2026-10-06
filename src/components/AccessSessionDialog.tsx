@@ -81,14 +81,15 @@ export default function AccessSessionDialog({
     }
   };
 
-  const handleLogout = () => {
-    signOutAccessSession();
+  const handleLogout = async () => {
+    const result = await signOutAccessSession();
     setAccess(getAccessState());
     setCurrentAccount(getCurrentCryptoAccount());
     onSessionChange?.();
     toast({
-      title: "Logged out",
-      description: "This device no longer has active premium access.",
+      title: result.success ? "Logged out" : "Logout not confirmed",
+      description: result.message,
+      variant: result.success ? "default" : "destructive",
     });
   };
 

@@ -1748,10 +1748,10 @@ The report will show:
                   <Button
                     variant="outline"
                     className="border-emerald-300/20 text-emerald-100 hover:bg-emerald-300/10"
-                    onClick={() => {
-                      signOutAccessSession();
+                    onClick={async () => {
+                      const result = await signOutAccessSession();
                       syncAccessUi();
-                      toast({ title: "Premium session cleared" });
+                      toast({ title: result.success ? "Premium session cleared" : "Logout not confirmed", description: result.message, variant: result.success ? "default" : "destructive" });
                     }}
                   >
                     Clear session
