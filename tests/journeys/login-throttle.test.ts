@@ -2,20 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Real auth handler against an in-memory Netlify Blobs boundary, so throttling
 // state lives where production keeps it: in the shared auth store.
-const sandbox = vi.hoisted(() => ({ stores: new Map<string, Map<string, unknown>>() }));
-vi.mock("@netlify/blobs", () => ({
-  connectLambda: vi.fn(), setEnvironmentContext: vi.fn(),
-  getStore: (options: string | { name: string }) => {
-    const name = typeof options === "string" ? options : options.name;
-    if (!sandbox.stores.has(name)) sandbox.stores.set(name, new Map());
-    const data = sandbox.stores.get(name)!;
-    return {
-      get: async (key: string) => structuredClone(data.get(key) ?? null),
-      setJSON: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); return { modified: true }; },
-      delete: async (key: string) => { data.delete(key); },
-    };
-  },
-}));
+vi.mock("@netlify/blobs", async () => (await import("../helpers/blobsMock")).blobsModule);
+
+import { resetBlobs } from "../helpers/blobsMock";
 
 const blobs = Buffer.from(JSON.stringify({ url: "https://blob.invalid", url_uncached: "https://blob.invalid" })).toString("base64");
 const owner = { email: "owner@example.test", username: "owner", password: "correct-horse-battery" };
@@ -32,7 +21,7 @@ function login(handler: Awaited<ReturnType<typeof loadAuth>>, body: { login: str
 }
 
 beforeEach(async () => {
-  sandbox.stores.clear();
+  resetBlobs();
   vi.resetModules();
   vi.stubEnv("AUTH_SECRET", "ephemeral-auth-secret-for-tests-only");
   vi.useFakeTimers({ toFake: ["Date"] });

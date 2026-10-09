@@ -6,6 +6,7 @@ vi.mock('../../netlify/functions/_lib/entitlements', async (original) => ({
 }));
 vi.mock('../../netlify/functions/_lib/auth-session', () => ({ getCurrentSiteUserFromEvent: async () => null }));
 import { handler } from '../../netlify/functions/entitlements';
+import { memoryIncrement } from '../../netlify/lib/rate-limit';
 import { createEntitlementSession, entitlementSessionCookie, upsertEntitlement, type EntitlementStore } from '../../netlify/functions/_lib/entitlements';
 
 beforeEach(() => { vi.clearAllMocks(); });
@@ -16,6 +17,7 @@ describe('logout during storage failure', () => {
       mode: 'blobs', get: async <T>(key: string) => data.get(key) as T ?? null,
       set: async (key, value) => { data.set(key, value); },
       setIfAbsent: async (key, value) => { if (data.has(key)) return false; data.set(key, value); return true; },
+      increment: memoryIncrement((key) => data.get(key), (key, value) => data.set(key, value)),
       delete: vi.fn(async (key) => { data.delete(key); }),
     };
     boundary.getStore.mockReturnValue(store);

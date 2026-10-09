@@ -12,6 +12,7 @@ import {
   upsertStripeSubscriptionEntitlement,
   type EntitlementStore,
 } from "./entitlements";
+import { memoryIncrement } from "../../lib/rate-limit";
 
 function memoryStore(): EntitlementStore {
   const data = new Map<string, unknown>();
@@ -32,6 +33,7 @@ function memoryStore(): EntitlementStore {
       data.set(key, value);
       return true;
     },
+    increment: memoryIncrement((key) => data.get(key), (key, value) => data.set(key, value)),
   };
 }
 

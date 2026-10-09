@@ -99,26 +99,7 @@ describe("resolveUnlock", () => {
   });
 });
 
-const blobSandbox = vi.hoisted(() => ({ stores: new Map<string, Map<string, unknown>>() }));
-vi.mock("@netlify/blobs", () => ({
-  connectLambda: vi.fn(),
-  getStore: (options: string | { name: string }) => {
-    const name = typeof options === "string" ? options : options.name;
-    if (!blobSandbox.stores.has(name)) blobSandbox.stores.set(name, new Map());
-    const data = blobSandbox.stores.get(name)!;
-    return {
-      get: async (key: string) => structuredClone(data.get(key) ?? null),
-      setJSON: async (key: string, value: unknown, options?: { onlyIfNew?: boolean }) => {
-        if (options?.onlyIfNew && data.has(key)) return { modified: false };
-        data.set(key, structuredClone(value));
-        return { modified: true };
-      },
-      delete: async (key: string) => {
-        data.delete(key);
-      },
-    };
-  },
-}));
+vi.mock("@netlify/blobs", async () => (await import("../tests/helpers/blobsMock")).blobsModule);
 
 describe("EIP-191 signature recovery", () => {
   it("matches the standard personal_sign digest and key-to-address derivation", async () => {
@@ -157,7 +138,9 @@ async function addressOf(privateKey: Uint8Array) {
 }
 
 describe("verify-crypto-payment ownership proof", () => {
-  const blobs = Buffer.from(JSON.stringify({ url: "https://blob.invalid" })).toString("base64");
+  const blobs = Buffer.from(
+    JSON.stringify({ url: "https://blob.invalid", url_uncached: "https://blob.invalid" }),
+  ).toString("base64");
   const payerKey = Uint8Array.from({ length: 32 }, (_, i) => (i === 31 ? 7 : 0));
   const attackerKey = Uint8Array.from({ length: 32 }, (_, i) => (i === 31 ? 9 : 0));
 
@@ -173,7 +156,7 @@ describe("verify-crypto-payment ownership proof", () => {
   }
 
   async function setup() {
-    blobSandbox.stores.clear();
+    (await import("../tests/helpers/blobsMock")).resetBlobs();
     vi.resetModules();
     process.env.CRYPTO_PAYMENT_ADDRESS = PAYMENT_ADDRESS;
     const payer = await addressOf(payerKey);
@@ -188,9 +171,9 @@ describe("verify-crypto-payment ownership proof", () => {
       return { ok: true, json: async () => ({ result }) };
     }));
     const handler = (await import("./verify-crypto-payment")).default;
-    const call = async (body: Record<string, unknown>) => {
+    const call = async (body: Record<string, unknown>, ip = "203.0.113.5") => {
       const res = response();
-      await handler({ blobs, method: "POST", headers: { host: "example.test" }, body }, res);
+      await handler({ blobs, method: "POST", headers: { host: "example.test", "x-nf-client-connection-ip": ip }, body }, res);
       return res;
     };
     return { handler, call, payer };
@@ -242,6 +225,43 @@ describe("verify-crypto-payment ownership proof", () => {
     // Single use: the same nonce cannot mint another session.
     const replayed = await call({ ...claim, nonce, signature });
     expect(replayed.statusCode).toBe(401);
+  });
+
+  it("reads challenges and claims through strongly consistent storage", async () => {
+    const { call, payer } = await setup();
+    const mock = await import("../tests/helpers/blobsMock");
+    await call({ txHash: TX_HASH, walletAddress: payer, email: "payer@example.test", step: "challenge" });
+    expect(mock.getStoreCalls).toContainEqual({ name: "ai-advantage-entitlements", consistency: "strong" });
+  });
+
+  it("rate-limits challenge issuance per IP", async () => {
+    const { call, payer } = await setup();
+    const claim = { txHash: TX_HASH, walletAddress: payer, email: "payer@example.test", step: "challenge" };
+    for (let i = 0; i < 10; i += 1) expect((await call(claim, "198.51.100.1")).statusCode).toBe(200);
+    const limited = await call(claim, "198.51.100.1");
+    expect(limited.statusCode).toBe(429);
+    expect(Number(limited.headers["Retry-After"])).toBeGreaterThan(0);
+    expect((await call(claim, "198.51.100.2")).statusCode).toBe(200);
+  });
+
+  it("rejects and deletes an expired challenge", async () => {
+    const { call, payer } = await setup();
+    const mock = await import("../tests/helpers/blobsMock");
+    const claim = { txHash: TX_HASH, walletAddress: payer, email: "payer@example.test" };
+    const issued = await call({ ...claim, step: "challenge" });
+    const { nonce, message } = issued.body.challenge as { nonce: string; message: string };
+    const key = `ai-advantage:crypto-claim:challenge:${nonce}`;
+    expect(mock.blobValues("ai-advantage-entitlements").has(key)).toBe(true);
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(Date.now() + 11 * 60 * 1000));
+      const late = await call({ ...claim, nonce, signature: await personalSign(payerKey, message) });
+      expect(late.statusCode).toBe(401);
+      expect(mock.blobValues("ai-advantage-entitlements").has(key)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("lets the payer's wallet restore access without renewing the pass", async () => {

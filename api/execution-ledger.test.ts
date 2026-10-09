@@ -1,20 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const sandbox = vi.hoisted(() => ({ stores: new Map<string, Map<string, unknown>>() }));
-vi.mock("@netlify/blobs", () => ({
-  connectLambda: vi.fn(),
-  getStore: (options: string | { name: string }) => {
-    const name = typeof options === "string" ? options : options.name;
-    if (!sandbox.stores.has(name)) sandbox.stores.set(name, new Map());
-    const data = sandbox.stores.get(name)!;
-    return {
-      get: async (key: string) => structuredClone(data.get(key) ?? null),
-      setJSON: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); return { modified: true }; },
-      delete: async (key: string) => { data.delete(key); },
-    };
-  },
-}));
+vi.mock("@netlify/blobs", async () => (await import("../tests/helpers/blobsMock")).blobsModule);
 
+import { resetBlobs } from "../tests/helpers/blobsMock";
 import handler, { LEDGER_PREVIEW_ROWS } from "./execution-ledger";
 import {
   createEntitlementSession,
@@ -57,7 +45,7 @@ async function cookieFor(tier: "event" | "premium") {
 }
 
 beforeEach(async () => {
-  sandbox.stores.clear();
+  resetBlobs();
   vi.stubEnv("EXECUTION_LEDGER_WRITE_TOKEN", WRITE_TOKEN);
   const entries = Array.from({ length: TOTAL_ROWS }, (_, i) => ({
     id: `row-${i}`, eventLabel: `Game ${i}`, sportLabel: "NBA", recommendedSide: "Home",

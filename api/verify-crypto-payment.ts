@@ -19,6 +19,7 @@ import {
   getCryptoClaimChallenge,
   recoverPersonalSignAddress,
 } from "../netlify/lib/crypto-claim";
+import { consumeRateLimit, getClientIp } from "../netlify/lib/rate-limit";
 
 type RequestLike = {
   blobs?: string;
@@ -53,6 +54,10 @@ const MIN_PREMIUM_ETH_WEI = process.env.CRYPTO_MIN_PREMIUM_ETH_WEI
 const MIN_PREMIUM_STABLE_UNITS = process.env.CRYPTO_MIN_PREMIUM_STABLE_UNITS
   ? BigInt(process.env.CRYPTO_MIN_PREMIUM_STABLE_UNITS)
   : null;
+
+// Each challenge is a stored record; cap how fast one client can mint them.
+const CHALLENGES_PER_IP = 10;
+const CHALLENGE_WINDOW_SECONDS = 10 * 60;
 
 const STABLE_TOKENS = new Set([
   "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", // USDC
@@ -191,7 +196,8 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     return;
   }
 
-  const store = getEntitlementStore({ blobs: req.blobs, headers: req.headers });
+  // Strong reads: challenges and claim markers must never be read stale.
+  const store = getEntitlementStore({ blobs: req.blobs, headers: req.headers }, { consistency: "strong" });
   if (!store) {
     res.status(503).json({ verified: false, reason: "Entitlement backend is not configured." });
     return;
@@ -202,6 +208,17 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
 
   // Step 1: issue a single-use message for the paying wallet to sign.
   if (body?.step === "challenge") {
+    const limit = await consumeRateLimit(
+      store.increment,
+      `ai-advantage:ratelimit:crypto-challenge:${getClientIp(req.headers)}`,
+      CHALLENGES_PER_IP,
+      CHALLENGE_WINDOW_SECONDS,
+    );
+    if (!limit.ok) {
+      res.setHeader("Retry-After", String(limit.retryAfterSeconds));
+      res.status(429).json({ verified: false, reason: "Too many claim attempts. Try again in a few minutes." });
+      return;
+    }
     const challenge = await createCryptoClaimChallenge(store, binding);
     res.status(200).json({ challenge });
     return;

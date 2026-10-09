@@ -3,32 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Mock provider boundaries only. Real handlers, password hashes, session lookups,
 // checkout identity attribution and entitlement persistence run together.
 const sandbox = vi.hoisted(() => ({
-  stores: new Map<string, Map<string, unknown>>(),
   create: vi.fn(), retrieve: vi.fn(), portal: vi.fn(), subscription: vi.fn(),
 }));
-vi.mock("@netlify/blobs", () => ({
-  connectLambda: vi.fn(), setEnvironmentContext: vi.fn(),
-  getStore: (options: string | { name: string }) => {
-    const name = typeof options === "string" ? options : options.name;
-    if (!sandbox.stores.has(name)) sandbox.stores.set(name, new Map());
-    const data = sandbox.stores.get(name)!;
-    return {
-      get: async (key: string) => structuredClone(data.get(key) ?? null),
-      setJSON: async (key: string, value: unknown, options?: { onlyIfNew?: boolean }) => {
-        if (options?.onlyIfNew && data.has(key)) return { modified: false };
-        data.set(key, structuredClone(value));
-        return { modified: true };
-      },
-      delete: async (key: string) => { data.delete(key); },
-    };
-  },
-}));
+vi.mock("@netlify/blobs", async () => (await import("../helpers/blobsMock")).blobsModule);
 vi.mock("stripe", () => ({ default: class {
   checkout = { sessions: { create: sandbox.create, retrieve: sandbox.retrieve } };
   billingPortal = { sessions: { create: sandbox.portal } };
   subscriptions = { retrieve: sandbox.subscription };
 } }));
 
+import { blobValues, resetBlobs } from "../helpers/blobsMock";
 import { handler as auth } from "../../netlify/functions/auth";
 import { handler as entitlements } from "../../netlify/functions/entitlements";
 import createCheckout from "../../api/create-checkout-session";
@@ -69,7 +53,7 @@ async function access() {
 }
 
 beforeEach(() => {
-  sandbox.stores.clear(); vi.clearAllMocks(); cookie = '';
+  resetBlobs(); vi.clearAllMocks(); cookie = '';
   vi.stubGlobal('fetch', vi.fn(() => { throw new Error('Unexpected network request in mock journey'); }));
   vi.stubEnv('AUTH_SECRET', 'ephemeral-auth-secret-for-tests-only');
   vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_ephemeral_mock');
@@ -93,7 +77,7 @@ describe('provider-mocked account and checkout journeys', () => {
     // checkout ID is never persisted beside account identity.
     expect(JSON.stringify(posted.body)).not.toContain(sessionId);
     expect(posted.body).toEqual({ success: true });
-    const stored = sandbox.stores.get('ai-advantage-entitlements')?.get('ai-advantage:funnel:events');
+    const stored = blobValues('ai-advantage-entitlements').get('ai-advantage:funnel:events');
     expect(stored).toHaveLength(1);
     expect(JSON.stringify(stored)).not.toContain(sessionId);
 

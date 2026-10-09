@@ -1,8 +1,9 @@
 import { randomBytes, createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { connectLambda, getStore } from "@netlify/blobs";
+import { connectLambda, getStore, setEnvironmentContext } from "@netlify/blobs";
 import { Redis } from "@upstash/redis";
+import { blobsIncrement, memoryIncrement, redisIncrement, type IncrementFn } from "../../lib/rate-limit";
 
 export type AccessTier = "free" | "event" | "premium";
 export type AccessSource = "stripe" | "crypto" | "manual";
@@ -50,6 +51,8 @@ export interface EntitlementStore {
   set: (key: string, value: unknown, options?: { ex?: number }) => Promise<void>;
   /** Atomically create `key` only if it does not exist. Resolves true for the single winner. */
   setIfAbsent: (key: string, value: unknown) => Promise<boolean>;
+  /** Atomic windowed counter, used for rate limits. */
+  increment: IncrementFn;
 }
 
 export class CryptoTransactionAlreadyClaimedError extends Error {
@@ -172,17 +175,60 @@ function getLocalStore(): EntitlementStore {
       delete data[key];
       await writeLocalData();
     },
+    async increment(key: string, delta: number, windowSeconds: number) {
+      const data = await readLocalData();
+      const result = await memoryIncrement(
+        (k) => data[k],
+        (k, v) => {
+          data[k] = v;
+        },
+      )(key, delta, windowSeconds);
+      await writeLocalData();
+      return result;
+    },
   };
 }
 
-export function getEntitlementStore(event?: EventLike): EntitlementStore | null {
+function getBlobsStore(event: EventLike & { blobs: string }, consistency: "eventual" | "strong") {
+  if (consistency === "strong") {
+    // connectLambda() drops the uncached edge URL that strong reads need, so wire
+    // the context by hand (same approach as the auth function).
+    const payload = JSON.parse(Buffer.from(event.blobs, "base64").toString()) as {
+      url?: string;
+      url_uncached?: string;
+      token?: string;
+    };
+    if (payload.url_uncached) {
+      const headers = normalizeLambdaHeaders(event.headers);
+      setEnvironmentContext({
+        deployID: headers["x-nf-deploy-id"],
+        edgeURL: payload.url,
+        uncachedEdgeURL: payload.url_uncached,
+        siteID: headers["x-nf-site-id"],
+        token: payload.token,
+      });
+      return getStore({ name: "ai-advantage-entitlements", consistency: "strong" });
+    }
+  }
+  connectLambda({
+    blobs: event.blobs,
+    headers: normalizeLambdaHeaders(event.headers),
+  });
+  return getStore("ai-advantage-entitlements");
+}
+
+/**
+ * `consistency: "strong"` reads through Netlify's uncached edge where it is
+ * available. Use it for state that must not be read stale: claim challenges,
+ * claim markers and rate-limit counters.
+ */
+export function getEntitlementStore(
+  event?: EventLike,
+  options?: { consistency?: "eventual" | "strong" },
+): EntitlementStore | null {
   if (event?.blobs) {
     try {
-      connectLambda({
-        blobs: event.blobs,
-        headers: normalizeLambdaHeaders(event.headers),
-      });
-      const store = getStore("ai-advantage-entitlements");
+      const store = getBlobsStore(event as EventLike & { blobs: string }, options?.consistency ?? "eventual");
       return {
         mode: "blobs",
         async get<T>(key: string) {
@@ -195,6 +241,7 @@ export function getEntitlementStore(event?: EventLike): EntitlementStore | null 
           const result = await store.setJSON(key, value, { onlyIfNew: true });
           return result?.modified === true;
         },
+        increment: blobsIncrement(store),
         async delete(key: string) {
           await store.delete(key);
         },
@@ -221,6 +268,7 @@ export function getEntitlementStore(event?: EventLike): EntitlementStore | null 
       async setIfAbsent(key: string, value: unknown) {
         return (await redis.set(key, value, { nx: true })) === "OK";
       },
+      increment: redisIncrement(redis),
       async delete(key: string) {
         await redis.del(key);
       },

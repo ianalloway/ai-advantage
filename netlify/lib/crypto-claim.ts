@@ -62,7 +62,11 @@ export async function getCryptoClaimChallenge(store: EntitlementStore, nonce: un
   if (typeof nonce !== "string" || !/^[a-f0-9]{32}$/.test(nonce)) return null;
   const challenge = await store.get<StoredChallenge>(challengeKey(nonce));
   if (!challenge || typeof challenge.message !== "string") return null;
-  if (new Date(challenge.expiresAt).getTime() <= Date.now()) return null;
+  if (!(new Date(challenge.expiresAt).getTime() > Date.now())) {
+    // Netlify Blobs has no TTL, so expired challenges are removed when seen.
+    await store.delete(challengeKey(nonce));
+    return null;
+  }
   const matches =
     challenge.txHash === binding.txHash &&
     challenge.walletAddress === binding.walletAddress &&
