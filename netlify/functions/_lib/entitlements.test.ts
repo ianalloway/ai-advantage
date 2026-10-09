@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CryptoTransactionAlreadyClaimedError,
   accessStateFromEntitlement,
+  bindSessionEntitlementToUser,
   createEntitlementSession,
   findBestEntitlement,
   isActiveEntitlement,
@@ -51,8 +52,8 @@ describe("upsertCryptoEntitlement", () => {
       }),
     ).rejects.toBeInstanceOf(CryptoTransactionAlreadyClaimedError);
 
-    const victimEntitlement = await findBestEntitlement(store, { email: "victim@example.com" });
-    const attackerEntitlement = await findBestEntitlement(store, { email: "attacker@example.com" });
+    const { token } = await createEntitlementSession(store, original);
+    const victimEntitlement = await findBestEntitlement(store, { entitlementToken: token });
 
     expect(victimEntitlement).toMatchObject({
       id: original.id,
@@ -60,7 +61,6 @@ describe("upsertCryptoEntitlement", () => {
       tier: "premium",
       cryptoTxHash: txHash,
     });
-    expect(attackerEntitlement).toBeNull();
   });
 });
 
@@ -116,25 +116,31 @@ describe("accessStateFromEntitlement", () => {
 describe("findBestEntitlement", () => {
   it("prefers premium over a concurrent event pass", async () => {
     const store = memoryStore();
-    await upsertEntitlement(store, record({ id: "ev", tier: "event", label: "Event", email: "a@b.com" }) as never);
-    await upsertEntitlement(store, record({ id: "pr", tier: "premium", label: "Premium", email: "a@b.com" }) as never);
+    await upsertEntitlement(store, record({ id: "ev", tier: "event", label: "Event", userId: "u1" }) as never);
+    await upsertEntitlement(store, record({ id: "pr", tier: "premium", label: "Premium", userId: "u1" }) as never);
 
-    expect(await findBestEntitlement(store, { email: "a@b.com" })).toMatchObject({ id: "pr" });
+    expect(await findBestEntitlement(store, { userId: "u1" })).toMatchObject({ id: "pr" });
   });
 
-  it("matches email case-insensitively, so casing cannot cost a paying user access", async () => {
+  // Signup never verifies email ownership, so the email index must not
+  // authorize: registering a guest buyer's address would otherwise inherit
+  // their paid access and Stripe billing portal.
+  it("never authorizes through the purchase email alone", async () => {
     const store = memoryStore();
-    await upsertEntitlement(store, record({ id: "pr", email: "Mixed.Case@Example.COM" }) as never);
+    await upsertEntitlement(store, record({ id: "guest", email: "buyer@example.com", stripeCustomerId: "cus_buyer" }) as never);
 
-    expect(await findBestEntitlement(store, { email: "  mixed.case@example.com " })).toMatchObject({ id: "pr" });
+    expect(await findBestEntitlement(store, { userId: "attacker-account" })).toBeNull();
+    expect(
+      await findBestEntitlement(store, { email: "buyer@example.com" } as Parameters<typeof findBestEntitlement>[1]),
+    ).toBeNull();
   });
 
   it("ignores expired and non-active records", async () => {
     const store = memoryStore();
-    await upsertEntitlement(store, record({ id: "old", expiresAt: past(), email: "a@b.com" }) as never);
-    await upsertEntitlement(store, record({ id: "pend", status: "pending", email: "a@b.com" }) as never);
+    await upsertEntitlement(store, record({ id: "old", expiresAt: past(), userId: "u1" }) as never);
+    await upsertEntitlement(store, record({ id: "pend", status: "pending", userId: "u1" }) as never);
 
-    expect(await findBestEntitlement(store, { email: "a@b.com" })).toBeNull();
+    expect(await findBestEntitlement(store, { userId: "u1" })).toBeNull();
   });
 
   it("resolves through a valid entitlement session token", async () => {
@@ -157,13 +163,39 @@ describe("findBestEntitlement", () => {
 
   it("ignores an unknown or garbage session token", async () => {
     const store = memoryStore();
-    await upsertEntitlement(store, record({ id: "pr", email: "a@b.com" }) as never);
+    await upsertEntitlement(store, record({ id: "pr", userId: "u1" }) as never);
 
     expect(await findBestEntitlement(store, { entitlementToken: "not-a-real-token" })).toBeNull();
   });
 
   it("returns null for an unknown lookup", async () => {
-    expect(await findBestEntitlement(memoryStore(), { email: "nobody@example.com" })).toBeNull();
+    expect(await findBestEntitlement(memoryStore(), { userId: "nobody" })).toBeNull();
+  });
+});
+
+describe("bindSessionEntitlementToUser", () => {
+  it("binds a guest purchase to the account that holds its session and shares its email", async () => {
+    const store = memoryStore();
+    const saved = await upsertEntitlement(store, record({ id: "guest", email: "Buyer@Example.com" }) as never);
+    const { token } = await createEntitlementSession(store, saved);
+
+    const bound = await bindSessionEntitlementToUser(store, token, { id: "u-buyer", email: "buyer@example.com" });
+    expect(bound).toMatchObject({ id: "guest", userId: "u-buyer" });
+    // The account now reaches it on any device, without the cookie.
+    expect(await findBestEntitlement(store, { userId: "u-buyer" })).toMatchObject({ id: "guest" });
+  });
+
+  it("refuses to bind without the purchaser's session, with a different email, or over another account", async () => {
+    const store = memoryStore();
+    const guest = await upsertEntitlement(store, record({ id: "guest", email: "buyer@example.com" }) as never);
+    const owned = await upsertEntitlement(store, record({ id: "owned", email: "buyer@example.com", userId: "u-owner" }) as never);
+    const guestToken = (await createEntitlementSession(store, guest)).token;
+    const ownedToken = (await createEntitlementSession(store, owned)).token;
+
+    expect(await bindSessionEntitlementToUser(store, null, { id: "u-x", email: "buyer@example.com" })).toBeNull();
+    expect(await bindSessionEntitlementToUser(store, guestToken, { id: "u-x", email: "other@example.com" })).toBeNull();
+    expect(await bindSessionEntitlementToUser(store, ownedToken, { id: "u-x", email: "buyer@example.com" })).toBeNull();
+    expect(await findBestEntitlement(store, { userId: "u-x" })).toBeNull();
   });
 });
 
@@ -291,7 +323,8 @@ describe("out-of-order Stripe webhook delivery", () => {
 
     expect(replayed.status).toBe("active");
     expect(isActiveEntitlement(replayed)).toBe(true);
-    expect(await findBestEntitlement(store, { email: paid.email ?? undefined })).not.toBeNull();
+    const { token } = await createEntitlementSession(store, replayed);
+    expect(await findBestEntitlement(store, { entitlementToken: token })).not.toBeNull();
   });
 
   it("still withholds access when the first event seen is unpaid", async () => {

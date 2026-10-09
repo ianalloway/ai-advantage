@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // checkout identity attribution and entitlement persistence run together.
 const sandbox = vi.hoisted(() => ({
   stores: new Map<string, Map<string, unknown>>(),
-  create: vi.fn(), retrieve: vi.fn(),
+  create: vi.fn(), retrieve: vi.fn(), portal: vi.fn(), subscription: vi.fn(),
 }));
 vi.mock("@netlify/blobs", () => ({
   connectLambda: vi.fn(), setEnvironmentContext: vi.fn(),
@@ -21,6 +21,8 @@ vi.mock("@netlify/blobs", () => ({
 }));
 vi.mock("stripe", () => ({ default: class {
   checkout = { sessions: { create: sandbox.create, retrieve: sandbox.retrieve } };
+  billingPortal = { sessions: { create: sandbox.portal } };
+  subscriptions = { retrieve: sandbox.subscription };
 } }));
 
 import { handler as auth } from "../../netlify/functions/auth";
@@ -31,6 +33,7 @@ import funnel from "../../api/funnel";
 import { handler as netlifyFunnel } from "../../netlify/functions/funnel";
 import { handler as netlifyCreateCheckout } from "../../netlify/functions/create-checkout-session";
 import { handler as netlifyVerifyCheckout } from "../../netlify/functions/checkout-session";
+import createPortal from "../../api/create-portal-session";
 
 const blobs = Buffer.from(JSON.stringify({ url: 'https://blob.invalid', url_uncached: 'https://blob.invalid' })).toString('base64');
 const credentials = { email: 'journey@example.test', username: 'journey', password: 'ephemeral-test-password' };
@@ -193,6 +196,67 @@ describe('provider-mocked account and checkout journeys', () => {
     expect(rightful.statusCode).toBe(200);
     expect(JSON.parse(rightful.body)).toMatchObject({ paid: true, entitlement: { status: 'active' } });
     expect(rightful.headers['Set-Cookie']).toContain('HttpOnly');
+  });
+
+  it('does not hand a guest purchase or its billing portal to an unverified signup with the same email', async () => {
+    sandbox.portal.mockResolvedValue({ url: 'https://billing.stripe.com/mock' });
+    sandbox.create.mockResolvedValue({ id: 'cs_test_guest_email', url: 'https://checkout.stripe.com/mock', mode: 'payment' });
+    const checkout = response();
+    await createCheckout({ blobs, method: 'POST', headers: headers(), body: {
+      mode: 'one-time', customerEmail: 'guest@example.test', clientReferenceId: 'forged-account-id',
+    } }, checkout);
+    const created = sandbox.create.mock.calls[0]?.[0] as { metadata: Record<string, string>; client_reference_id?: string };
+    // A logged-out body value must not bind the purchase to an arbitrary account.
+    expect(created.client_reference_id).toBeUndefined();
+    takeCookie(checkout.headers['Set-Cookie']);
+    sandbox.retrieve.mockResolvedValue({
+      id: 'cs_test_guest_email', mode: 'payment', status: 'complete', payment_status: 'paid',
+      customer_email: 'guest@example.test', customer: 'cus_guest_email', payment_intent: 'pi_guest_email',
+      metadata: created.metadata,
+    });
+    const redeemed = response();
+    await verifyCheckout({ blobs, method: 'GET', headers: headers(), query: { session_id: 'cs_test_guest_email' } }, redeemed);
+    takeCookie(redeemed.headers['Set-Cookie']);
+    expect(await access()).toBe('event');
+    const buyerBrowser = cookie;
+
+    // Another browser registers the buyer's email. Signup does not verify it.
+    cookie = '';
+    const squatter = await auth(event('signup', {
+      email: 'guest@example.test', username: 'squatter', password: 'squatter-test-password',
+    }));
+    expect(squatter.statusCode).toBe(200);
+    takeCookie(squatter.headers['Set-Cookie']);
+    expect(await access()).toBe('free');
+    const portal = response();
+    await createPortal({ blobs, method: 'POST', headers: headers(), body: {} }, portal);
+    expect(portal.statusCode).toBe(400);
+    expect(sandbox.portal).not.toHaveBeenCalled();
+
+    expect(buyerBrowser).toContain('ai_advantage_entitlement=');
+  });
+
+  it('binds a guest purchase to the account its buyer creates in the purchasing browser', async () => {
+    sandbox.create.mockResolvedValue({ id: 'cs_test_guest_bind', url: 'https://checkout.stripe.com/mock', mode: 'payment' });
+    const checkout = response();
+    await createCheckout({ blobs, method: 'POST', headers: headers(), body: { mode: 'one-time', customerEmail: credentials.email } }, checkout);
+    const created = sandbox.create.mock.calls[0]?.[0] as { metadata: Record<string, string> };
+    takeCookie(checkout.headers['Set-Cookie']);
+    sandbox.retrieve.mockResolvedValue({
+      id: 'cs_test_guest_bind', mode: 'payment', status: 'complete', payment_status: 'paid',
+      customer_email: credentials.email, customer: 'cus_bind', payment_intent: 'pi_bind', metadata: created.metadata,
+    });
+    const redeemed = response();
+    await verifyCheckout({ blobs, method: 'GET', headers: headers(), query: { session_id: 'cs_test_guest_bind' } }, redeemed);
+    takeCookie(redeemed.headers['Set-Cookie']);
+
+    const signup = await auth(event('signup', credentials));
+    takeCookie(signup.headers['Set-Cookie']);
+    expect(await access()).toBe('event');
+
+    // A fresh browser with only the account session keeps the purchase.
+    cookie = cookie.split('; ').filter((part) => part.startsWith('ai_advantage_session=')).join('; ');
+    expect(await access()).toBe('event');
   });
 
   it('does not redeem a legacy guest checkout ID without an ownership claim', async () => {

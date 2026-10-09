@@ -352,24 +352,34 @@ export async function upsertEntitlement(
   return record;
 }
 
+async function getSessionEntitlementId(store: EntitlementStore, token: string | null | undefined) {
+  if (!token) return null;
+  const session = await store.get<{ entitlementId?: string; expiresAt?: string }>(sessionKey(token));
+  if (session?.entitlementId && (!session.expiresAt || new Date(session.expiresAt).getTime() > Date.now())) {
+    return session.entitlementId;
+  }
+  return null;
+}
+
+/**
+ * Resolve the best active entitlement a request is authorized for.
+ *
+ * Only two things authorize: an entitlement session cookie (minted to whoever
+ * proved the purchase) and entitlements bound to the account's immutable user
+ * id. The email index is deliberately not consulted: signup does not verify
+ * email ownership, so anyone could register a guest buyer's address and
+ * inherit their paid access and Stripe billing portal.
+ */
 export async function findBestEntitlement(store: EntitlementStore, lookup: {
   userId?: string;
-  email?: string;
   entitlementToken?: string | null;
 }) {
   const ids: string[] = [];
 
-  if (lookup.entitlementToken) {
-    const session = await store.get<{ entitlementId?: string; expiresAt?: string }>(sessionKey(lookup.entitlementToken));
-    if (session?.entitlementId && (!session.expiresAt || new Date(session.expiresAt).getTime() > Date.now())) {
-      ids.push(session.entitlementId);
-    }
-  }
+  const sessionEntitlementId = await getSessionEntitlementId(store, lookup.entitlementToken);
+  if (sessionEntitlementId) ids.push(sessionEntitlementId);
 
-  ids.push(
-    ...(await getIndexedIds(store, lookup.userId ? userIndexKey(lookup.userId) : undefined)),
-    ...(await getIndexedIds(store, lookup.email ? emailIndexKey(lookup.email) : undefined)),
-  );
+  ids.push(...(await getIndexedIds(store, lookup.userId ? userIndexKey(lookup.userId) : undefined)));
 
   const records = (await getRecords(store, ids)).filter(isActiveEntitlement);
   return records.sort((a, b) => {
@@ -377,6 +387,28 @@ export async function findBestEntitlement(store: EntitlementStore, lookup: {
     if (rankDiff !== 0) return rankDiff;
     return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
   })[0] ?? null;
+}
+
+/**
+ * Bind the entitlement behind this browser's entitlement session to a signed-in
+ * account, so a guest purchase follows the buyer to other devices once they
+ * create an account. Requires both proofs: possession of the entitlement
+ * session (issued only to the purchaser) and an account email equal to the
+ * purchase email. An entitlement already bound to another account is left alone.
+ */
+export async function bindSessionEntitlementToUser(
+  store: EntitlementStore,
+  token: string | null | undefined,
+  user: { id: string; email?: string },
+) {
+  const entitlementId = await getSessionEntitlementId(store, token);
+  if (!entitlementId || !user.id) return null;
+  const record = await getRecord(store, entitlementId);
+  if (!isActiveEntitlement(record) || record.userId) return null;
+  if (!record.email || !user.email || normalizeEmail(record.email) !== normalizeEmail(user.email)) return null;
+
+  const { updatedAt: _updatedAt, ...rest } = record;
+  return upsertEntitlement(store, { ...rest, userId: user.id });
 }
 
 export async function findEntitlementByStripeCustomer(store: EntitlementStore, customerId: string) {

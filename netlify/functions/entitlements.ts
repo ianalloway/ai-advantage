@@ -1,6 +1,7 @@
 import { getCurrentSiteUserFromEvent } from "./_lib/auth-session";
 import {
   accessStateFromEntitlement,
+  bindSessionEntitlementToUser,
   clearEntitlementSessionCookie,
   findBestEntitlement,
   getEntitlementSessionToken,
@@ -71,9 +72,11 @@ export const handler = async (event: NetlifyEvent) => {
 
   const user = await getCurrentSiteUserFromEvent(event);
   const entitlementToken = getEntitlementSessionToken(event.headers);
+  if (user) {
+    await bindSessionEntitlementToUser(store, entitlementToken, user);
+  }
   const entitlement = await findBestEntitlement(store, {
     userId: user?.id,
-    email: user?.email,
     entitlementToken,
   });
   const access = accessStateFromEntitlement(entitlement);
