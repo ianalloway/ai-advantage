@@ -11,6 +11,8 @@ export interface HistoricalExecutionLedgerEntry extends ExecutionBoardEntry {
 
 interface LedgerArchiveResponse {
   configured: boolean;
+  /** False when the server returned only the free preview. */
+  full?: boolean;
   rows: HistoricalExecutionLedgerEntry[];
 }
 
@@ -77,16 +79,34 @@ export async function listExecutionLedgerEntries(limit = 100): Promise<Historica
 export async function syncExecutionLedgerEntries(
   entries: ExecutionBoardEntry[],
   accessTier: AccessTier = "free",
+  options: { full?: boolean } = {},
 ): Promise<HistoricalExecutionLedgerEntry[]> {
   if (typeof window === "undefined" || entries.length === 0) {
     return [];
   }
 
   await upsertExecutionLedgerEntries(entries, accessTier);
-  return listExecutionLedgerArchive(250);
+  return listExecutionLedgerArchive(250, options);
 }
 
-export async function listExecutionLedgerArchive(limit = 100): Promise<HistoricalExecutionLedgerEntry[]> {
+function mergeById(primary: HistoricalExecutionLedgerEntry[], extra: HistoricalExecutionLedgerEntry[], limit: number) {
+  const byId = new Map(extra.map((row) => [row.id, row]));
+  for (const row of primary) byId.set(row.id, row);
+  return Array.from(byId.values())
+    .sort((a, b) => new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime())
+    .slice(0, limit);
+}
+
+/**
+ * Read the shared archive. The server decides what the caller may see: Pro
+ * callers get the full archive, everyone else a short preview, which is merged
+ * into this browser's own locally tracked rows rather than replacing them.
+ * `full` only asks for the archive; it grants nothing on its own.
+ */
+export async function listExecutionLedgerArchive(
+  limit = 100,
+  options: { full?: boolean } = {},
+): Promise<HistoricalExecutionLedgerEntry[]> {
   const localRows = await listExecutionLedgerEntries(limit);
 
   if (typeof window === "undefined") {
@@ -94,7 +114,11 @@ export async function listExecutionLedgerArchive(limit = 100): Promise<Historica
   }
 
   try {
-    const response = await fetch(`/api/execution-ledger?limit=${limit}`);
+    const view = options.full ? "full" : "preview";
+    const response = await fetch(`/api/execution-ledger?limit=${limit}&view=${view}`, {
+      credentials: "same-origin",
+      cache: "no-store",
+    });
     if (!response.ok) {
       return localRows;
     }
@@ -102,7 +126,7 @@ export async function listExecutionLedgerArchive(limit = 100): Promise<Historica
     const data = (await response.json()) as LedgerArchiveResponse;
     if (data.rows.length > 0) {
       await hydrateExecutionLedgerEntries(data.rows);
-      return data.rows;
+      return data.full ? data.rows : mergeById(localRows, data.rows, limit);
     }
   } catch {
     return localRows;

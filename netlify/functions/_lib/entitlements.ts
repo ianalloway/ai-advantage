@@ -1,8 +1,15 @@
 import { randomBytes, createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { connectLambda, getStore } from "@netlify/blobs";
+import { connectLambda, getStore, setEnvironmentContext } from "@netlify/blobs";
 import { Redis } from "@upstash/redis";
+import {
+  blobsIncrement,
+  memoryIncrement,
+  redisIncrement,
+  unavailableIncrement,
+  type IncrementFn,
+} from "../../lib/rate-limit";
 
 export type AccessTier = "free" | "event" | "premium";
 export type AccessSource = "stripe" | "crypto" | "manual";
@@ -48,6 +55,10 @@ export interface EntitlementStore {
   delete: (key: string) => Promise<void>;
   get: <T>(key: string) => Promise<T | null>;
   set: (key: string, value: unknown, options?: { ex?: number }) => Promise<void>;
+  /** Atomically create `key` only if it does not exist. Resolves true for the single winner. */
+  setIfAbsent: (key: string, value: unknown) => Promise<boolean>;
+  /** Atomic windowed counter, used for rate limits. */
+  increment: IncrementFn;
 }
 
 export class CryptoTransactionAlreadyClaimedError extends Error {
@@ -65,6 +76,7 @@ export type EventLike = {
 const ENTITLEMENT_PREFIX = "ai-advantage:entitlements";
 const SESSION_COOKIE = "ai_advantage_entitlement";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
+const CRYPTO_CLAIM_IN_FLIGHT_MS = 60 * 1000;
 const EVENT_ACCESS_HOURS = Number(process.env.ENTITLEMENT_EVENT_ACCESS_HOURS || "72");
 const LOCAL_ENTITLEMENT_PATH = join(process.cwd(), ".netlify", "state", "ai-advantage-entitlements.json");
 
@@ -156,22 +168,91 @@ function getLocalStore(): EntitlementStore {
       data[key] = value;
       await writeLocalData();
     },
+    async setIfAbsent(key: string, value: unknown) {
+      const data = await readLocalData();
+      // Check and set run in one synchronous step, so this is atomic in-process.
+      if (key in data) return false;
+      data[key] = value;
+      await writeLocalData();
+      return true;
+    },
     async delete(key: string) {
       const data = await readLocalData();
       delete data[key];
       await writeLocalData();
     },
+    async increment(key: string, delta: number, windowSeconds: number) {
+      const data = await readLocalData();
+      const result = await memoryIncrement(
+        (k) => data[k],
+        (k, v) => {
+          data[k] = v;
+        },
+      )(key, delta, windowSeconds);
+      await writeLocalData();
+      return result;
+    },
   };
 }
 
-export function getEntitlementStore(event?: EventLike): EntitlementStore | null {
+/**
+ * Open a Netlify Blobs store from a function event. For "strong", the context
+ * is wired by hand: connectLambda() drops the uncached edge URL that strong
+ * reads need, and calling it after a strong store was set up breaks that store.
+ * `strong` reports whether strong reads are actually available.
+ */
+export function openBlobsStore(
+  event: EventLike & { blobs: string },
+  name: string,
+  consistency: "eventual" | "strong",
+) {
+  return getBlobsStore(event, consistency, name);
+}
+
+function getBlobsStore(
+  event: EventLike & { blobs: string },
+  consistency: "eventual" | "strong",
+  name = "ai-advantage-entitlements",
+) {
+  if (consistency === "strong") {
+    // connectLambda() drops the uncached edge URL that strong reads need, so wire
+    // the context by hand (same approach as the auth function).
+    const payload = JSON.parse(Buffer.from(event.blobs, "base64").toString()) as {
+      url?: string;
+      url_uncached?: string;
+      token?: string;
+    };
+    if (payload.url_uncached) {
+      const headers = normalizeLambdaHeaders(event.headers);
+      setEnvironmentContext({
+        deployID: headers["x-nf-deploy-id"],
+        edgeURL: payload.url,
+        uncachedEdgeURL: payload.url_uncached,
+        siteID: headers["x-nf-site-id"],
+        token: payload.token,
+      });
+      return { store: getStore({ name, consistency: "strong" }), strong: true };
+    }
+  }
+  connectLambda({
+    blobs: event.blobs,
+    headers: normalizeLambdaHeaders(event.headers),
+  });
+  return { store: getStore(name), strong: false };
+}
+
+/**
+ * `consistency: "strong"` reads through Netlify's uncached edge where it is
+ * available. Use it for state that must not be read stale: claim challenges,
+ * claim markers and rate-limit counters.
+ */
+export function getEntitlementStore(
+  event?: EventLike,
+  options?: { consistency?: "eventual" | "strong" },
+): EntitlementStore | null {
   if (event?.blobs) {
     try {
-      connectLambda({
-        blobs: event.blobs,
-        headers: normalizeLambdaHeaders(event.headers),
-      });
-      const store = getStore("ai-advantage-entitlements");
+      const { store, strong } = getBlobsStore(event as EventLike & { blobs: string }, options?.consistency ?? "eventual");
       return {
         mode: "blobs",
         async get<T>(key: string) {
@@ -180,6 +261,12 @@ export function getEntitlementStore(event?: EventLike): EntitlementStore | null 
         async set(key: string, value: unknown) {
           await store.setJSON(key, value);
         },
+        async setIfAbsent(key: string, value: unknown) {
+          const result = await store.setJSON(key, value, { onlyIfNew: true });
+          return result?.modified === true;
+        },
+        // Counters only on strongly consistent reads; see unavailableIncrement.
+        increment: strong ? blobsIncrement(store) : unavailableIncrement,
         async delete(key: string) {
           await store.delete(key);
         },
@@ -203,6 +290,10 @@ export function getEntitlementStore(event?: EventLike): EntitlementStore | null 
           await redis.set(key, value);
         }
       },
+      async setIfAbsent(key: string, value: unknown) {
+        return (await redis.set(key, value, { nx: true })) === "OK";
+      },
+      increment: redisIncrement(redis),
       async delete(key: string) {
         await redis.del(key);
       },
@@ -238,6 +329,10 @@ function stripeSubscriptionIndexKey(subscriptionId: string) {
 
 function cryptoTxIndexKey(txHash: string) {
   return `${ENTITLEMENT_PREFIX}:idx:crypto-tx:${normalizeHash(txHash)}`;
+}
+
+function cryptoTxClaimKey(txHash: string) {
+  return `${ENTITLEMENT_PREFIX}:claim:crypto-tx:${normalizeHash(txHash)}`;
 }
 
 function normalizeEmail(value: string) {
@@ -352,24 +447,34 @@ export async function upsertEntitlement(
   return record;
 }
 
+async function getSessionEntitlementId(store: EntitlementStore, token: string | null | undefined) {
+  if (!token || (await isSessionRevoked(store, token))) return null;
+  const session = await store.get<{ entitlementId?: string; expiresAt?: string }>(sessionKey(token));
+  if (session?.entitlementId && (!session.expiresAt || new Date(session.expiresAt).getTime() > Date.now())) {
+    return session.entitlementId;
+  }
+  return null;
+}
+
+/**
+ * Resolve the best active entitlement a request is authorized for.
+ *
+ * Only two things authorize: an entitlement session cookie (minted to whoever
+ * proved the purchase) and entitlements bound to the account's immutable user
+ * id. The email index is deliberately not consulted: signup does not verify
+ * email ownership, so anyone could register a guest buyer's address and
+ * inherit their paid access and Stripe billing portal.
+ */
 export async function findBestEntitlement(store: EntitlementStore, lookup: {
   userId?: string;
-  email?: string;
   entitlementToken?: string | null;
 }) {
   const ids: string[] = [];
 
-  if (lookup.entitlementToken) {
-    const session = await store.get<{ entitlementId?: string; expiresAt?: string }>(sessionKey(lookup.entitlementToken));
-    if (session?.entitlementId && (!session.expiresAt || new Date(session.expiresAt).getTime() > Date.now())) {
-      ids.push(session.entitlementId);
-    }
-  }
+  const sessionEntitlementId = await getSessionEntitlementId(store, lookup.entitlementToken);
+  if (sessionEntitlementId) ids.push(sessionEntitlementId);
 
-  ids.push(
-    ...(await getIndexedIds(store, lookup.userId ? userIndexKey(lookup.userId) : undefined)),
-    ...(await getIndexedIds(store, lookup.email ? emailIndexKey(lookup.email) : undefined)),
-  );
+  ids.push(...(await getIndexedIds(store, lookup.userId ? userIndexKey(lookup.userId) : undefined)));
 
   const records = (await getRecords(store, ids)).filter(isActiveEntitlement);
   return records.sort((a, b) => {
@@ -377,6 +482,54 @@ export async function findBestEntitlement(store: EntitlementStore, lookup: {
     if (rankDiff !== 0) return rankDiff;
     return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
   })[0] ?? null;
+}
+
+/**
+ * Bind the entitlement behind this browser's entitlement session to a signed-in
+ * account, so a guest purchase follows the buyer to other devices once they
+ * create an account. Requires both proofs: possession of the entitlement
+ * session (issued only to the purchaser) and an account email equal to the
+ * purchase email. An entitlement already bound to another account is left alone.
+ */
+export async function bindSessionEntitlementToUser(
+  store: EntitlementStore,
+  token: string | null | undefined,
+  user: { id: string; email?: string },
+) {
+  const entitlementId = await getSessionEntitlementId(store, token);
+  if (!entitlementId || !user.id) return null;
+  const record = await getRecord(store, entitlementId);
+  if (!isActiveEntitlement(record) || record.userId) return null;
+  if (!record.email || !user.email || normalizeEmail(record.email) !== normalizeEmail(user.email)) return null;
+
+  const { updatedAt: _updatedAt, ...rest } = record;
+  return upsertEntitlement(store, { ...rest, userId: user.id });
+}
+
+/**
+ * Active entitlements purchased with `email`. NOT an authorization check on its
+ * own: callers must first prove the requester controls that mailbox (see the
+ * purchase recovery link) or be an operator.
+ */
+export async function findActiveEntitlementsByPurchaseEmail(store: EntitlementStore, email: string) {
+  const ids = await getIndexedIds(store, emailIndexKey(email));
+  const records = (await getRecords(store, ids)).filter(isActiveEntitlement);
+  return records
+    .filter((record) => record.email && normalizeEmail(record.email) === normalizeEmail(email))
+    .sort((a, b) => accessRank(b) - accessRank(a));
+}
+
+/**
+ * Bind an entitlement to an account. Only for callers that have established
+ * ownership (an email-ownership proof or an operator action). Never moves an
+ * entitlement that is already bound to a different account.
+ */
+export async function bindEntitlementToUser(store: EntitlementStore, entitlementId: string, userId: string) {
+  const record = await getRecord(store, entitlementId);
+  if (!record || !userId) return null;
+  if (record.userId) return record.userId === userId ? record : null;
+  const { updatedAt: _updatedAt, ...rest } = record;
+  return upsertEntitlement(store, { ...rest, userId });
 }
 
 export async function findEntitlementByStripeCustomer(store: EntitlementStore, customerId: string) {
@@ -431,8 +584,61 @@ export async function createEntitlementSession(store: EntitlementStore, entitlem
   return { token, maxAge };
 }
 
+const SESSION_RENEW_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Sliding expiry for the entitlement cookie. While the entitlement behind the
+ * session is active, push the session's expiry out to a full TTL again (capped
+ * at the entitlement's own expiry), at most once a day. Without this a guest
+ * purchase, reachable only through this cookie, silently disappeared after 30
+ * days even though the subscription was still being paid.
+ */
+export async function renewEntitlementSession(store: EntitlementStore, token: string | null | undefined) {
+  if (!token) return null;
+  const key = sessionKey(token);
+  const session = await store.get<{ entitlementId?: string; expiresAt?: string }>(key);
+  if (!session?.entitlementId || !session.expiresAt) return null;
+  const currentExpiry = new Date(session.expiresAt).getTime();
+  if (!(currentExpiry > Date.now())) return null;
+  const entitlement = await getRecord(store, session.entitlementId);
+  if (!isActiveEntitlement(entitlement)) return null;
+
+  const fullTtl = Date.now() + SESSION_TTL_SECONDS * 1000;
+  const cap = entitlement.expiresAt ? new Date(entitlement.expiresAt).getTime() : fullTtl;
+  const nextExpiry = Math.min(fullTtl, cap);
+  if (nextExpiry - currentExpiry < SESSION_RENEW_AFTER_MS) return null;
+
+  const maxAge = Math.max(60, Math.floor((nextExpiry - Date.now()) / 1000));
+  if (await isSessionRevoked(store, token)) return null;
+  await store.set(key, { entitlementId: entitlement.id, expiresAt: new Date(nextExpiry).toISOString() }, { ex: maxAge });
+  // A logout that landed between the read above and this write would otherwise
+  // be undone by it: re-check and take the session back down.
+  if (await isSessionRevoked(store, token)) {
+    await store.delete(key);
+    return null;
+  }
+  return { token, maxAge };
+}
+
+function revokedSessionKey(token: string) {
+  return `${sessionKey(token)}:revoked`;
+}
+
+async function isSessionRevoked(store: EntitlementStore, token: string) {
+  return Boolean(await store.get<string>(revokedSessionKey(token)));
+}
+
+/**
+ * Revoke first, then delete: the marker outlives any write that races the
+ * delete (a concurrent renewal), and every reader checks it.
+ */
 export async function revokeEntitlementSession(store: EntitlementStore, token: string) {
-  await store.delete(sessionKey(token));
+  // Once the marker is stored the session is revoked for every reader, so a
+  // failure to delete the session record afterwards is only cleanup.
+  await store.set(revokedSessionKey(token), new Date().toISOString(), { ex: SESSION_TTL_SECONDS });
+  await store.delete(sessionKey(token)).catch((error) => {
+    console.warn("Revoked entitlement session record could not be deleted; the revocation marker still applies.", error);
+  });
 }
 
 export function entitlementSessionCookie(headers: EventLike["headers"], token: string, maxAge: number) {
@@ -462,6 +668,29 @@ function stringId(value: unknown) {
   return undefined;
 }
 
+function subscriptionStatusToEntitlement(status: string | null | undefined): EntitlementStatus {
+  if (status === "active" || status === "trialing") return "active";
+  if (status === "canceled") return "cancelled";
+  return "pending";
+}
+
+/**
+ * Fulfil a Checkout Session into an entitlement, at most once.
+ *
+ * Both the webhook and the post-checkout receipt lookup call this, and both can
+ * be replayed (Stripe redelivers events; a buyer can reload the success URL).
+ * Fulfilment is keyed by the entitlement id the session maps to (subscription,
+ * then payment intent, then session id). Once that record has left "pending",
+ * a later call never touches its lifecycle: a cancelled subscription stays
+ * cancelled and an event pass keeps its original expiry. It only fills in
+ * identity fields the record is missing. A pending record may be promoted to
+ * active once payment clears, and the pass clock starts at that activation.
+ *
+ * For subscriptions, `options.subscriptionStatus` is the subscription's current
+ * Stripe status; when given it decides access instead of the historical
+ * session's payment flags. Without it (webhook replays), a status written by
+ * the subscription webhooks is never overridden by a checkout session.
+ */
 export async function upsertStripeCheckoutSessionEntitlement(
   store: EntitlementStore,
   session: {
@@ -477,6 +706,7 @@ export async function upsertStripeCheckoutSessionEntitlement(
     customer_details?: { email?: string | null } | null;
     metadata?: Record<string, string> | null;
   },
+  options?: { subscriptionStatus?: string | null },
 ) {
   const paid =
     session.status === "complete" &&
@@ -493,27 +723,51 @@ export async function upsertStripeCheckoutSessionEntitlement(
     : stripePaymentIntentId
       ? `stripe:payment:${stripePaymentIntentId}`
       : `stripe:checkout:${session.id}`;
-
-  return upsertEntitlement(store, {
-    id,
-    tier,
-    source: "stripe",
-    label,
-    status: paid ? "active" : "pending",
-    activatedAt: now,
-    expiresAt: tier === "event" ? eventAccessExpiry() : undefined,
+  const identity = {
     userId: session.client_reference_id ?? undefined,
     email: session.customer_details?.email ?? session.customer_email ?? undefined,
     stripeCustomerId,
     stripeSubscriptionId,
     stripeCheckoutSessionId: session.id,
     stripePaymentIntentId,
+  };
+
+  // Current Stripe truth for a subscription, when the caller fetched it. It is
+  // not a replay, so it may move status in either direction.
+  const liveStatus =
+    mode === "subscription" && options && "subscriptionStatus" in options
+      ? subscriptionStatusToEntitlement(options.subscriptionStatus)
+      : undefined;
+
+  const existing = await getRecord(store, id);
+  const ownedBySubscriptionLifecycle = mode === "subscription" && Boolean(existing?.metadata?.stripe_status);
+  if (existing && (existing.status !== "pending" || ownedBySubscriptionLifecycle)) {
+    const missing = Object.fromEntries(
+      Object.entries(identity).filter(([key, value]) => value && !existing[key as keyof EntitlementRecord]),
+    );
+    const statusChange = liveStatus && liveStatus !== existing.status ? { status: liveStatus } : {};
+    if (Object.keys(missing).length === 0 && !("status" in statusChange)) return existing;
+    const { updatedAt: _updatedAt, ...rest } = existing;
+    return upsertEntitlement(store, { ...rest, ...missing, ...statusChange });
+  }
+
+  const status: EntitlementStatus = liveStatus ?? (paid ? "active" : "pending");
+
+  return upsertEntitlement(store, {
+    id,
+    tier,
+    source: "stripe",
+    label,
+    status,
+    activatedAt: now,
+    expiresAt: tier === "event" ? eventAccessExpiry() : undefined,
+    ...identity,
     metadata: {
       checkout_mode: mode,
       unlock_type: session.metadata?.unlock_type ?? "",
       plan_label: session.metadata?.plan_label ?? label,
     },
-  }, { keepActive: true });
+  });
 }
 
 export async function upsertStripeSubscriptionEntitlement(
@@ -554,6 +808,10 @@ export async function upsertStripeSubscriptionEntitlement(
   });
 }
 
+export async function getCryptoEntitlement(store: EntitlementStore, txHash: string) {
+  return getRecord(store, `crypto:${normalizeHash(txHash)}`);
+}
+
 export async function upsertCryptoEntitlement(
   store: EntitlementStore,
   input: {
@@ -562,26 +820,58 @@ export async function upsertCryptoEntitlement(
     txHash: string;
     tier: AccessTier;
     label: string;
+    userId?: string;
   },
 ) {
   const txHash = normalizeHash(input.txHash);
   const id = `crypto:${txHash}`;
+  // Records claimed before the atomic claim marker existed have no marker.
   const existing = await getRecord(store, id);
   if (existing) {
     throw new CryptoTransactionAlreadyClaimedError(txHash);
   }
+  // A read-then-write check let two concurrent first claims both pass and both
+  // receive sessions. Create-if-absent picks exactly one winner; only it goes
+  // on to write the record, indexes and session.
+  const walletAddress = normalizeWallet(input.walletAddress);
+  const markerKey = cryptoTxClaimKey(txHash);
+  const won = await store.setIfAbsent(markerKey, { claimedAt: new Date().toISOString(), walletAddress });
+  if (!won) {
+    // A marker that still has no record well after it was written means the
+    // winner died between the two writes. The same paying wallet (already
+    // proven by signature) may finish that claim; anyone else is refused, and a
+    // fresh marker is treated as a winner still in flight.
+    const marker = await store.get<{ walletAddress?: string; claimedAt?: string }>(markerKey);
+    const markerAgeMs = Date.now() - new Date(marker?.claimedAt ?? 0).getTime();
+    const orphaned =
+      marker?.walletAddress === walletAddress &&
+      markerAgeMs > CRYPTO_CLAIM_IN_FLIGHT_MS &&
+      !(await getRecord(store, id));
+    if (!orphaned) {
+      throw new CryptoTransactionAlreadyClaimedError(txHash);
+    }
+  }
 
   const tier = input.tier === "premium" ? "premium" : "event";
-  return upsertEntitlement(store, {
-    id,
-    tier,
-    source: "crypto",
-    label: input.label,
-    status: "active",
-    activatedAt: new Date().toISOString(),
-    expiresAt: tier === "event" ? eventAccessExpiry() : undefined,
-    email: input.email,
-    walletAddress: input.walletAddress,
-    cryptoTxHash: txHash,
-  });
+  try {
+    return await upsertEntitlement(store, {
+      id,
+      tier,
+      source: "crypto",
+      label: input.label,
+      status: "active",
+      activatedAt: new Date().toISOString(),
+      expiresAt: tier === "event" ? eventAccessExpiry() : undefined,
+      email: input.email,
+      userId: input.userId,
+      walletAddress,
+      cryptoTxHash: txHash,
+    });
+  } catch (error) {
+    // Do not leave the payment permanently unclaimable behind a bare marker.
+    if (!(await getRecord(store, id).catch(() => null))) {
+      await store.delete(markerKey).catch(() => undefined);
+    }
+    throw error;
+  }
 }

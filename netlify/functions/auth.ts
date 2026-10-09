@@ -4,6 +4,18 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { getStore, setEnvironmentContext } from "@netlify/blobs";
 import { Redis } from "@upstash/redis";
+import {
+  blobsIncrement,
+  clearInProcessFallback,
+  consumeRateLimit,
+  getClientIp,
+  memoryIncrement,
+  redisIncrement,
+  unavailableIncrement,
+  withInProcessFallback,
+  type IncrementFn,
+} from "../lib/rate-limit";
+import { rejectCrossSiteJson } from "../lib/request-guard";
 
 type NetlifyEvent = {
   blobs?: string;
@@ -35,6 +47,7 @@ interface AuthStore {
   delete: (key: string) => Promise<void>;
   get: <T>(key: string) => Promise<T | null>;
   set: (key: string, value: unknown, options?: { ex?: number }) => Promise<void>;
+  increment: IncrementFn;
   // True when reads are strongly consistent, so read-after-write retry loops can be skipped.
   consistentReads: boolean;
 }
@@ -49,6 +62,26 @@ const PASSWORD_DIGEST = "sha256";
 const STORE_READ_ATTEMPTS = 8;
 const STORE_READ_RETRY_MS = 250;
 export const LOCAL_AUTH_SECRET = "ai-advantage-local-development-auth-secret";
+
+// Login throttling. Every attempt atomically reserves a slot in windowed
+// counters kept in the auth store (shared across function instances, durable
+// across cold starts) before any password work happens, so parallel requests
+// cannot all see the same count. A successful login hands its slots back.
+//
+// The strict limit is per (account, IP), so one attacker cannot lock a user out
+// from everywhere else. The per-account limit is looser and only exists to
+// bound distributed guessing across many IPs; IPs that have logged into the
+// account before are exempt from it, so even a distributed lockout does not
+// stop the owner from their usual network. The per-IP limit stops one client
+// spraying many accounts.
+export const LOGIN_LIMITS = {
+  ip: { attempts: 30, windowSeconds: 15 * 60 },
+  pair: { attempts: 5, windowSeconds: 15 * 60 },
+  account: { attempts: 100, windowSeconds: 60 * 60 },
+} as const;
+const KNOWN_LOGIN_IP_DAYS = 90;
+const INVALID_LOGIN_MESSAGE = "That email/username and password combination is not valid.";
+const THROTTLED_LOGIN_MESSAGE = "Too many login attempts. Wait a few minutes and try again.";
 
 let redisClient: Redis | null | undefined;
 let activeStoreMode = "none";
@@ -143,6 +176,17 @@ function getLocalAuthStore(): AuthStore {
       delete data[key];
       await writeLocalAuthData();
     },
+    async increment(key: string, delta: number, windowSeconds: number) {
+      const data = await readLocalAuthData();
+      const result = await memoryIncrement(
+        (k) => data[k],
+        (k, v) => {
+          data[k] = v;
+        },
+      )(key, delta, windowSeconds);
+      await writeLocalAuthData();
+      return result;
+    },
   };
 }
 
@@ -182,6 +226,9 @@ function getAuthStore(event: NetlifyEvent): AuthStore | null {
         async delete(key: string) {
           await store.delete(key);
         },
+        // Without strong reads there is no safe shared counter; the login path
+        // falls back to an in-process limiter (see withInProcessFallback).
+        increment: strongReads ? blobsIncrement(store) : unavailableIncrement,
       };
     } catch (error) {
       console.warn("Netlify Blobs auth store is unavailable; checking fallback store.", error);
@@ -214,6 +261,7 @@ function getAuthStore(event: NetlifyEvent): AuthStore | null {
     async delete(key: string) {
       await redis.del(key);
     },
+    increment: redisIncrement(redis),
   };
 }
 
@@ -456,6 +504,48 @@ async function getFirstEventually<T>(store: AuthStore, keys: string[]) {
   return null;
 }
 
+type LoginScope = keyof typeof LOGIN_LIMITS;
+
+function knownLoginIpKey(userId: string, ip: string) {
+  return `${ACCOUNT_PREFIX}:known-login-ip:${createHash("sha256").update(`${userId}|${ip}`).digest("hex")}`;
+}
+
+async function isKnownLoginIp(store: AuthStore, userId: string | null, ip: string) {
+  if (!userId) return false;
+  const record = await store.get<{ expiresAt?: string }>(knownLoginIpKey(userId, ip));
+  return Boolean(record?.expiresAt && new Date(record.expiresAt).getTime() > Date.now());
+}
+
+function loginAttemptsKey(scope: LoginScope, id: string) {
+  return `${ACCOUNT_PREFIX}:login-attempts:${scope}:${createHash("sha256").update(id).digest("hex")}`;
+}
+
+/**
+ * Reserve one attempt in every scope, in order, before verifying a password.
+ * The increment is atomic, so of N parallel requests only the first `attempts`
+ * per window get through. Returns the retry delay of the first exhausted scope.
+ */
+async function reserveLoginAttempt(increment: IncrementFn, scopes: Array<[LoginScope, string]>) {
+  for (const [scope, key] of scopes) {
+    const { attempts, windowSeconds } = LOGIN_LIMITS[scope];
+    // An unavailable shared counter degrades to the in-process limiter; only a
+    // failure of that too refuses the attempt.
+    const limit = await consumeRateLimit(increment, key, attempts, windowSeconds, "deny");
+    if (!limit.ok) {
+      return { ok: false as const, retryAfterSeconds: limit.retryAfterSeconds };
+    }
+  }
+  return { ok: true as const };
+}
+
+function throttled(retryAfterSeconds: number) {
+  return response(
+    429,
+    { success: false, message: THROTTLED_LOGIN_MESSAGE },
+    { "Retry-After": String(retryAfterSeconds) },
+  );
+}
+
 async function getCurrentUser(store: AuthStore, event: NetlifyEvent) {
   const token = getCookie(event.headers, COOKIE_NAME);
   if (!token) return null;
@@ -508,6 +598,13 @@ export const handler = async (event: NetlifyEvent) => {
 
   if (event.httpMethod !== "POST") {
     return response(405, { success: false, message: "Method not allowed." });
+  }
+
+  // Login CSRF would let another site sign a visitor into an attacker's
+  // account (and, for example, attach their restored purchase to it).
+  const crossSite = rejectCrossSiteJson(event.headers);
+  if (crossSite) {
+    return response(crossSite.status, { success: false, message: crossSite.message });
   }
 
   if (route === "logout") {
@@ -596,20 +693,47 @@ export const handler = async (event: NetlifyEvent) => {
     const normalizedEmail = normalizeEmail(login);
     const normalizedUsername = normalizeUsername(login);
     const userId = await getFirstEventually<string>(store, [emailKey(normalizedEmail), usernameKey(normalizedUsername)]);
+    // Unknown logins are throttled under their own key, so a lockout does not
+    // reveal whether an account exists.
+    const accountId = userId ?? `unknown:${normalizedEmail}`;
+    const ip = getClientIp(event.headers);
+    const ipKey = loginAttemptsKey("ip", ip);
+    const pairKey = loginAttemptsKey("pair", `${accountId}|${ip}`);
+    const accountKey = loginAttemptsKey("account", accountId);
+    const knownIp = await isKnownLoginIp(store, userId, ip);
+    const increment = withInProcessFallback(store.increment, "auth-login");
+    const reservation = await reserveLoginAttempt(increment, [
+      ["ip", ipKey],
+      ["pair", pairKey],
+      ...(knownIp ? [] : [["account", accountKey] as [LoginScope, string]]),
+    ]);
+    if (!reservation.ok) return throttled(reservation.retryAfterSeconds);
 
-    if (!userId) {
-      return response(404, { success: false, message: "We could not find an account with that email or username." });
+    const user = userId ? await getEventually<StoredSiteUser>(store, userKey(userId)) : null;
+    const verification = user
+      ? await verifyPassword(password, user)
+      : // Spend the same hashing work for unknown accounts so timing does not enumerate them.
+        await hashPassword(password, randomBytes(16).toString("hex")).then(() => ({ ok: false, needsRehash: false }));
+    if (!user || !verification.ok) {
+      // The reserved slots stay used: they are the failure count.
+      return response(401, { success: false, message: INVALID_LOGIN_MESSAGE });
     }
 
-    const user = await getEventually<StoredSiteUser>(store, userKey(userId));
-    if (!user) {
-      return response(401, { success: false, message: "That password does not match this account." });
-    }
-
-    const verification = await verifyPassword(password, user);
-    if (!verification.ok) {
-      return response(401, { success: false, message: "That password does not match this account." });
-    }
+    // A correct password does not count against the limits, and this IP is
+    // remembered as one the owner uses.
+    const refund = (key: string, windowSeconds: number) =>
+      increment(key, -1, windowSeconds).catch(() => undefined);
+    clearInProcessFallback(pairKey);
+    await Promise.all([
+      store.delete(pairKey),
+      refund(ipKey, LOGIN_LIMITS.ip.windowSeconds),
+      knownIp ? Promise.resolve() : refund(accountKey, LOGIN_LIMITS.account.windowSeconds),
+      store.set(
+        knownLoginIpKey(user.id, ip),
+        { expiresAt: new Date(Date.now() + KNOWN_LOGIN_IP_DAYS * 86_400_000).toISOString() },
+        { ex: KNOWN_LOGIN_IP_DAYS * 86_400 },
+      ),
+    ]);
 
     if (verification.needsRehash) {
       try {

@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   CryptoTransactionAlreadyClaimedError,
   accessStateFromEntitlement,
+  bindSessionEntitlementToUser,
   createEntitlementSession,
+  renewEntitlementSession,
+  revokeEntitlementSession,
   findBestEntitlement,
   isActiveEntitlement,
   upsertCryptoEntitlement,
@@ -11,6 +14,7 @@ import {
   upsertStripeSubscriptionEntitlement,
   type EntitlementStore,
 } from "./entitlements";
+import { memoryIncrement } from "../../lib/rate-limit";
 
 function memoryStore(): EntitlementStore {
   const data = new Map<string, unknown>();
@@ -25,6 +29,13 @@ function memoryStore(): EntitlementStore {
     async set(key: string, value: unknown) {
       data.set(key, value);
     },
+    async setIfAbsent(key: string, value: unknown) {
+      await Promise.resolve();
+      if (data.has(key)) return false;
+      data.set(key, value);
+      return true;
+    },
+    increment: memoryIncrement((key) => data.get(key), (key, value) => data.set(key, value)),
   };
 }
 
@@ -51,8 +62,8 @@ describe("upsertCryptoEntitlement", () => {
       }),
     ).rejects.toBeInstanceOf(CryptoTransactionAlreadyClaimedError);
 
-    const victimEntitlement = await findBestEntitlement(store, { email: "victim@example.com" });
-    const attackerEntitlement = await findBestEntitlement(store, { email: "attacker@example.com" });
+    const { token } = await createEntitlementSession(store, original);
+    const victimEntitlement = await findBestEntitlement(store, { entitlementToken: token });
 
     expect(victimEntitlement).toMatchObject({
       id: original.id,
@@ -60,7 +71,67 @@ describe("upsertCryptoEntitlement", () => {
       tier: "premium",
       cryptoTxHash: txHash,
     });
-    expect(attackerEntitlement).toBeNull();
+  });
+});
+
+describe("concurrent first crypto claims", () => {
+  // Two requests racing on the same unclaimed tx used to both pass the
+  // read-then-write check and both receive a session.
+  it("lets exactly one concurrent claimant win", async () => {
+    const store = memoryStore();
+    const txHash = `0x${"e".repeat(64)}`;
+    const claim = (email: string) =>
+      upsertCryptoEntitlement(store, {
+        email,
+        walletAddress: `0x${"b".repeat(40)}`,
+        txHash,
+        tier: "event",
+        label: "Crypto Big Game Pass",
+      });
+
+    const results = await Promise.allSettled([claim("first@example.com"), claim("second@example.com")]);
+    const won = results.filter((result) => result.status === "fulfilled");
+    const lost = results.filter((result) => result.status === "rejected");
+    expect(won).toHaveLength(1);
+    expect(lost).toHaveLength(1);
+    expect((lost[0] as PromiseRejectedResult).reason).toBeInstanceOf(CryptoTransactionAlreadyClaimedError);
+
+    const winner = (won[0] as PromiseFulfilledResult<Awaited<ReturnType<typeof claim>>>).value;
+    expect(await store.get(`ai-advantage:entitlements:record:crypto:${txHash}`)).toMatchObject({ email: winner.email });
+  });
+});
+
+describe("crypto claim marker recovery", () => {
+  const txHash = `0x${"f".repeat(64)}`;
+  const payer = `0x${"b".repeat(40)}`;
+  const claim = (store: EntitlementStore, walletAddress = payer) =>
+    upsertCryptoEntitlement(store, { email: "payer@example.com", walletAddress, txHash, tier: "event", label: "Pass" });
+
+  it("releases the claim marker when the record write fails, so the payer can retry", async () => {
+    const store = memoryStore();
+    const set = store.set;
+    let failNext = true;
+    store.set = async (key, value, options) => {
+      if (failNext && key.includes(":record:")) {
+        failNext = false;
+        throw new Error("blob write failed");
+      }
+      return set(key, value, options);
+    };
+    await expect(claim(store)).rejects.toThrow("blob write failed");
+    expect(await claim(store)).toMatchObject({ cryptoTxHash: txHash });
+  });
+
+  it("lets only the marker's own wallet finish an orphaned claim", async () => {
+    const store = memoryStore();
+    await store.setIfAbsent(`ai-advantage:entitlements:claim:crypto-tx:${txHash}`, {
+      walletAddress: payer,
+      claimedAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    });
+    await expect(claim(store, `0x${"9".repeat(40)}`)).rejects.toBeInstanceOf(CryptoTransactionAlreadyClaimedError);
+    expect(await claim(store)).toMatchObject({ walletAddress: payer });
+    // Once the record exists, the claim is closed again.
+    await expect(claim(store)).rejects.toBeInstanceOf(CryptoTransactionAlreadyClaimedError);
   });
 });
 
@@ -116,25 +187,31 @@ describe("accessStateFromEntitlement", () => {
 describe("findBestEntitlement", () => {
   it("prefers premium over a concurrent event pass", async () => {
     const store = memoryStore();
-    await upsertEntitlement(store, record({ id: "ev", tier: "event", label: "Event", email: "a@b.com" }) as never);
-    await upsertEntitlement(store, record({ id: "pr", tier: "premium", label: "Premium", email: "a@b.com" }) as never);
+    await upsertEntitlement(store, record({ id: "ev", tier: "event", label: "Event", userId: "u1" }) as never);
+    await upsertEntitlement(store, record({ id: "pr", tier: "premium", label: "Premium", userId: "u1" }) as never);
 
-    expect(await findBestEntitlement(store, { email: "a@b.com" })).toMatchObject({ id: "pr" });
+    expect(await findBestEntitlement(store, { userId: "u1" })).toMatchObject({ id: "pr" });
   });
 
-  it("matches email case-insensitively, so casing cannot cost a paying user access", async () => {
+  // Signup never verifies email ownership, so the email index must not
+  // authorize: registering a guest buyer's address would otherwise inherit
+  // their paid access and Stripe billing portal.
+  it("never authorizes through the purchase email alone", async () => {
     const store = memoryStore();
-    await upsertEntitlement(store, record({ id: "pr", email: "Mixed.Case@Example.COM" }) as never);
+    await upsertEntitlement(store, record({ id: "guest", email: "buyer@example.com", stripeCustomerId: "cus_buyer" }) as never);
 
-    expect(await findBestEntitlement(store, { email: "  mixed.case@example.com " })).toMatchObject({ id: "pr" });
+    expect(await findBestEntitlement(store, { userId: "attacker-account" })).toBeNull();
+    expect(
+      await findBestEntitlement(store, { email: "buyer@example.com" } as Parameters<typeof findBestEntitlement>[1]),
+    ).toBeNull();
   });
 
   it("ignores expired and non-active records", async () => {
     const store = memoryStore();
-    await upsertEntitlement(store, record({ id: "old", expiresAt: past(), email: "a@b.com" }) as never);
-    await upsertEntitlement(store, record({ id: "pend", status: "pending", email: "a@b.com" }) as never);
+    await upsertEntitlement(store, record({ id: "old", expiresAt: past(), userId: "u1" }) as never);
+    await upsertEntitlement(store, record({ id: "pend", status: "pending", userId: "u1" }) as never);
 
-    expect(await findBestEntitlement(store, { email: "a@b.com" })).toBeNull();
+    expect(await findBestEntitlement(store, { userId: "u1" })).toBeNull();
   });
 
   it("resolves through a valid entitlement session token", async () => {
@@ -157,13 +234,80 @@ describe("findBestEntitlement", () => {
 
   it("ignores an unknown or garbage session token", async () => {
     const store = memoryStore();
-    await upsertEntitlement(store, record({ id: "pr", email: "a@b.com" }) as never);
+    await upsertEntitlement(store, record({ id: "pr", userId: "u1" }) as never);
 
     expect(await findBestEntitlement(store, { entitlementToken: "not-a-real-token" })).toBeNull();
   });
 
   it("returns null for an unknown lookup", async () => {
-    expect(await findBestEntitlement(memoryStore(), { email: "nobody@example.com" })).toBeNull();
+    expect(await findBestEntitlement(memoryStore(), { userId: "nobody" })).toBeNull();
+  });
+});
+
+describe("renewEntitlementSession vs logout", () => {
+  // A renewal that read the session just before logout used to write it back
+  // afterwards, resurrecting a session the user had just ended.
+  it("does not bring a session back when logout lands between its read and write", async () => {
+    const store = memoryStore();
+    const saved = await upsertEntitlement(store, record({ id: "pr" }) as never);
+    const { token } = await createEntitlementSession(store, saved);
+    // Report the session as nearly expired so it is due for renewal.
+    const realGet = store.get;
+    let shifted = false;
+    store.get = async <T,>(key: string) => {
+      const value = await realGet<T>(key);
+      if (!shifted && key.includes(":session:") && !key.endsWith(":revoked") && value) {
+        shifted = true;
+        return { ...(value as object), expiresAt: new Date(Date.now() + 2 * HOUR).toISOString() } as T;
+      }
+      return value;
+    };
+    const realSet = store.set;
+    store.set = async (key, value, options) => {
+      if (key.includes(":session:") && !key.endsWith(":revoked")) {
+        await revokeEntitlementSession(store, token); // logout races in here
+      }
+      return realSet(key, value, options);
+    };
+
+    expect(await renewEntitlementSession(store, token)).toBeNull();
+    store.set = realSet;
+    expect(await findBestEntitlement(store, { entitlementToken: token })).toBeNull();
+  });
+
+  it("refuses to renew a revoked session", async () => {
+    const store = memoryStore();
+    const saved = await upsertEntitlement(store, record({ id: "pr" }) as never);
+    const { token } = await createEntitlementSession(store, saved);
+    await revokeEntitlementSession(store, token);
+    expect(await renewEntitlementSession(store, token)).toBeNull();
+    expect(await findBestEntitlement(store, { entitlementToken: token })).toBeNull();
+  });
+});
+
+describe("bindSessionEntitlementToUser", () => {
+  it("binds a guest purchase to the account that holds its session and shares its email", async () => {
+    const store = memoryStore();
+    const saved = await upsertEntitlement(store, record({ id: "guest", email: "Buyer@Example.com" }) as never);
+    const { token } = await createEntitlementSession(store, saved);
+
+    const bound = await bindSessionEntitlementToUser(store, token, { id: "u-buyer", email: "buyer@example.com" });
+    expect(bound).toMatchObject({ id: "guest", userId: "u-buyer" });
+    // The account now reaches it on any device, without the cookie.
+    expect(await findBestEntitlement(store, { userId: "u-buyer" })).toMatchObject({ id: "guest" });
+  });
+
+  it("refuses to bind without the purchaser's session, with a different email, or over another account", async () => {
+    const store = memoryStore();
+    const guest = await upsertEntitlement(store, record({ id: "guest", email: "buyer@example.com" }) as never);
+    const owned = await upsertEntitlement(store, record({ id: "owned", email: "buyer@example.com", userId: "u-owner" }) as never);
+    const guestToken = (await createEntitlementSession(store, guest)).token;
+    const ownedToken = (await createEntitlementSession(store, owned)).token;
+
+    expect(await bindSessionEntitlementToUser(store, null, { id: "u-x", email: "buyer@example.com" })).toBeNull();
+    expect(await bindSessionEntitlementToUser(store, guestToken, { id: "u-x", email: "other@example.com" })).toBeNull();
+    expect(await bindSessionEntitlementToUser(store, ownedToken, { id: "u-x", email: "buyer@example.com" })).toBeNull();
+    expect(await findBestEntitlement(store, { userId: "u-x" })).toBeNull();
   });
 });
 
@@ -291,7 +435,8 @@ describe("out-of-order Stripe webhook delivery", () => {
 
     expect(replayed.status).toBe("active");
     expect(isActiveEntitlement(replayed)).toBe(true);
-    expect(await findBestEntitlement(store, { email: paid.email ?? undefined })).not.toBeNull();
+    const { token } = await createEntitlementSession(store, replayed);
+    expect(await findBestEntitlement(store, { entitlementToken: token })).not.toBeNull();
   });
 
   it("still withholds access when the first event seen is unpaid", async () => {
@@ -306,6 +451,72 @@ describe("out-of-order Stripe webhook delivery", () => {
 
     expect(pending.status).toBe("pending");
     expect(isActiveEntitlement(pending)).toBe(false);
+  });
+
+  // A completed Checkout Session stays "complete / paid" forever. Replaying it
+  // (webhook redelivery or a reloaded success URL) must not reactivate a
+  // cancelled subscription or restart an event pass clock.
+  it("does not let a replayed paid session reactivate a cancelled subscription", async () => {
+    const store = memoryStore();
+    const paidSub = { id: "cs_sub", mode: "subscription", subscription: "sub_r", status: "complete", payment_status: "paid" };
+    expect((await upsertStripeCheckoutSessionEntitlement(store, paidSub)).status).toBe("active");
+    await upsertStripeSubscriptionEntitlement(store, { id: "sub_r", status: "canceled" });
+
+    const replayed = await upsertStripeCheckoutSessionEntitlement(store, paidSub);
+    expect(replayed.status).toBe("cancelled");
+    expect(isActiveEntitlement(replayed)).toBe(false);
+  });
+
+  it("does not let a replayed paid session promote a past-due subscription", async () => {
+    const store = memoryStore();
+    await upsertStripeSubscriptionEntitlement(store, { id: "sub_pd", status: "past_due" });
+    const replayed = await upsertStripeCheckoutSessionEntitlement(store, {
+      id: "cs_pd", mode: "subscription", subscription: "sub_pd", status: "complete", payment_status: "paid",
+    });
+    expect(replayed.status).toBe("pending");
+  });
+
+  it("keeps an event pass's original expiry when its session is replayed", async () => {
+    const store = memoryStore();
+    const first = await upsertStripeCheckoutSessionEntitlement(store, { ...base, status: "complete", payment_status: "paid" });
+    // Simulate the 72-hour pass having run out.
+    const lapsed = await upsertEntitlement(store, { ...first, expiresAt: past() });
+
+    const replayed = await upsertStripeCheckoutSessionEntitlement(store, { ...base, status: "complete", payment_status: "paid" });
+    expect(replayed.expiresAt).toBe(lapsed.expiresAt);
+    expect(isActiveEntitlement(replayed)).toBe(false);
+  });
+
+  it("promotes a pending session once its payment clears", async () => {
+    const store = memoryStore();
+    const pending = await upsertStripeCheckoutSessionEntitlement(store, {
+      ...base, id: "cs_async", payment_intent: "pi_async", status: "complete", payment_status: "unpaid",
+    });
+    expect(pending.status).toBe("pending");
+    const cleared = await upsertStripeCheckoutSessionEntitlement(store, {
+      ...base, id: "cs_async", payment_intent: "pi_async", status: "complete", payment_status: "paid",
+    });
+    expect(isActiveEntitlement(cleared)).toBe(true);
+  });
+
+  it("uses the subscription's current status over the historical session when given", async () => {
+    const store = memoryStore();
+    const paidSub = { id: "cs_live", mode: "subscription", subscription: "sub_live", status: "complete", payment_status: "paid" };
+    const cancelled = await upsertStripeCheckoutSessionEntitlement(store, paidSub, { subscriptionStatus: "canceled" });
+    expect(cancelled.status).toBe("cancelled");
+
+    const trialing = await upsertStripeCheckoutSessionEntitlement(
+      store, { ...paidSub, id: "cs_live2", subscription: "sub_live2" }, { subscriptionStatus: "trialing" },
+    );
+    expect(isActiveEntitlement(trialing)).toBe(true);
+
+    // An "incomplete" subscription webhook landed first; the live status on the
+    // success page has since moved to active, so the buyer gets access now.
+    await upsertStripeSubscriptionEntitlement(store, { id: "sub_live3", status: "incomplete" });
+    const live = await upsertStripeCheckoutSessionEntitlement(
+      store, { ...paidSub, id: "cs_live3", subscription: "sub_live3" }, { subscriptionStatus: "active" },
+    );
+    expect(isActiveEntitlement(live)).toBe(true);
   });
 
   it("still lets an explicit cancellation revoke a subscription", async () => {

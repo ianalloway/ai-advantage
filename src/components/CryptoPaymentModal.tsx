@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { getEventAccessExpiry, saveCryptoAccessAccount, syncEntitlementAccess } from "@/lib/stripe";
+import { claimCryptoPayment } from "@/lib/cryptoClaim";
 
 const ETH_ADDRESS = "0x6f278ce76ba5ed31fd9be646d074863e126836e9";
 const ETH_AMOUNT = "0.003";   // ≈ $10 at ~$3,300/ETH
@@ -135,13 +136,7 @@ export default function CryptoPaymentModal({
     }
     setIsVerifying(true);
     try {
-      const response = await fetch("/api/verify-crypto-payment", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ txHash: hash, walletAddress: wallet, email, unlockType }),
-      });
-      const result = (await response.json()) as { verified?: boolean; reason?: string };
+      const result = await claimCryptoPayment({ txHash: hash, walletAddress: wallet, email, unlockType });
       if (!result.verified) {
         toast({
           title: "Payment not verified",
@@ -356,7 +351,7 @@ export default function CryptoPaymentModal({
             </div>
 
             <div className="rounded-xl border border-white/8 bg-black/20 p-3 text-xs text-zinc-400">
-              Login recipe later: access email + transaction hash. Log out clears the device session, not the saved crypto receipt.
+              Verifying asks the sending wallet to sign a one-time message (no gas, no transfer) proving you made the payment. Login recipe later: access email + transaction hash, signed again by the same wallet.
             </div>
 
             <Button

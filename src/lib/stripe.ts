@@ -1,4 +1,5 @@
 import { getCurrentSiteUser } from "@/lib/auth";
+import { claimCryptoPayment } from "@/lib/cryptoClaim";
 
 export type AccessTier = "free" | "event" | "premium";
 export type AccessSource = "stripe" | "crypto" | "legacy" | "manual";
@@ -484,18 +485,12 @@ export async function signInWithCryptoAccount(input: {
   // Re-verify on-chain and mint a server entitlement cookie — never unlock from localStorage alone.
   try {
     const unlockType = account.tier === "premium" ? "knowledge-vault" : "big-game";
-    const response = await fetch("/api/verify-crypto-payment", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({
-        txHash: account.txHash,
-        walletAddress: account.walletAddress,
-        email: account.email,
-        unlockType,
-      }),
+    const result = await claimCryptoPayment({
+      txHash: account.txHash,
+      walletAddress: account.walletAddress,
+      email: account.email,
+      unlockType,
     });
-    const result = (await response.json()) as { verified?: boolean; reason?: string };
     if (!result.verified) {
       return {
         success: false,
@@ -606,6 +601,51 @@ async function trackFunnelClient(
   } catch {
     // Funnel must never block billing UX.
   }
+}
+
+/**
+ * Email a single-use restore link to the address a purchase was made with.
+ * Following the link proves the mailbox is yours and restores access.
+ */
+export async function requestPurchaseRestoreLink(email: string): Promise<string> {
+  const response = await fetch("/api/recover-purchase", {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  const result = (await response.json().catch(() => ({}))) as { message?: string };
+  if (!response.ok) throw new Error(result.message || "Could not send a restore link.");
+  return result.message || "Check your email for a restore link.";
+}
+
+async function postRestore(body: Record<string, unknown>) {
+  const response = await fetch("/api/recover-purchase", {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const result = (await response.json().catch(() => ({}))) as {
+    valid?: boolean;
+    success?: boolean;
+    account?: string | null;
+    message?: string;
+  };
+  return { ok: response.ok, ...result };
+}
+
+/** What confirming a restore link will do: `account` is the masked account it joins, or null for this browser only. */
+export async function previewPurchaseRestore(token: string) {
+  const result = await postRestore({ action: "preview", token });
+  return { valid: Boolean(result.ok && result.valid), account: result.account ?? null };
+}
+
+export async function redeemPurchaseRestore(token: string) {
+  const result = await postRestore({ action: "redeem", token });
+  if (!result.ok || !result.success) throw new Error(result.message || "That restore link was already used or has expired.");
+  await syncEntitlementAccess().catch(() => undefined);
+  return { account: result.account ?? null };
 }
 
 export async function openBillingPortal(): Promise<void> {

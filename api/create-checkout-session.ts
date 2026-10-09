@@ -102,10 +102,6 @@ function getCustomerEmail(body: unknown) {
   return email && email.includes("@") ? email : undefined;
 }
 
-function getClientReferenceId(body: unknown) {
-  return getOptionalString(body, "clientReferenceId")?.slice(0, 200);
-}
-
 function jsonError(res: ResponseLike, status: number, code: string, message: string, details?: Record<string, unknown>) {
   res.status(status).json({ success: false, code, message, ...details });
 }
@@ -151,10 +147,13 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
 
     const siteUser = await getCurrentSiteUserFromEvent({ blobs: req.blobs, headers: req.headers });
     const checkoutClaim = createCheckoutClaim();
-    // Prefer authenticated session identity. Body fields are only used when logged out
-    // so a client cannot re-attribute a checkout to another userId while signed in.
+    // Account binding comes only from the authenticated session: client_reference_id
+    // becomes the entitlement's userId, which authorizes access and the billing
+    // portal. A logged-out body value is unverified, so guests get no account
+    // binding here (the checkout claim cookie proves ownership instead). The body
+    // email is only a Stripe prefill and never authorizes anything.
     const customerEmail = siteUser?.email ?? getCustomerEmail(req.body);
-    const clientReferenceId = siteUser?.id ?? (siteUser ? undefined : getClientReferenceId(req.body));
+    const clientReferenceId = siteUser?.id;
     const metadata = {
       product_surface: "ai-advantage",
       unlock_type: checkoutMode,

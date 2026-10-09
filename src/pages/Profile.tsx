@@ -21,6 +21,9 @@ import {
   getCurrentCryptoAccount,
   openBillingPortal,
   redirectToCheckout,
+  previewPurchaseRestore,
+  redeemPurchaseRestore,
+  requestPurchaseRestoreLink,
   saveEdgeAlertSubscription,
   signOutAccessSession,
   type AccessState,
@@ -86,6 +89,30 @@ export default function Profile() {
       window.removeEventListener(getAccessChangeEventName(), sync);
     };
   }, []);
+
+  const [restoreEmail, setRestoreEmail] = useState("");
+  const [restoreSending, setRestoreSending] = useState(false);
+
+  // A restore link lands here as /profile#restore=<token>. The fragment never
+  // reaches the server; it is read, removed from the address bar, and only
+  // redeemed after the visitor confirms what it will do.
+  const [pendingRestore, setPendingRestore] = useState<{ token: string; account: string | null } | null>(null);
+  useEffect(() => {
+    const match = window.location.hash.match(/^#restore=([A-Za-z0-9_-]{43})$/);
+    if (!match) return;
+    window.history.replaceState({}, "", `${window.location.pathname}${window.location.search}`);
+    void previewPurchaseRestore(match[1]).then((preview) => {
+      if (preview.valid) {
+        setPendingRestore({ token: match[1], account: preview.account });
+      } else {
+        toast({
+          title: "Restore link expired",
+          description: "That link was already used or has expired. Request a new one below.",
+          variant: "destructive",
+        });
+      }
+    });
+  }, [toast]);
 
   const hasPaidAccess = access.tier !== "free";
   const profileHeading = useMemo(() => {
@@ -478,6 +505,34 @@ export default function Profile() {
               ) : null}
 
               <div className="mt-6 space-y-3">
+                {pendingRestore ? (
+                  <div className="rounded-2xl border border-cyan-300/30 bg-cyan-300/5 p-4">
+                    <div className="text-sm font-semibold text-white">Restore your purchase</div>
+                    <p className="mt-1 text-xs text-zinc-400">
+                      {pendingRestore.account
+                        ? `It will be added to the account ${pendingRestore.account} and unlocked on this browser.`
+                        : "It will be unlocked on this browser only. To add it to an account, sign in on this browser first and request a new link."}
+                    </p>
+                    <Button
+                      className="mt-3 w-full bg-cyan-300 font-semibold text-slate-950 hover:bg-cyan-200"
+                      onClick={() => {
+                        const { token } = pendingRestore;
+                        setPendingRestore(null);
+                        void redeemPurchaseRestore(token)
+                          .then(() => toast({ title: "Purchase restored", description: "Paid access is active again." }))
+                          .catch((error) =>
+                            toast({
+                              title: "Restore failed",
+                              description: error instanceof Error ? error.message : "Request a new link.",
+                              variant: "destructive",
+                            }),
+                          );
+                      }}
+                    >
+                      Confirm restore
+                    </Button>
+                  </div>
+                ) : null}
                 {!hasPaidAccess ? (
                   <Button
                     className="w-full bg-cyan-300 font-semibold text-slate-950 hover:bg-cyan-200"
@@ -493,6 +548,45 @@ export default function Profile() {
                   >
                     Start 7-day Pro trial
                   </Button>
+                ) : null}
+                {!hasPaidAccess ? (
+                  <form
+                    className="rounded-2xl border border-white/10 bg-black/20 p-4"
+                    onSubmit={(formEvent) => {
+                      formEvent.preventDefault();
+                      setRestoreSending(true);
+                      void requestPurchaseRestoreLink(restoreEmail.trim())
+                        .then((message) => toast({ title: "Restore link sent", description: message }))
+                        .catch((error) =>
+                          toast({
+                            title: "Restore unavailable",
+                            description: error instanceof Error ? error.message : "Try again shortly.",
+                            variant: "destructive",
+                          }),
+                        )
+                        .finally(() => setRestoreSending(false));
+                    }}
+                  >
+                    <div className="text-sm font-semibold text-white">Already paid?</div>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Enter the email you checked out with. We will send a one-time link that restores your access and,
+                      if you are signed in, adds the purchase to this account.
+                    </p>
+                    <div className="mt-3 flex gap-2">
+                      <Input
+                        type="email"
+                        required
+                        autoComplete="email"
+                        placeholder="you@example.com"
+                        value={restoreEmail}
+                        onChange={(changeEvent) => setRestoreEmail(changeEvent.target.value)}
+                        className="border-white/10 bg-black/30 text-white"
+                      />
+                      <Button type="submit" variant="outline" disabled={restoreSending} className="border-white/10 text-zinc-200">
+                        Send link
+                      </Button>
+                    </div>
+                  </form>
                 ) : (
                   <Button
                     variant="outline"

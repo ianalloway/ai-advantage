@@ -57,7 +57,6 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   const token = getEntitlementSessionToken(req.headers);
   const entitlement = await findBestEntitlement(store, {
     userId: user?.id,
-    email: user?.email,
     entitlementToken: token,
   });
 

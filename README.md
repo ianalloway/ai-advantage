@@ -98,7 +98,35 @@ Events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`
 
 Paid access is **server-truth only** (`/api/entitlements/me`). localStorage is a cache and cannot unlock Pro.
 
+An email address never unlocks a purchase by itself (signup does not verify email). A purchase reaches an account through the signed-in checkout, through the purchase cookie in the buying browser, or through a single-use restore link emailed to the purchase address (`/api/recover-purchase`, Profile → "Already paid?"; needs `RESEND_*` and `PUBLIC_APP_URL`).
+
 Checkout includes a `STRIPE_TRIAL_DAYS` trial on Pro Monthly. Customer Portal: `/api/create-portal-session` (enable in Stripe Dashboard → Settings → Billing → Customer portal). Funnel events: `checkout_started` → `checkout_paid` → `d7_retained` → `cancel_reason` via `/api/funnel`. Hourly edge-alert emails: `send-edge-alerts` (needs `RESEND_*`).
+
+**Deploy step (once, for the release that removed email-based entitlement lookup):**
+accounts used to reach any purchase made with their email. To keep exactly the
+access that existed at deploy time, run the legacy binding migration with the
+deploy's timestamp as the cutoff, review the dry run, then apply exactly the
+pairs you approved. Rows with `accountPredatesPurchase: true` are the ones
+worth a look (an account that existed before a guest purchase with its email
+could be a squat); leave them out of `bindings`. Emails shared by more than
+one account are never bound and come back under `ambiguous` for manual
+review. Requires `ADMIN_API_TOKEN`.
+
+```bash
+CUTOFF=2026-10-09T18:00:00Z   # when the release went live
+curl -s -X POST https://aiadvantagesports.com/api/admin-entitlements \
+  -H "Authorization: Bearer $ADMIN_API_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"action\":\"plan-legacy-email\",\"cutoff\":\"$CUTOFF\"}" > plan.json
+# Review plan.json, then apply the approved {entitlementId, userId} pairs:
+jq -c '{action:"apply-legacy-email", cutoff:"'"$CUTOFF"'", bindings:[.plan[] | select(.accountPredatesPurchase|not) | {entitlementId, userId}]}' plan.json |
+  curl -s -X POST https://aiadvantagesports.com/api/admin-entitlements \
+    -H "Authorization: Bearer $ADMIN_API_TOKEN" -H "Content-Type: application/json" -d @- | jq
+```
+
+Each approved pair is re-checked against the current state; pairs that no
+longer qualify are skipped and listed under `skipped`. It is idempotent. Support can bind one purchase to an account with
+`{"action":"bind","userId":"…","entitlementId":"…"}`; it never moves a purchase
+already bound to another account.
 
 Strict read-only configuration gate:
 `READINESS_BASE_URL=https://aiadvantagesports.com npm run test:readiness`.

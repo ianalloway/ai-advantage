@@ -1,6 +1,13 @@
 import { connectLambda, getStore } from "@netlify/blobs";
 import { Redis } from "@upstash/redis";
 import { timingSafeEqual } from "node:crypto";
+import { getCurrentSiteUserFromEvent } from "../netlify/functions/_lib/auth-session";
+import {
+  findBestEntitlement,
+  getEntitlementSessionToken,
+  getEntitlementStore,
+  isActiveEntitlement,
+} from "../netlify/functions/_lib/entitlements";
 
 type RequestLike = {
   blobs?: string;
@@ -46,6 +53,8 @@ interface LedgerStore {
 
 const LEDGER_KEY = process.env.EXECUTION_LEDGER_KEY || "ai-advantage:execution-ledger";
 const MAX_ROWS = 500;
+/** Rows anonymous and non-Pro callers may see: the blurred teaser on the leaderboard. */
+export const LEDGER_PREVIEW_ROWS = 5;
 
 let redisClient: Redis | null | undefined;
 
@@ -150,6 +159,25 @@ function parseLimit(query: RequestLike["query"]) {
   return Math.min(Math.floor(value), MAX_ROWS);
 }
 
+/**
+ * The full archive is the Pro "historical_ledger" feature, so it is decided
+ * here from server-side entitlements, never from the client. Anything short of
+ * an active premium entitlement (including an unreachable entitlement store)
+ * gets the preview.
+ */
+async function hasHistoricalLedgerAccess(req: RequestLike) {
+  const view = req.query?.view;
+  if ((Array.isArray(view) ? view[0] : view) === "preview") return false;
+  const store = getEntitlementStore({ blobs: req.blobs, headers: req.headers });
+  if (!store) return false;
+  const user = await getCurrentSiteUserFromEvent({ blobs: req.blobs, headers: req.headers });
+  const entitlement = await findBestEntitlement(store, {
+    userId: user?.id,
+    entitlementToken: getEntitlementSessionToken(req.headers),
+  });
+  return isActiveEntitlement(entitlement) && entitlement.tier === "premium";
+}
+
 function sortRows(rows: HistoricalExecutionLedgerEntry[]) {
   return [...rows].sort(
     (a, b) => new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime(),
@@ -222,10 +250,14 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   }
 
   if (req.method === "GET") {
+    // The body depends on the caller's entitlement: never cache it in a shared cache.
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Vary", "Cookie");
     try {
-      const limit = parseLimit(req.query);
+      const full = await hasHistoricalLedgerAccess(req);
+      const limit = full ? parseLimit(req.query) : Math.min(parseLimit(req.query), LEDGER_PREVIEW_ROWS);
       const rows = normalizeRows(await store.get()).slice(0, limit);
-      res.status(200).json({ configured: true, rows });
+      res.status(200).json({ configured: true, full, rows });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to read the shared execution ledger.";

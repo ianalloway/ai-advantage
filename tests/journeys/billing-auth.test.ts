@@ -3,26 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Mock provider boundaries only. Real handlers, password hashes, session lookups,
 // checkout identity attribution and entitlement persistence run together.
 const sandbox = vi.hoisted(() => ({
-  stores: new Map<string, Map<string, unknown>>(),
-  create: vi.fn(), retrieve: vi.fn(),
+  create: vi.fn(), retrieve: vi.fn(), portal: vi.fn(), subscription: vi.fn(),
 }));
-vi.mock("@netlify/blobs", () => ({
-  connectLambda: vi.fn(), setEnvironmentContext: vi.fn(),
-  getStore: (options: string | { name: string }) => {
-    const name = typeof options === "string" ? options : options.name;
-    if (!sandbox.stores.has(name)) sandbox.stores.set(name, new Map());
-    const data = sandbox.stores.get(name)!;
-    return {
-      get: async (key: string) => structuredClone(data.get(key) ?? null),
-      setJSON: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); },
-      delete: async (key: string) => { data.delete(key); },
-    };
-  },
-}));
+vi.mock("@netlify/blobs", async () => (await import("../helpers/blobsMock")).blobsModule);
 vi.mock("stripe", () => ({ default: class {
   checkout = { sessions: { create: sandbox.create, retrieve: sandbox.retrieve } };
+  billingPortal = { sessions: { create: sandbox.portal } };
+  subscriptions = { retrieve: sandbox.subscription };
 } }));
 
+import { blobValues, resetBlobs } from "../helpers/blobsMock";
 import { handler as auth } from "../../netlify/functions/auth";
 import { handler as entitlements } from "../../netlify/functions/entitlements";
 import createCheckout from "../../api/create-checkout-session";
@@ -31,6 +21,8 @@ import funnel from "../../api/funnel";
 import { handler as netlifyFunnel } from "../../netlify/functions/funnel";
 import { handler as netlifyCreateCheckout } from "../../netlify/functions/create-checkout-session";
 import { handler as netlifyVerifyCheckout } from "../../netlify/functions/checkout-session";
+import createPortal from "../../api/create-portal-session";
+import { getEntitlementStore, upsertStripeSubscriptionEntitlement } from "../../netlify/functions/_lib/entitlements";
 
 const blobs = Buffer.from(JSON.stringify({ url: 'https://blob.invalid', url_uncached: 'https://blob.invalid' })).toString('base64');
 const credentials = { email: 'journey@example.test', username: 'journey', password: 'ephemeral-test-password' };
@@ -38,7 +30,7 @@ let cookie = '';
 const headers = () => ({ host: 'example.test', 'x-forwarded-proto': 'https', cookie });
 const event = (route: string, body?: unknown) => ({
   blobs, path: `/api/auth/${route}`, httpMethod: body ? 'POST' : 'GET',
-  headers: headers(), body: body ? JSON.stringify(body) : null,
+  headers: { ...headers(), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : null,
 });
 function response() {
   return {
@@ -61,7 +53,7 @@ async function access() {
 }
 
 beforeEach(() => {
-  sandbox.stores.clear(); vi.clearAllMocks(); cookie = '';
+  resetBlobs(); vi.clearAllMocks(); cookie = '';
   vi.stubGlobal('fetch', vi.fn(() => { throw new Error('Unexpected network request in mock journey'); }));
   vi.stubEnv('AUTH_SECRET', 'ephemeral-auth-secret-for-tests-only');
   vi.stubEnv('STRIPE_SECRET_KEY', 'sk_test_ephemeral_mock');
@@ -81,6 +73,14 @@ describe('provider-mocked account and checkout journeys', () => {
     expect(posted.statusCode).toBe(200);
 
     const direct = response();
+    // The POST response must not echo the stored event, and a client-supplied
+    // checkout ID is never persisted beside account identity.
+    expect(JSON.stringify(posted.body)).not.toContain(sessionId);
+    expect(posted.body).toEqual({ success: true });
+    const stored = blobValues('ai-advantage-entitlements').get('ai-advantage:funnel:events');
+    expect(stored).toHaveLength(1);
+    expect(JSON.stringify(stored)).not.toContain(sessionId);
+
     await funnel({ blobs, method: 'GET', headers: headers() }, direct);
     expect(direct.statusCode).toBe(405);
     expect(JSON.stringify(direct.body)).not.toContain(sessionId);
@@ -88,6 +88,33 @@ describe('provider-mocked account and checkout journeys', () => {
     const netlify = await netlifyFunnel({ blobs, httpMethod: 'GET', headers: headers(), body: null });
     expect(netlify.statusCode).toBe(405);
     expect(netlify.body).not.toContain(sessionId);
+  });
+
+  it('caps funnel meta size and rate-limits funnel posts per IP', async () => {
+    const post = async (body: Record<string, unknown>, ip = '203.0.113.9') => {
+      const res = response();
+      await funnel({ blobs, method: 'POST', headers: { ...headers(), 'x-nf-client-connection-ip': ip }, body }, res);
+      return res;
+    };
+    const huge = Object.fromEntries(Array.from({ length: 11 }, (_, i) => [`k${i}`, 'v']));
+    expect((await post({ name: 'cancel_reason', meta: huge }, '203.0.113.1')).statusCode).toBe(400);
+    expect((await post({ name: 'cancel_reason', meta: { note: 'x'.repeat(201) } }, '203.0.113.1')).statusCode).toBe(400);
+    expect((await post({ name: 'cancel_reason', meta: { nested: { deep: true } } }, '203.0.113.1')).statusCode).toBe(400);
+    expect((await post({ name: 'cancel_reason', meta: { plan: 'pro', months: 3 } }, '203.0.113.1')).statusCode).toBe(200);
+
+    for (let i = 0; i < 30; i += 1) expect((await post({ name: 'cancel_reason' })).statusCode).toBe(200);
+    const limited = await post({ name: 'cancel_reason' });
+    expect(limited.statusCode).toBe(429);
+    expect((await post({ name: 'cancel_reason' }, '203.0.113.10')).statusCode).toBe(200);
+  });
+
+  it('accepts funnel posts (fail open) when strong reads are unavailable for the counter', async () => {
+    const eventual = Buffer.from(JSON.stringify({ url: 'https://blob.invalid' })).toString('base64');
+    for (let i = 0; i < 35; i += 1) {
+      const res = response();
+      await funnel({ blobs: eventual, method: 'POST', headers: headers(), body: { name: 'cancel_reason' } }, res);
+      expect(res.statusCode).toBe(200);
+    }
   });
 
   it.each(['premium', 'one-time'])('signup → login → %s checkout → access → logout → denial', async (mode) => {
@@ -133,6 +160,7 @@ describe('provider-mocked account and checkout journeys', () => {
       metadata: (sandbox.create.mock.calls[0]?.[0] as { metadata: Record<string, string> }).metadata,
     };
     sandbox.retrieve.mockResolvedValue(session);
+    sandbox.subscription.mockResolvedValue({ id: 'sub_mock', status: 'trialing' });
     const verified = response();
     await verifyCheckout({ blobs, method: 'GET', headers: headers(), query: { session_id: session.id } }, verified);
     expect(verified.body).toMatchObject({ paid: true, entitlement: { status: 'active' } });
@@ -185,6 +213,97 @@ describe('provider-mocked account and checkout journeys', () => {
     expect(rightful.statusCode).toBe(200);
     expect(JSON.parse(rightful.body)).toMatchObject({ paid: true, entitlement: { status: 'active' } });
     expect(rightful.headers['Set-Cookie']).toContain('HttpOnly');
+  });
+
+  it('does not hand a guest purchase or its billing portal to an unverified signup with the same email', async () => {
+    sandbox.portal.mockResolvedValue({ url: 'https://billing.stripe.com/mock' });
+    sandbox.create.mockResolvedValue({ id: 'cs_test_guest_email', url: 'https://checkout.stripe.com/mock', mode: 'payment' });
+    const checkout = response();
+    await createCheckout({ blobs, method: 'POST', headers: headers(), body: {
+      mode: 'one-time', customerEmail: 'guest@example.test', clientReferenceId: 'forged-account-id',
+    } }, checkout);
+    const created = sandbox.create.mock.calls[0]?.[0] as { metadata: Record<string, string>; client_reference_id?: string };
+    // A logged-out body value must not bind the purchase to an arbitrary account.
+    expect(created.client_reference_id).toBeUndefined();
+    takeCookie(checkout.headers['Set-Cookie']);
+    sandbox.retrieve.mockResolvedValue({
+      id: 'cs_test_guest_email', mode: 'payment', status: 'complete', payment_status: 'paid',
+      customer_email: 'guest@example.test', customer: 'cus_guest_email', payment_intent: 'pi_guest_email',
+      metadata: created.metadata,
+    });
+    const redeemed = response();
+    await verifyCheckout({ blobs, method: 'GET', headers: headers(), query: { session_id: 'cs_test_guest_email' } }, redeemed);
+    takeCookie(redeemed.headers['Set-Cookie']);
+    expect(await access()).toBe('event');
+    const buyerBrowser = cookie;
+
+    // Another browser registers the buyer's email. Signup does not verify it.
+    cookie = '';
+    const squatter = await auth(event('signup', {
+      email: 'guest@example.test', username: 'squatter', password: 'squatter-test-password',
+    }));
+    expect(squatter.statusCode).toBe(200);
+    takeCookie(squatter.headers['Set-Cookie']);
+    expect(await access()).toBe('free');
+    const portal = response();
+    await createPortal({ blobs, method: 'POST', headers: headers(), body: {} }, portal);
+    expect(portal.statusCode).toBe(400);
+    expect(sandbox.portal).not.toHaveBeenCalled();
+
+    expect(buyerBrowser).toContain('ai_advantage_entitlement=');
+  });
+
+  it('binds a guest purchase to the account its buyer creates in the purchasing browser', async () => {
+    sandbox.create.mockResolvedValue({ id: 'cs_test_guest_bind', url: 'https://checkout.stripe.com/mock', mode: 'payment' });
+    const checkout = response();
+    await createCheckout({ blobs, method: 'POST', headers: headers(), body: { mode: 'one-time', customerEmail: credentials.email } }, checkout);
+    const created = sandbox.create.mock.calls[0]?.[0] as { metadata: Record<string, string> };
+    takeCookie(checkout.headers['Set-Cookie']);
+    sandbox.retrieve.mockResolvedValue({
+      id: 'cs_test_guest_bind', mode: 'payment', status: 'complete', payment_status: 'paid',
+      customer_email: credentials.email, customer: 'cus_bind', payment_intent: 'pi_bind', metadata: created.metadata,
+    });
+    const redeemed = response();
+    await verifyCheckout({ blobs, method: 'GET', headers: headers(), query: { session_id: 'cs_test_guest_bind' } }, redeemed);
+    takeCookie(redeemed.headers['Set-Cookie']);
+
+    const signup = await auth(event('signup', credentials));
+    takeCookie(signup.headers['Set-Cookie']);
+    expect(await access()).toBe('event');
+
+    // A fresh browser with only the account session keeps the purchase.
+    cookie = cookie.split('; ').filter((part) => part.startsWith('ai_advantage_session=')).join('; ');
+    expect(await access()).toBe('event');
+  });
+
+  it('does not let a reloaded success URL resurrect a cancelled subscription', async () => {
+    sandbox.create.mockResolvedValue({ id: 'cs_test_replay', url: 'https://checkout.stripe.com/mock', mode: 'subscription' });
+    const checkout = response();
+    await createCheckout({ blobs, method: 'POST', headers: headers(), body: { mode: 'premium' } }, checkout);
+    const created = sandbox.create.mock.calls[0]?.[0] as { metadata: Record<string, string> };
+    takeCookie(checkout.headers['Set-Cookie']);
+    sandbox.retrieve.mockResolvedValue({
+      id: 'cs_test_replay', mode: 'subscription', status: 'complete', payment_status: 'paid',
+      customer: 'cus_replay', subscription: 'sub_replay', metadata: created.metadata,
+    });
+    sandbox.subscription.mockResolvedValue({ id: 'sub_replay', status: 'active' });
+    const first = response();
+    await verifyCheckout({ blobs, method: 'GET', headers: headers(), query: { session_id: 'cs_test_replay' } }, first);
+    takeCookie(first.headers['Set-Cookie']);
+    expect(await access()).toBe('premium');
+
+    // The customer cancels; the subscription webhook records it.
+    const store = getEntitlementStore({ blobs, headers: headers() })!;
+    await upsertStripeSubscriptionEntitlement(store, { id: 'sub_replay', status: 'canceled', customer: 'cus_replay' });
+    expect(await access()).toBe('free');
+
+    // Replaying the paid receipt must not reactivate it or mint a new cookie.
+    sandbox.subscription.mockResolvedValue({ id: 'sub_replay', status: 'canceled' });
+    const replay = response();
+    await verifyCheckout({ blobs, method: 'GET', headers: headers(), query: { session_id: 'cs_test_replay' } }, replay);
+    expect(replay.headers['Set-Cookie']).toBeUndefined();
+    expect(replay.body).toMatchObject({ entitlement: { status: 'cancelled' } });
+    expect(await access()).toBe('free');
   });
 
   it('does not redeem a legacy guest checkout ID without an ownership claim', async () => {
