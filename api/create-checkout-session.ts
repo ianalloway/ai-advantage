@@ -2,6 +2,7 @@ import Stripe from "stripe";
 import { getCurrentSiteUserFromEvent } from "../netlify/functions/_lib/auth-session";
 import { getEntitlementStore } from "../netlify/functions/_lib/entitlements";
 import { appendFunnelEvents } from "../netlify/lib/funnel";
+import { checkoutClaimCookie, createCheckoutClaim } from "../netlify/lib/checkout-claim";
 
 type CheckoutMode = "premium" | "one-time";
 
@@ -149,6 +150,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     cancelUrl.searchParams.set("checkout", "cancelled");
 
     const siteUser = await getCurrentSiteUserFromEvent({ blobs: req.blobs, headers: req.headers });
+    const checkoutClaim = createCheckoutClaim();
     // Prefer authenticated session identity. Body fields are only used when logged out
     // so a client cannot re-attribute a checkout to another userId while signed in.
     const customerEmail = siteUser?.email ?? getCustomerEmail(req.body);
@@ -185,6 +187,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
       cancel_url: cancelUrl.toString(),
       metadata: {
         ...metadata,
+        checkout_claim_hash: checkoutClaim.hash,
         ...(wantsTrial ? { trial_days: String(trialDays) } : {}),
       },
       ...(modeConfig.stripeMode === "subscription"
@@ -196,6 +199,8 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
           }
         : { payment_intent_data: { metadata } }),
     });
+
+    res.setHeader("Set-Cookie", checkoutClaimCookie(req.headers, session.id, checkoutClaim.token));
 
     const store = getEntitlementStore({ blobs: req.blobs, headers: req.headers });
     if (store) {

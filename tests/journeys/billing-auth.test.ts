@@ -29,6 +29,8 @@ import createCheckout from "../../api/create-checkout-session";
 import verifyCheckout from "../../api/checkout-session";
 import funnel from "../../api/funnel";
 import { handler as netlifyFunnel } from "../../netlify/functions/funnel";
+import { handler as netlifyCreateCheckout } from "../../netlify/functions/create-checkout-session";
+import { handler as netlifyVerifyCheckout } from "../../netlify/functions/checkout-session";
 
 const blobs = Buffer.from(JSON.stringify({ url: 'https://blob.invalid', url_uncached: 'https://blob.invalid' })).toString('base64');
 const credentials = { email: 'journey@example.test', username: 'journey', password: 'ephemeral-test-password' };
@@ -113,6 +115,8 @@ describe('provider-mocked account and checkout journeys', () => {
       mode, trial: false, customerEmail: 'forged@example.test', clientReferenceId: 'forged',
     } }, checkout);
     expect(checkout.statusCode).toBe(200);
+    expect(checkout.headers['Set-Cookie']).toContain('HttpOnly');
+    takeCookie(checkout.headers['Set-Cookie']);
     expect(sandbox.create).toHaveBeenCalledWith(expect.objectContaining({
       customer_email: credentials.email, client_reference_id: user.id,
       mode: mode === 'premium' ? 'subscription' : 'payment',
@@ -126,6 +130,7 @@ describe('provider-mocked account and checkout journeys', () => {
       client_reference_id: user.id, customer_email: credentials.email,
       subscription: mode === 'premium' ? 'sub_mock' : null, payment_intent: 'pi_mock',
       status: 'complete', payment_status: 'paid',
+      metadata: (sandbox.create.mock.calls[0]?.[0] as { metadata: Record<string, string> }).metadata,
     };
     sandbox.retrieve.mockResolvedValue(session);
     const verified = response();
@@ -144,10 +149,95 @@ describe('provider-mocked account and checkout journeys', () => {
     expect(await access()).toBe('free');
   });
 
+  it('rejects a copied paid guest checkout ID but accepts its originating browser', async () => {
+    sandbox.create.mockResolvedValue({ id: 'cs_test_guest', url: 'https://checkout.stripe.com/mock', mode: 'payment' });
+    const checkout = await netlifyCreateCheckout({
+      blobs, httpMethod: 'POST', headers: { ...headers(), 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'one-time', customerEmail: 'guest@example.test' }),
+    });
+    expect(checkout.statusCode).toBe(200);
+    const checkoutCookie = checkout.headers['Set-Cookie'];
+    expect(checkoutCookie).toContain('HttpOnly');
+    expect(checkoutCookie).toContain('SameSite=Lax');
+    expect(checkoutCookie).toContain('Secure');
+    const created = sandbox.create.mock.calls[0]?.[0] as { metadata: Record<string, string> };
+    expect(created.metadata.checkout_claim_hash).toMatch(/^[a-f0-9]{64}$/);
+    sandbox.retrieve.mockResolvedValue({
+      id: 'cs_test_guest', mode: 'payment', status: 'complete', payment_status: 'paid',
+      customer_email: 'guest@example.test', customer: 'cus_guest', payment_intent: 'pi_guest',
+      metadata: created.metadata,
+    });
+
+    const stolen = await netlifyVerifyCheckout({
+      blobs, httpMethod: 'GET', headers: headers(), body: null,
+      queryStringParameters: { session_id: 'cs_test_guest' },
+    });
+    expect(stolen.statusCode).toBe(403);
+    expect(JSON.parse(stolen.body)).toMatchObject({ code: 'checkout_not_owned' });
+    expect(stolen.body).not.toContain('cus_guest');
+    expect(stolen.headers['Set-Cookie']).toBeUndefined();
+
+    takeCookie(checkoutCookie);
+    const rightful = await netlifyVerifyCheckout({
+      blobs, httpMethod: 'GET', headers: headers(), body: null,
+      queryStringParameters: { session_id: 'cs_test_guest' },
+    });
+    expect(rightful.statusCode).toBe(200);
+    expect(JSON.parse(rightful.body)).toMatchObject({ paid: true, entitlement: { status: 'active' } });
+    expect(rightful.headers['Set-Cookie']).toContain('HttpOnly');
+  });
+
+  it('does not redeem a legacy guest checkout ID without an ownership claim', async () => {
+    sandbox.retrieve.mockResolvedValue({
+      id: 'cs_test_legacy_guest', mode: 'payment', status: 'complete', payment_status: 'paid',
+      customer_email: 'victim@example.test', customer: 'cus_victim', payment_intent: 'pi_victim',
+    });
+    const result = response();
+    await verifyCheckout({ blobs, method: 'GET', headers: headers(), query: { session_id: 'cs_test_legacy_guest' } }, result);
+    expect(result.statusCode).toBe(403);
+    expect(result.headers['Set-Cookie']).toBeUndefined();
+  });
+
+  it('lets the original signed-in buyer redeem a legacy checkout but denies another account', async () => {
+    const owner = await auth(event('signup', credentials));
+    expect(owner.statusCode).toBe(200);
+    const ownerId = JSON.parse(owner.body).user.id as string;
+    takeCookie(owner.headers['Set-Cookie']);
+    const ownerCookie = cookie;
+    cookie = '';
+
+    const other = await auth(event('signup', {
+      email: 'other@example.test', username: 'other', password: 'other-test-password',
+    }));
+    expect(other.statusCode).toBe(200);
+    takeCookie(other.headers['Set-Cookie']);
+    sandbox.retrieve.mockResolvedValue({
+      id: 'cs_test_legacy_owner', mode: 'payment', status: 'complete', payment_status: 'paid',
+      client_reference_id: ownerId, customer_email: credentials.email,
+      customer: 'cus_owner', payment_intent: 'pi_owner',
+    });
+
+    const stolen = response();
+    await verifyCheckout({ blobs, method: 'GET', headers: headers(), query: { session_id: 'cs_test_legacy_owner' } }, stolen);
+    expect(stolen.statusCode).toBe(403);
+    expect(stolen.headers['Set-Cookie']).toBeUndefined();
+
+    cookie = ownerCookie;
+    const rightful = response();
+    await verifyCheckout({ blobs, method: 'GET', headers: headers(), query: { session_id: 'cs_test_legacy_owner' } }, rightful);
+    expect(rightful.statusCode).toBe(200);
+    expect(rightful.headers['Set-Cookie']).toContain('HttpOnly');
+  });
+
   it.each([
     ['open', 'unpaid'], ['expired', 'unpaid'], ['complete', 'unpaid'],
   ])('denies interrupted checkout (%s / %s)', async (status, payment_status) => {
-    sandbox.retrieve.mockResolvedValue({ id: 'cs_test_interrupted', mode: 'payment', status, payment_status });
+    sandbox.create.mockResolvedValue({ id: 'cs_test_interrupted', url: 'https://checkout.stripe.com/mock', mode: 'payment' });
+    const checkout = response();
+    await createCheckout({ blobs, method: 'POST', headers: headers(), body: { mode: 'one-time' } }, checkout);
+    takeCookie(checkout.headers['Set-Cookie']);
+    const created = sandbox.create.mock.calls[0]?.[0] as { metadata: Record<string, string> };
+    sandbox.retrieve.mockResolvedValue({ id: 'cs_test_interrupted', mode: 'payment', status, payment_status, metadata: created.metadata });
     const result = response();
     await verifyCheckout({ blobs, method: 'GET', headers: headers(), query: { session_id: 'cs_test_interrupted' } }, result);
     expect(result.body).toMatchObject({ paid: false, entitlement: null });
