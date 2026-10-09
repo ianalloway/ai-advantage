@@ -46,6 +46,12 @@ const REQUESTS_PER_EMAIL_AND_IP = { limit: 3, windowSeconds: 60 * 60 };
 const REQUESTS_PER_EMAIL = { limit: 10, windowSeconds: 60 * 60 };
 const GENERIC_SENT = "If a purchase was made with that email, we just sent it a restore link. It expires in 30 minutes.";
 
+/** Every link request takes at least this long, so its duration says nothing. */
+function minimumResponseMs() {
+  const configured = Number(process.env.RECOVERY_MIN_RESPONSE_MS);
+  return Number.isFinite(configured) && configured >= 0 ? configured : 2500;
+}
+
 interface RecoveryToken {
   email: string;
   expiresAt: string;
@@ -134,24 +140,31 @@ async function requestLink(req: RequestLike, res: ResponseLike, store: Entitleme
     }
   }
 
+  // Everything from here takes the same path, and the response is held to a
+  // fixed minimum duration, whether or not a purchase exists: otherwise the
+  // extra store write and email send would reveal who has bought. A sync
+  // function cannot safely keep working after it responds, so the send is
+  // bounded by a timeout that fits inside the padding instead.
+  const startedAt = Date.now();
   const user = await getCurrentSiteUserFromEvent({ blobs: req.blobs, headers: req.headers });
   const nonce = randomBytes(32).toString("base64url");
   res.setHeader("Set-Cookie", nonceCookie(req, nonce, TOKEN_TTL_SECONDS));
 
-  // Same answer whether or not a purchase exists, so this cannot enumerate buyers.
   const purchases = await findActiveEntitlementsByPurchaseEmail(store, email);
+  const token = randomBytes(32).toString("base64url");
+  // Written in both cases; a token for an address with no purchase is never
+  // mailed and could not redeem anything anyway.
+  await store.set(
+    tokenKey(token),
+    {
+      email,
+      expiresAt: new Date(Date.now() + TOKEN_TTL_SECONDS * 1000).toISOString(),
+      nonceHash: sha256(nonce),
+      requesterUserId: user?.id ?? null,
+    } satisfies RecoveryToken,
+    { ex: TOKEN_TTL_SECONDS },
+  );
   if (purchases.length > 0) {
-    const token = randomBytes(32).toString("base64url");
-    await store.set(
-      tokenKey(token),
-      {
-        email,
-        expiresAt: new Date(Date.now() + TOKEN_TTL_SECONDS * 1000).toISOString(),
-        nonceHash: sha256(nonce),
-        requesterUserId: user?.id ?? null,
-      } satisfies RecoveryToken,
-      { ex: TOKEN_TTL_SECONDS },
-    );
     // The token rides in the URL fragment: it never reaches a server log, a
     // Referer header, or a link-scanning GET.
     const link = `${origin}/profile#restore=${token}`;
@@ -162,12 +175,15 @@ async function requestLink(req: RequestLike, res: ResponseLike, store: Entitleme
 <p><a href="${link}">Restore my purchase</a> (expires in 30 minutes, works once)</p>
 <p style="color:#64748b;font-size:13px">If this wasn't you, ignore this email. Nothing changes unless the link is used.</p>`,
       `Restore your AI Advantage purchase (expires in 30 minutes, works once):\n${link}\n\nIf this wasn't you, ignore this email.`,
+      { timeoutMs: Math.max(100, minimumResponseMs() - 500) },
     );
     if (!sent.ok) {
       console.error("[recover-purchase] restore email failed", sent.reason);
     }
   }
 
+  const remaining = minimumResponseMs() - (Date.now() - startedAt);
+  if (remaining > 0) await new Promise((resolve) => setTimeout(resolve, remaining));
   res.status(200).json({ success: true, message: GENERIC_SENT });
 }
 

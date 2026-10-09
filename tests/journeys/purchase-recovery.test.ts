@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@netlify/blobs", async () => (await import("../helpers/blobsMock")).blobsModule);
 
-import { resetBlobs } from "../helpers/blobsMock";
+import { blobValues, resetBlobs } from "../helpers/blobsMock";
 import { handler as auth } from "../../netlify/functions/auth";
 import { handler as entitlements } from "../../netlify/functions/entitlements";
 import { handler as recover } from "../../netlify/functions/recover-purchase";
@@ -12,6 +12,7 @@ const blobs = Buffer.from(JSON.stringify({ url: "https://blob.invalid", url_unca
 const BUYER = "buyer@example.test";
 let cookie = "";
 let sentEmails: Array<{ to: string[]; html: string; text: string }> = [];
+let sendSignals: Array<AbortSignal | undefined> = [];
 
 const headers = (extra: Record<string, string> = {}) => ({
   host: "example.test", "x-forwarded-proto": "https", "content-type": "application/json", cookie, ...extra,
@@ -67,9 +68,12 @@ beforeEach(async () => {
   vi.stubEnv("PUBLIC_APP_URL", "https://app.example.test");
   vi.stubEnv("RESEND_API_KEY", "re_test_key");
   vi.stubEnv("RESEND_FROM_EMAIL", "AI Advantage <noreply@example.test>");
-  vi.stubGlobal("fetch", vi.fn(async (url: string, init: { body: string }) => {
+  vi.stubEnv("RECOVERY_MIN_RESPONSE_MS", "0");
+  sendSignals = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: { body: string; signal?: AbortSignal }) => {
     if (!String(url).startsWith("https://api.resend.com/")) throw new Error(`Unexpected fetch ${url}`);
     sentEmails.push(JSON.parse(init.body));
+    sendSignals.push(init.signal);
     return { ok: true, status: 200 };
   }));
   // A guest subscription, bought with BUYER's email and not bound to any account.
@@ -162,6 +166,29 @@ describe("purchase recovery by email ownership", () => {
     expect(unknown.json).toEqual(known.json);
     expect(sentEmails).toHaveLength(1);
     expect(sentEmails[0].text).not.toContain("evil.example");
+  });
+
+  it("takes the same path and at least the same time whether or not a purchase exists", async () => {
+    vi.stubEnv("RECOVERY_MIN_RESPONSE_MS", "150");
+    const tokens = () =>
+      Array.from(blobValues("ai-advantage-entitlements").keys()).filter((key) =>
+        /^ai-advantage:purchase-recovery:[a-f0-9]{64}$/.test(key),
+      ).length;
+    const timed = async (email: string) => {
+      const started = performance.now();
+      const result = await requestLink(email);
+      return { result, ms: performance.now() - started };
+    };
+
+    const unknown = await timed("nobody@example.test");
+    expect(tokens()).toBe(1);
+    const known = await timed(BUYER);
+    expect(tokens()).toBe(2);
+    expect(unknown.ms).toBeGreaterThanOrEqual(145);
+    expect(known.ms).toBeGreaterThanOrEqual(145);
+    expect(unknown.result.json).toEqual(known.result.json);
+    // The send is bounded so it cannot outlast the padding.
+    expect(sendSignals[0]).toBeInstanceOf(AbortSignal);
   });
 
   it("refuses cross-site and non-JSON requests", async () => {
