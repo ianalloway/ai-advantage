@@ -98,6 +98,8 @@ Events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`
 
 Paid access is **server-truth only** (`/api/entitlements/me`). localStorage is a cache and cannot unlock Pro.
 
+An email address never unlocks a purchase by itself (signup does not verify email). A purchase reaches an account through the signed-in checkout, through the purchase cookie in the buying browser, or through a single-use restore link emailed to the purchase address (`/api/recover-purchase`, Profile → "Already paid?"; needs `RESEND_*` and `PUBLIC_APP_URL`).
+
 Checkout includes a `STRIPE_TRIAL_DAYS` trial on Pro Monthly. Customer Portal: `/api/create-portal-session` (enable in Stripe Dashboard → Settings → Billing → Customer portal). Funnel events: `checkout_started` → `checkout_paid` → `d7_retained` → `cancel_reason` via `/api/funnel`. Hourly edge-alert emails: `send-edge-alerts` (needs `RESEND_*`).
 
 Strict read-only configuration gate:

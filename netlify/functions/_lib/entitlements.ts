@@ -481,6 +481,32 @@ export async function bindSessionEntitlementToUser(
   return upsertEntitlement(store, { ...rest, userId: user.id });
 }
 
+/**
+ * Active entitlements purchased with `email`. NOT an authorization check on its
+ * own: callers must first prove the requester controls that mailbox (see the
+ * purchase recovery link) or be an operator.
+ */
+export async function findActiveEntitlementsByPurchaseEmail(store: EntitlementStore, email: string) {
+  const ids = await getIndexedIds(store, emailIndexKey(email));
+  const records = (await getRecords(store, ids)).filter(isActiveEntitlement);
+  return records
+    .filter((record) => record.email && normalizeEmail(record.email) === normalizeEmail(email))
+    .sort((a, b) => accessRank(b) - accessRank(a));
+}
+
+/**
+ * Bind an entitlement to an account. Only for callers that have established
+ * ownership (an email-ownership proof or an operator action). Never moves an
+ * entitlement that is already bound to a different account.
+ */
+export async function bindEntitlementToUser(store: EntitlementStore, entitlementId: string, userId: string) {
+  const record = await getRecord(store, entitlementId);
+  if (!record || !userId) return null;
+  if (record.userId) return record.userId === userId ? record : null;
+  const { updatedAt: _updatedAt, ...rest } = record;
+  return upsertEntitlement(store, { ...rest, userId });
+}
+
 export async function findEntitlementByStripeCustomer(store: EntitlementStore, customerId: string) {
   const ids = await getIndexedIds(store, stripeCustomerIndexKey(customerId));
   const records = await getRecords(store, ids);

@@ -603,6 +603,22 @@ async function trackFunnelClient(
   }
 }
 
+/**
+ * Email a single-use restore link to the address a purchase was made with.
+ * Following the link proves the mailbox is yours and restores access.
+ */
+export async function requestPurchaseRestoreLink(email: string): Promise<string> {
+  const response = await fetch("/api/recover-purchase", {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  const result = (await response.json().catch(() => ({}))) as { message?: string };
+  if (!response.ok) throw new Error(result.message || "Could not send a restore link.");
+  return result.message || "Check your email for a restore link.";
+}
+
 export async function openBillingPortal(): Promise<void> {
   const response = await fetch("/api/create-portal-session", {
     method: "POST",
