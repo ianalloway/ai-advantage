@@ -49,6 +49,12 @@ function storeFor(options: string | { name: string; consistency?: string }) {
     delete: async (key: string) => {
       data.delete(key);
     },
+    list: async (options?: { prefix?: string }) => ({
+      blobs: Array.from(data.entries())
+        .filter(([key]) => key.startsWith(options?.prefix ?? ""))
+        .map(([key, entry]) => ({ key, etag: entry.etag })),
+      directories: [],
+    }),
   };
 }
 

@@ -102,6 +102,28 @@ An email address never unlocks a purchase by itself (signup does not verify emai
 
 Checkout includes a `STRIPE_TRIAL_DAYS` trial on Pro Monthly. Customer Portal: `/api/create-portal-session` (enable in Stripe Dashboard → Settings → Billing → Customer portal). Funnel events: `checkout_started` → `checkout_paid` → `d7_retained` → `cancel_reason` via `/api/funnel`. Hourly edge-alert emails: `send-edge-alerts` (needs `RESEND_*`).
 
+**Deploy step (once, for the release that removed email-based entitlement lookup):**
+accounts used to reach any purchase made with their email. To keep exactly the
+access that existed at deploy time, run the legacy binding migration with the
+deploy's timestamp as the cutoff, review the dry run, then apply it. Rows with
+`accountPredatesPurchase: true` are the ones worth a look (an account that
+existed before a guest purchase with its email could be a squat); pass their
+`entitlementId`s in `exclude` to skip them. Requires `ADMIN_API_TOKEN`.
+
+```bash
+CUTOFF=2026-10-09T18:00:00Z   # when the release went live
+curl -s -X POST https://aiadvantagesports.com/api/admin-entitlements \
+  -H "Authorization: Bearer $ADMIN_API_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"action\":\"plan-legacy-email\",\"cutoff\":\"$CUTOFF\"}" | jq
+curl -s -X POST https://aiadvantagesports.com/api/admin-entitlements \
+  -H "Authorization: Bearer $ADMIN_API_TOKEN" -H "Content-Type: application/json" \
+  -d "{\"action\":\"apply-legacy-email\",\"cutoff\":\"$CUTOFF\",\"exclude\":[]}" | jq
+```
+
+It is idempotent. Support can bind one purchase to an account with
+`{"action":"bind","userId":"…","entitlementId":"…"}`; it never moves a purchase
+already bound to another account.
+
 Strict read-only configuration gate:
 `READINESS_BASE_URL=https://aiadvantagesports.com npm run test:readiness`.
 This requires every billing readiness flag; the existing health smoke remains permissive.
