@@ -40,28 +40,54 @@ afterEach(() => {
 });
 
 describe("login throttling", () => {
-  it("locks an account after repeated failures, even for the right password, and survives a cold start", async () => {
+  it("locks a guessing IP out of an account, even with the right password, across a cold start", async () => {
     const { LOGIN_LIMITS } = await import("../../netlify/functions/auth");
     let handler = await loadAuth();
-    for (let attempt = 0; attempt < LOGIN_LIMITS.account.attempts; attempt += 1) {
-      const failed = await login(handler, { login: owner.email, password: `wrong-${attempt}` }, `198.51.100.${attempt}`);
-      expect(failed.statusCode).toBe(401);
+    const attacker = "198.51.100.66";
+    for (let attempt = 0; attempt < LOGIN_LIMITS.pair.attempts; attempt += 1) {
+      expect((await login(handler, { login: owner.email, password: `wrong-${attempt}` }, attacker)).statusCode).toBe(401);
     }
 
     // A fresh module instance (new function container) reads the same store.
     vi.resetModules();
     handler = await loadAuth();
-    const locked = await login(handler, { login: owner.username, password: owner.password }, "198.51.100.200");
+    const locked = await login(handler, { login: owner.username, password: owner.password }, attacker);
     expect(locked.statusCode).toBe(429);
     expect(Number(locked.headers["Retry-After"])).toBeGreaterThan(0);
     expect(locked.headers["Set-Cookie"]).toBeUndefined();
 
-    vi.setSystemTime(new Date(Date.now() + LOGIN_LIMITS.account.windowSeconds * 1000 + 1000));
-    const recovered = await login(handler, { login: owner.email, password: owner.password });
-    expect(recovered.statusCode).toBe(200);
-    // Success clears the account counter: one more typo does not lock again.
-    expect((await login(handler, { login: owner.email, password: "typo" })).statusCode).toBe(401);
-    expect((await login(handler, { login: owner.email, password: owner.password })).statusCode).toBe(200);
+    vi.setSystemTime(new Date(Date.now() + LOGIN_LIMITS.pair.windowSeconds * 1000 + 1000));
+    expect((await login(handler, { login: owner.email, password: owner.password }, attacker)).statusCode).toBe(200);
+  });
+
+  // One attacker used to be able to lock the owner out from everywhere.
+  it("does not let one guessing IP lock the owner out from another IP", async () => {
+    const { LOGIN_LIMITS } = await import("../../netlify/functions/auth");
+    const handler = await loadAuth();
+    for (let attempt = 0; attempt < LOGIN_LIMITS.pair.attempts + 3; attempt += 1) {
+      await login(handler, { login: owner.email, password: "wrong" }, "198.51.100.66");
+    }
+    expect((await login(handler, { login: owner.email, password: owner.password }, "203.0.113.200")).statusCode).toBe(200);
+  });
+
+  it("still bounds distributed guessing per account, except from IPs the owner has used", async () => {
+    const { LOGIN_LIMITS } = await import("../../netlify/functions/auth");
+    const handler = await loadAuth();
+    const home = "203.0.113.50";
+    expect((await login(handler, { login: owner.email, password: owner.password }, home)).statusCode).toBe(200);
+
+    const botnet = Math.ceil(LOGIN_LIMITS.account.attempts / LOGIN_LIMITS.pair.attempts);
+    for (let bot = 0; bot < botnet; bot += 1) {
+      await Promise.all(
+        Array.from({ length: LOGIN_LIMITS.pair.attempts }, () =>
+          login(handler, { login: owner.email, password: "guess" }, `10.0.${bot}.1`),
+        ),
+      );
+    }
+    // A brand-new IP is refused even with the right password: guessing is bounded.
+    expect((await login(handler, { login: owner.email, password: owner.password }, "192.0.2.77")).statusCode).toBe(429);
+    // The owner's known IP still gets in.
+    expect((await login(handler, { login: owner.email, password: owner.password }, home)).statusCode).toBe(200);
   });
 
   // The limit used to be checked before hashing and counted afterwards with a
@@ -70,12 +96,12 @@ describe("login throttling", () => {
     const { LOGIN_LIMITS } = await import("../../netlify/functions/auth");
     const handler = await loadAuth();
     const burst = await Promise.all(
-      Array.from({ length: 15 }, (_, i) => login(handler, { login: owner.email, password: `guess-${i}` }, `198.51.100.${i}`)),
+      Array.from({ length: 15 }, (_, i) => login(handler, { login: owner.email, password: `guess-${i}` }, "198.51.100.1")),
     );
     const verified = burst.filter((result) => result.statusCode === 401);
     const throttledCount = burst.filter((result) => result.statusCode === 429);
-    expect(verified).toHaveLength(LOGIN_LIMITS.account.attempts);
-    expect(throttledCount).toHaveLength(15 - LOGIN_LIMITS.account.attempts);
+    expect(verified).toHaveLength(LOGIN_LIMITS.pair.attempts);
+    expect(throttledCount).toHaveLength(15 - LOGIN_LIMITS.pair.attempts);
   });
 
   it("gives unknown accounts and wrong passwords the same generic answer", async () => {

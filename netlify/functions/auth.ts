@@ -62,10 +62,19 @@ export const LOCAL_AUTH_SECRET = "ai-advantage-local-development-auth-secret";
 // counters kept in the auth store (shared across function instances, durable
 // across cold starts) before any password work happens, so parallel requests
 // cannot all see the same count. A successful login hands its slots back.
+//
+// The strict limit is per (account, IP), so one attacker cannot lock a user out
+// from everywhere else. The per-account limit is looser and only exists to
+// bound distributed guessing across many IPs; IPs that have logged into the
+// account before are exempt from it, so even a distributed lockout does not
+// stop the owner from their usual network. The per-IP limit stops one client
+// spraying many accounts.
 export const LOGIN_LIMITS = {
-  account: { attempts: 5, windowSeconds: 15 * 60 },
-  ip: { attempts: 20, windowSeconds: 15 * 60 },
+  ip: { attempts: 30, windowSeconds: 15 * 60 },
+  pair: { attempts: 5, windowSeconds: 15 * 60 },
+  account: { attempts: 100, windowSeconds: 60 * 60 },
 } as const;
+const KNOWN_LOGIN_IP_DAYS = 90;
 const INVALID_LOGIN_MESSAGE = "That email/username and password combination is not valid.";
 const THROTTLED_LOGIN_MESSAGE = "Too many login attempts. Wait a few minutes and try again.";
 
@@ -490,6 +499,16 @@ async function getFirstEventually<T>(store: AuthStore, keys: string[]) {
 
 type LoginScope = keyof typeof LOGIN_LIMITS;
 
+function knownLoginIpKey(userId: string, ip: string) {
+  return `${ACCOUNT_PREFIX}:known-login-ip:${createHash("sha256").update(`${userId}|${ip}`).digest("hex")}`;
+}
+
+async function isKnownLoginIp(store: AuthStore, userId: string | null, ip: string) {
+  if (!userId) return false;
+  const record = await store.get<{ expiresAt?: string }>(knownLoginIpKey(userId, ip));
+  return Boolean(record?.expiresAt && new Date(record.expiresAt).getTime() > Date.now());
+}
+
 function loginAttemptsKey(scope: LoginScope, id: string) {
   return `${ACCOUNT_PREFIX}:login-attempts:${scope}:${createHash("sha256").update(id).digest("hex")}`;
 }
@@ -661,11 +680,15 @@ export const handler = async (event: NetlifyEvent) => {
     // Unknown logins are throttled under their own key, so a lockout does not
     // reveal whether an account exists.
     const accountId = userId ?? `unknown:${normalizedEmail}`;
-    const ipKey = loginAttemptsKey("ip", getClientIp(event.headers));
+    const ip = getClientIp(event.headers);
+    const ipKey = loginAttemptsKey("ip", ip);
+    const pairKey = loginAttemptsKey("pair", `${accountId}|${ip}`);
     const accountKey = loginAttemptsKey("account", accountId);
+    const knownIp = await isKnownLoginIp(store, userId, ip);
     const reservation = await reserveLoginAttempt(store, [
       ["ip", ipKey],
-      ["account", accountKey],
+      ["pair", pairKey],
+      ...(knownIp ? [] : [["account", accountKey] as [LoginScope, string]]),
     ]);
     if (!reservation.ok) return throttled(reservation.retryAfterSeconds);
 
@@ -679,8 +702,18 @@ export const handler = async (event: NetlifyEvent) => {
       return response(401, { success: false, message: INVALID_LOGIN_MESSAGE });
     }
 
-    // A correct password does not count against the limits.
-    await Promise.all([store.delete(accountKey), store.increment(ipKey, -1, LOGIN_LIMITS.ip.windowSeconds)]);
+    // A correct password does not count against the limits, and this IP is
+    // remembered as one the owner uses.
+    await Promise.all([
+      store.delete(pairKey),
+      store.increment(ipKey, -1, LOGIN_LIMITS.ip.windowSeconds),
+      knownIp ? Promise.resolve() : store.increment(accountKey, -1, LOGIN_LIMITS.account.windowSeconds),
+      store.set(
+        knownLoginIpKey(user.id, ip),
+        { expiresAt: new Date(Date.now() + KNOWN_LOGIN_IP_DAYS * 86_400_000).toISOString() },
+        { ex: KNOWN_LOGIN_IP_DAYS * 86_400 },
+      ),
+    ]);
 
     if (verification.needsRehash) {
       try {
