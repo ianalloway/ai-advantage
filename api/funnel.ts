@@ -2,8 +2,6 @@ import { getCurrentSiteUserFromEvent } from "../netlify/functions/_lib/auth-sess
 import { getEntitlementStore } from "../netlify/functions/_lib/entitlements";
 import {
   appendFunnelEvent,
-  listFunnelEvents,
-  summarizeFunnel,
   type FunnelEventName,
 } from "../netlify/lib/funnel";
 
@@ -31,20 +29,14 @@ const ALLOWED: FunnelEventName[] = [
 
 export default async function handler(req: RequestLike, res: ResponseLike) {
   res.setHeader("Content-Type", "application/json");
+  if (req.method !== "POST") {
+    res.status(405).json({ success: false, message: "Method not allowed." });
+    return;
+  }
+
   const store = getEntitlementStore({ blobs: req.blobs, headers: req.headers });
   if (!store) {
     res.status(503).json({ success: false, message: "Funnel store unavailable." });
-    return;
-  }
-
-  if (req.method === "GET") {
-    const events = await listFunnelEvents(store, 500);
-    res.status(200).json({ success: true, summary: summarizeFunnel(events), recent: events.slice(-20) });
-    return;
-  }
-
-  if (req.method !== "POST") {
-    res.status(405).json({ success: false, message: "Method not allowed." });
     return;
   }
 

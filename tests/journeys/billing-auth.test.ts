@@ -27,6 +27,8 @@ import { handler as auth } from "../../netlify/functions/auth";
 import { handler as entitlements } from "../../netlify/functions/entitlements";
 import createCheckout from "../../api/create-checkout-session";
 import verifyCheckout from "../../api/checkout-session";
+import funnel from "../../api/funnel";
+import { handler as netlifyFunnel } from "../../netlify/functions/funnel";
 
 const blobs = Buffer.from(JSON.stringify({ url: 'https://blob.invalid', url_uncached: 'https://blob.invalid' })).toString('base64');
 const credentials = { email: 'journey@example.test', username: 'journey', password: 'ephemeral-test-password' };
@@ -68,6 +70,24 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 describe('provider-mocked account and checkout journeys', () => {
+  it('accepts funnel telemetry without exposing stored checkout IDs through either GET route', async () => {
+    const sessionId = 'cs_test_private_checkout';
+    const posted = response();
+    await funnel({ blobs, method: 'POST', headers: headers(), body: {
+      name: 'checkout_started', sessionId,
+    } }, posted);
+    expect(posted.statusCode).toBe(200);
+
+    const direct = response();
+    await funnel({ blobs, method: 'GET', headers: headers() }, direct);
+    expect(direct.statusCode).toBe(405);
+    expect(JSON.stringify(direct.body)).not.toContain(sessionId);
+
+    const netlify = await netlifyFunnel({ blobs, httpMethod: 'GET', headers: headers(), body: null });
+    expect(netlify.statusCode).toBe(405);
+    expect(netlify.body).not.toContain(sessionId);
+  });
+
   it.each(['premium', 'one-time'])('signup → login → %s checkout → access → logout → denial', async (mode) => {
     expect(await access()).toBe('free');
     const signup = await auth(event('signup', credentials));
