@@ -42,8 +42,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
 
   const body = (typeof req.body === "string" ? JSON.parse(req.body) : req.body ?? {}) as {
     name?: string;
-    mode?: string;
-    sessionId?: string;
+    mode?: unknown;
     reason?: string;
     meta?: Record<string, string | number | boolean | null | undefined>;
   };
@@ -54,15 +53,17 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   }
 
   const user = await getCurrentSiteUserFromEvent({ blobs: req.blobs, headers: req.headers });
-  const event = await appendFunnelEvent(store, {
+  // Checkout session IDs are recorded server-side by the checkout and webhook
+  // handlers. A client-supplied one is unverified and must never be stored next
+  // to account identity, and the stored event (email, userId) is not echoed back.
+  await appendFunnelEvent(store, {
     name: body.name as FunnelEventName,
-    mode: body.mode,
-    sessionId: body.sessionId,
+    mode: typeof body.mode === "string" ? body.mode.slice(0, 40) : undefined,
     reason: typeof body.reason === "string" ? body.reason.slice(0, 200) : undefined,
     email: user?.email,
     userId: user?.id,
     meta: body.meta,
   });
 
-  res.status(200).json({ success: true, event });
+  res.status(200).json({ success: true });
 }

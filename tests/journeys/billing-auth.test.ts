@@ -81,6 +81,14 @@ describe('provider-mocked account and checkout journeys', () => {
     expect(posted.statusCode).toBe(200);
 
     const direct = response();
+    // The POST response must not echo the stored event, and a client-supplied
+    // checkout ID is never persisted beside account identity.
+    expect(JSON.stringify(posted.body)).not.toContain(sessionId);
+    expect(posted.body).toEqual({ success: true });
+    const stored = sandbox.stores.get('ai-advantage-entitlements')?.get('ai-advantage:funnel:events');
+    expect(stored).toHaveLength(1);
+    expect(JSON.stringify(stored)).not.toContain(sessionId);
+
     await funnel({ blobs, method: 'GET', headers: headers() }, direct);
     expect(direct.statusCode).toBe(405);
     expect(JSON.stringify(direct.body)).not.toContain(sessionId);
