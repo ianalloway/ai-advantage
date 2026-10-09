@@ -1,4 +1,5 @@
 import { getCurrentSiteUser } from "@/lib/auth";
+import { claimCryptoPayment } from "@/lib/cryptoClaim";
 
 export type AccessTier = "free" | "event" | "premium";
 export type AccessSource = "stripe" | "crypto" | "legacy" | "manual";
@@ -484,18 +485,12 @@ export async function signInWithCryptoAccount(input: {
   // Re-verify on-chain and mint a server entitlement cookie — never unlock from localStorage alone.
   try {
     const unlockType = account.tier === "premium" ? "knowledge-vault" : "big-game";
-    const response = await fetch("/api/verify-crypto-payment", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({
-        txHash: account.txHash,
-        walletAddress: account.walletAddress,
-        email: account.email,
-        unlockType,
-      }),
+    const result = await claimCryptoPayment({
+      txHash: account.txHash,
+      walletAddress: account.walletAddress,
+      email: account.email,
+      unlockType,
     });
-    const result = (await response.json()) as { verified?: boolean; reason?: string };
     if (!result.verified) {
       return {
         success: false,

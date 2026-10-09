@@ -1,14 +1,24 @@
 // Server-side crypto payment verification.
 // Verifies an Ethereum tx (ETH or USDC/USDT transfer) actually paid the app
 // wallet before any premium access is granted. See issue #36.
+import { getCurrentSiteUserFromEvent } from "../netlify/functions/_lib/auth-session";
 import {
   CryptoTransactionAlreadyClaimedError,
   createEntitlementSession,
   entitlementSessionCookie,
+  getCryptoEntitlement,
   getEntitlementStore,
   upsertCryptoEntitlement,
   type AccessTier,
+  type EntitlementRecord,
+  type EntitlementStore,
 } from "../netlify/functions/_lib/entitlements";
+import {
+  createCryptoClaimChallenge,
+  deleteCryptoClaimChallenge,
+  getCryptoClaimChallenge,
+  recoverPersonalSignAddress,
+} from "../netlify/lib/crypto-claim";
 
 type RequestLike = {
   blobs?: string;
@@ -119,8 +129,21 @@ function topicToAddress(topic: string): string {
   return ("0x" + topic.slice(-40)).toLowerCase();
 }
 
+async function grantAccess(
+  req: RequestLike,
+  res: ResponseLike,
+  store: EntitlementStore,
+  entitlement: EntitlementRecord,
+  method: string,
+) {
+  const session = await createEntitlementSession(store, entitlement);
+  res.setHeader("Set-Cookie", entitlementSessionCookie(req.headers, session.token, session.maxAge));
+  res.status(200).json({ verified: true, method, entitlement });
+}
+
 export default async function handler(req: RequestLike, res: ResponseLike) {
   res.setHeader("Content-Type", "application/json");
+  res.setHeader("Cache-Control", "no-store");
 
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed." });
@@ -128,10 +151,13 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   }
 
   let body: {
+    step?: string;
     txHash?: string;
     walletAddress?: string;
     email?: string;
     unlockType?: string;
+    nonce?: string;
+    signature?: string;
   };
   try {
     body = (typeof req.body === "string" ? JSON.parse(req.body) : req.body ?? {}) as typeof body;
@@ -165,7 +191,49 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     return;
   }
 
+  const store = getEntitlementStore({ blobs: req.blobs, headers: req.headers });
+  if (!store) {
+    res.status(503).json({ verified: false, reason: "Entitlement backend is not configured." });
+    return;
+  }
+
+  const siteUser = await getCurrentSiteUserFromEvent({ blobs: req.blobs, headers: req.headers });
+  const binding = { txHash, walletAddress, email, userId: siteUser?.id ?? null };
+
+  // Step 1: issue a single-use message for the paying wallet to sign.
+  if (body?.step === "challenge") {
+    const challenge = await createCryptoClaimChallenge(store, binding);
+    res.status(200).json({ challenge });
+    return;
+  }
+
+  // Step 2: the tx hash and sender are public, so only a signature from the
+  // sending wallet over our nonce proves the caller is the payer.
+  const challenge = await getCryptoClaimChallenge(store, body?.nonce, binding);
+  if (!challenge) {
+    res.status(401).json({
+      verified: false,
+      reason: "Sign the claim message with your wallet first (the request expired or did not match).",
+    });
+    return;
+  }
+  if (recoverPersonalSignAddress(challenge.message, body?.signature) !== walletAddress) {
+    res.status(401).json({ verified: false, reason: "The signature was not made by the sending wallet." });
+    return;
+  }
+  const nonce = body.nonce as string;
+
   try {
+    // Already claimed: the payer proving the same wallet again restores access on
+    // this browser without changing the entitlement. Anyone else is refused.
+    const claimed = await getCryptoEntitlement(store, txHash);
+    if (claimed) {
+      if (claimed.walletAddress !== walletAddress) throw new CryptoTransactionAlreadyClaimedError(txHash);
+      await deleteCryptoClaimChallenge(store, nonce);
+      await grantAccess(req, res, store, claimed, "restore");
+      return;
+    }
+
     const [tx, receipt, latestHex] = await Promise.all([
       rpc<RpcTransaction | null>("eth_getTransactionByHash", [txHash]),
       rpc<RpcReceipt | null>("eth_getTransactionReceipt", [txHash]),
@@ -195,26 +263,24 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
       return;
     }
 
+    const claim = async (unlockConfig: { tier: AccessTier; label: string }, method: string) => {
+      const entitlement = await upsertCryptoEntitlement(store, {
+        email,
+        walletAddress,
+        txHash,
+        tier: unlockConfig.tier,
+        label: unlockConfig.label,
+        userId: siteUser?.id,
+      });
+      await deleteCryptoClaimChallenge(store, nonce);
+      await grantAccess(req, res, store, entitlement, method);
+    };
+
     // Case 1: direct ETH payment to the app wallet.
     if (tx.to && tx.to.toLowerCase() === PAYMENT_ADDRESS) {
       const ethWei = BigInt(tx.value);
       if (ethWei >= MIN_ETH_WEI) {
-        const unlockConfig = resolveUnlock(requestedUnlock, { ethWei });
-        const store = getEntitlementStore({ blobs: req.blobs, headers: req.headers });
-        if (!store) {
-          res.status(503).json({ verified: false, reason: "Entitlement backend is not configured." });
-          return;
-        }
-        const entitlement = await upsertCryptoEntitlement(store, {
-          email,
-          walletAddress,
-          txHash,
-          tier: unlockConfig.tier,
-          label: unlockConfig.label,
-        });
-        const session = await createEntitlementSession(store, entitlement);
-        res.setHeader("Set-Cookie", entitlementSessionCookie(req.headers, session.token, session.maxAge));
-        res.status(200).json({ verified: true, method: "eth", entitlement });
+        await claim(resolveUnlock(requestedUnlock, { ethWei }), "eth");
         return;
       }
       res.status(200).json({ verified: false, reason: "ETH amount below the required payment." });
@@ -235,22 +301,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     }
 
     if (stableUnits !== undefined) {
-      const unlockConfig = resolveUnlock(requestedUnlock, { stableUnits });
-      const store = getEntitlementStore({ blobs: req.blobs, headers: req.headers });
-      if (!store) {
-        res.status(503).json({ verified: false, reason: "Entitlement backend is not configured." });
-        return;
-      }
-      const entitlement = await upsertCryptoEntitlement(store, {
-        email,
-        walletAddress,
-        txHash,
-        tier: unlockConfig.tier,
-        label: unlockConfig.label,
-      });
-      const session = await createEntitlementSession(store, entitlement);
-      res.setHeader("Set-Cookie", entitlementSessionCookie(req.headers, session.token, session.maxAge));
-      res.status(200).json({ verified: true, method: "stablecoin", entitlement });
+      await claim(resolveUnlock(requestedUnlock, { stableUnits }), "stablecoin");
       return;
     }
 

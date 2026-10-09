@@ -634,6 +634,10 @@ export async function upsertStripeSubscriptionEntitlement(
   });
 }
 
+export async function getCryptoEntitlement(store: EntitlementStore, txHash: string) {
+  return getRecord(store, `crypto:${normalizeHash(txHash)}`);
+}
+
 export async function upsertCryptoEntitlement(
   store: EntitlementStore,
   input: {
@@ -642,6 +646,7 @@ export async function upsertCryptoEntitlement(
     txHash: string;
     tier: AccessTier;
     label: string;
+    userId?: string;
   },
 ) {
   const txHash = normalizeHash(input.txHash);
@@ -661,6 +666,7 @@ export async function upsertCryptoEntitlement(
     activatedAt: new Date().toISOString(),
     expiresAt: tier === "event" ? eventAccessExpiry() : undefined,
     email: input.email,
+    userId: input.userId,
     walletAddress: input.walletAddress,
     cryptoTxHash: txHash,
   });
