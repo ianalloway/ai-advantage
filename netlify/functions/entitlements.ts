@@ -5,7 +5,9 @@ import {
   clearEntitlementSessionCookie,
   findBestEntitlement,
   getEntitlementSessionToken,
+  entitlementSessionCookie,
   getEntitlementStore,
+  renewEntitlementSession,
   revokeEntitlementSession,
 } from "./_lib/entitlements";
 import { maybeRecordD7Retention } from "../lib/funnel";
@@ -80,10 +82,13 @@ export const handler = async (event: NetlifyEvent) => {
     entitlementToken,
   });
   const access = accessStateFromEntitlement(entitlement);
-  const headers =
+  const renewed = entitlement ? await renewEntitlementSession(store, entitlementToken) : null;
+  const headers: Record<string, string> =
     entitlementToken && !entitlement
       ? { "Set-Cookie": clearEntitlementSessionCookie(event.headers) }
-      : {};
+      : renewed
+        ? { "Set-Cookie": entitlementSessionCookie(event.headers, renewed.token, renewed.maxAge) }
+        : {};
 
   if (entitlement && access.tier !== "free") {
     await maybeRecordD7Retention(store, {

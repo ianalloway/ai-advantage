@@ -533,6 +533,35 @@ export async function createEntitlementSession(store: EntitlementStore, entitlem
   return { token, maxAge };
 }
 
+const SESSION_RENEW_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Sliding expiry for the entitlement cookie. While the entitlement behind the
+ * session is active, push the session's expiry out to a full TTL again (capped
+ * at the entitlement's own expiry), at most once a day. Without this a guest
+ * purchase, reachable only through this cookie, silently disappeared after 30
+ * days even though the subscription was still being paid.
+ */
+export async function renewEntitlementSession(store: EntitlementStore, token: string | null | undefined) {
+  if (!token) return null;
+  const key = sessionKey(token);
+  const session = await store.get<{ entitlementId?: string; expiresAt?: string }>(key);
+  if (!session?.entitlementId || !session.expiresAt) return null;
+  const currentExpiry = new Date(session.expiresAt).getTime();
+  if (!(currentExpiry > Date.now())) return null;
+  const entitlement = await getRecord(store, session.entitlementId);
+  if (!isActiveEntitlement(entitlement)) return null;
+
+  const fullTtl = Date.now() + SESSION_TTL_SECONDS * 1000;
+  const cap = entitlement.expiresAt ? new Date(entitlement.expiresAt).getTime() : fullTtl;
+  const nextExpiry = Math.min(fullTtl, cap);
+  if (nextExpiry - currentExpiry < SESSION_RENEW_AFTER_MS) return null;
+
+  const maxAge = Math.max(60, Math.floor((nextExpiry - Date.now()) / 1000));
+  await store.set(key, { entitlementId: entitlement.id, expiresAt: new Date(nextExpiry).toISOString() }, { ex: maxAge });
+  return { token, maxAge };
+}
+
 export async function revokeEntitlementSession(store: EntitlementStore, token: string) {
   await store.delete(sessionKey(token));
 }
