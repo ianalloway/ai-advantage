@@ -244,6 +244,30 @@ describe("verify-crypto-payment ownership proof", () => {
     expect((await call(claim, "198.51.100.2")).statusCode).toBe(200);
   });
 
+  it("keeps issuing challenges, limited in-process, when strong Blobs reads are unavailable", async () => {
+    const { handler, payer } = await setup();
+    const { resetInProcessFallback } = await import("../netlify/lib/rate-limit");
+    resetInProcessFallback();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const eventual = Buffer.from(JSON.stringify({ url: "https://blob.invalid" })).toString("base64");
+    const challenge = async () => {
+      const res = response();
+      await handler({
+        blobs: eventual, method: "POST",
+        headers: { host: "example.test", "x-nf-client-connection-ip": "198.51.100.77" },
+        body: { txHash: TX_HASH, walletAddress: payer, email: "payer@example.test", step: "challenge" },
+      }, res);
+      return res.statusCode;
+    };
+    try {
+      for (let i = 0; i < 10; i += 1) expect(await challenge()).toBe(200);
+      expect(await challenge()).toBe(429);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("[rate-limit:in-process-fallback] crypto-challenge"));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("rejects and deletes an expired challenge", async () => {
     const { call, payer } = await setup();
     const mock = await import("../tests/helpers/blobsMock");

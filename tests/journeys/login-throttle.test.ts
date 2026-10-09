@@ -104,15 +104,33 @@ describe("login throttling", () => {
     expect(throttledCount).toHaveLength(15 - LOGIN_LIMITS.pair.attempts);
   });
 
-  it("fails closed with 429, not 500, when Blobs has no strongly consistent reads", async () => {
+  // A missing uncached Blobs URL must not take every login down: the limiter
+  // degrades to per-instance memory with the same thresholds, and says so.
+  it("falls back to an in-process limiter when strong Blobs reads are unavailable", async () => {
+    const { LOGIN_LIMITS } = await import("../../netlify/functions/auth");
     const handler = await loadAuth();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const eventual = Buffer.from(JSON.stringify({ url: "https://blob.invalid" })).toString("base64");
-    const result = await handler({
-      blobs: eventual, path: "/api/auth/login", httpMethod: "POST",
-      body: JSON.stringify({ login: owner.email, password: owner.password }),
-      headers: { host: "example.test", "x-forwarded-proto": "https", "content-type": "application/json" },
-    });
-    expect(result.statusCode).toBe(429);
+    const attempt = (password: string) =>
+      handler({
+        blobs: eventual, path: "/api/auth/login", httpMethod: "POST",
+        body: JSON.stringify({ login: owner.email, password }),
+        headers: {
+          host: "example.test", "x-forwarded-proto": "https", "content-type": "application/json",
+          "x-nf-client-connection-ip": "198.51.100.44",
+        },
+      });
+    try {
+      expect((await attempt(owner.password)).statusCode).toBe(200);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("[rate-limit:in-process-fallback] auth-login"));
+      for (let i = 0; i < LOGIN_LIMITS.pair.attempts; i += 1) {
+        expect((await attempt(`wrong-${i}`)).statusCode).toBe(401);
+      }
+      // The same thresholds still apply inside this instance.
+      expect((await attempt(owner.password)).statusCode).toBe(429);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("gives unknown accounts and wrong passwords the same generic answer", async () => {

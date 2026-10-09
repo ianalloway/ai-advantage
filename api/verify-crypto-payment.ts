@@ -19,7 +19,7 @@ import {
   getCryptoClaimChallenge,
   recoverPersonalSignAddress,
 } from "../netlify/lib/crypto-claim";
-import { consumeRateLimit, getClientIp } from "../netlify/lib/rate-limit";
+import { consumeRateLimit, getClientIp, withInProcessFallback } from "../netlify/lib/rate-limit";
 
 type RequestLike = {
   blobs?: string;
@@ -209,7 +209,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   // Step 1: issue a single-use message for the paying wallet to sign.
   if (body?.step === "challenge") {
     const limit = await consumeRateLimit(
-      store.increment,
+      withInProcessFallback(store.increment, "crypto-challenge"),
       `ai-advantage:ratelimit:crypto-challenge:${getClientIp(req.headers)}`,
       CHALLENGES_PER_IP,
       CHALLENGE_WINDOW_SECONDS,

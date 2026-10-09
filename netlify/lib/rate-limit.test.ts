@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { blobsModule, resetBlobs } from "../../tests/helpers/blobsMock";
 import {
   CounterUnavailableError,
@@ -6,7 +6,9 @@ import {
   consumeRateLimit,
   getClientIp,
   memoryIncrement,
+  resetInProcessFallback,
   unavailableIncrement,
+  withInProcessFallback,
 } from "./rate-limit";
 
 describe("blobsIncrement", () => {
@@ -74,5 +76,32 @@ describe("counter failure policy", () => {
 
   it("refuses to count on a store without strong reads", async () => {
     await expect(unavailableIncrement("k", 1, 60)).rejects.toBeInstanceOf(CounterUnavailableError);
+  });
+});
+
+describe("withInProcessFallback", () => {
+  it("counts in memory with a tagged warning when the shared counter is unavailable", async () => {
+    resetInProcessFallback();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const increment = withInProcessFallback(unavailableIncrement, "test-scope");
+      const hits = [];
+      for (let i = 0; i < 4; i += 1) hits.push(await consumeRateLimit(increment, "fallback-k", 3, 60, "deny"));
+      expect(hits.map((hit) => hit.ok)).toEqual([true, true, true, false]);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("[rate-limit:in-process-fallback] test-scope"));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("uses the shared counter when it works and does not mask other errors", async () => {
+    const data = new Map<string, unknown>();
+    const shared = memoryIncrement((k) => data.get(k), (k, v) => data.set(k, v));
+    await withInProcessFallback(shared, "test")("k", 1, 60);
+    expect(data.get("k")).toMatchObject({ count: 1 });
+    const broken = withInProcessFallback(async () => {
+      throw new Error("bug");
+    }, "test");
+    await expect(broken("k", 1, 60)).rejects.toThrow("bug");
   });
 });

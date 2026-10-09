@@ -6,11 +6,13 @@ import { getStore, setEnvironmentContext } from "@netlify/blobs";
 import { Redis } from "@upstash/redis";
 import {
   blobsIncrement,
+  clearInProcessFallback,
   consumeRateLimit,
   getClientIp,
   memoryIncrement,
   redisIncrement,
   unavailableIncrement,
+  withInProcessFallback,
   type IncrementFn,
 } from "../lib/rate-limit";
 import { rejectCrossSiteJson } from "../lib/request-guard";
@@ -224,7 +226,8 @@ function getAuthStore(event: NetlifyEvent): AuthStore | null {
         async delete(key: string) {
           await store.delete(key);
         },
-        // Without strong reads there is no safe atomic counter: logins fail closed.
+        // Without strong reads there is no safe shared counter; the login path
+        // falls back to an in-process limiter (see withInProcessFallback).
         increment: strongReads ? blobsIncrement(store) : unavailableIncrement,
       };
     } catch (error) {
@@ -522,11 +525,12 @@ function loginAttemptsKey(scope: LoginScope, id: string) {
  * The increment is atomic, so of N parallel requests only the first `attempts`
  * per window get through. Returns the retry delay of the first exhausted scope.
  */
-async function reserveLoginAttempt(store: AuthStore, scopes: Array<[LoginScope, string]>) {
+async function reserveLoginAttempt(increment: IncrementFn, scopes: Array<[LoginScope, string]>) {
   for (const [scope, key] of scopes) {
     const { attempts, windowSeconds } = LOGIN_LIMITS[scope];
-    // Fails closed: an unavailable or contended counter refuses the attempt.
-    const limit = await consumeRateLimit(store.increment, key, attempts, windowSeconds, "deny");
+    // An unavailable shared counter degrades to the in-process limiter; only a
+    // failure of that too refuses the attempt.
+    const limit = await consumeRateLimit(increment, key, attempts, windowSeconds, "deny");
     if (!limit.ok) {
       return { ok: false as const, retryAfterSeconds: limit.retryAfterSeconds };
     }
@@ -697,7 +701,8 @@ export const handler = async (event: NetlifyEvent) => {
     const pairKey = loginAttemptsKey("pair", `${accountId}|${ip}`);
     const accountKey = loginAttemptsKey("account", accountId);
     const knownIp = await isKnownLoginIp(store, userId, ip);
-    const reservation = await reserveLoginAttempt(store, [
+    const increment = withInProcessFallback(store.increment, "auth-login");
+    const reservation = await reserveLoginAttempt(increment, [
       ["ip", ipKey],
       ["pair", pairKey],
       ...(knownIp ? [] : [["account", accountKey] as [LoginScope, string]]),
@@ -717,7 +722,8 @@ export const handler = async (event: NetlifyEvent) => {
     // A correct password does not count against the limits, and this IP is
     // remembered as one the owner uses.
     const refund = (key: string, windowSeconds: number) =>
-      store.increment(key, -1, windowSeconds).catch(() => undefined);
+      increment(key, -1, windowSeconds).catch(() => undefined);
+    clearInProcessFallback(pairKey);
     await Promise.all([
       store.delete(pairKey),
       refund(ipKey, LOGIN_LIMITS.ip.windowSeconds),

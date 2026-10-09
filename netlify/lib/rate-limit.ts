@@ -106,6 +106,50 @@ export function memoryIncrement(read: (key: string) => unknown, write: (key: str
   };
 }
 
+const FALLBACK_TAG = "[rate-limit:in-process-fallback]";
+const FALLBACK_MAX_KEYS = 10_000;
+const fallbackCounters = new Map<string, StoredCounter>();
+
+/** Clear one fallback counter, mirroring a delete of the shared counter. */
+export function clearInProcessFallback(key: string) {
+  fallbackCounters.delete(key);
+}
+
+/** Test hook: forget the in-process fallback counters. */
+export function resetInProcessFallback() {
+  fallbackCounters.clear();
+}
+
+/**
+ * Best-effort fallback for the shared counter. When the strongly consistent
+ * counter is unavailable (no uncached Blobs edge, or unresolved contention),
+ * count in this function instance's memory with the same thresholds instead
+ * of refusing everyone, and log a warning with a stable tag so the
+ * degradation is visible in function logs. Limits then hold per warm instance
+ * only, not across instances or cold starts.
+ */
+export function withInProcessFallback(primary: IncrementFn, scope: string): IncrementFn {
+  return async (key, delta, windowSeconds) => {
+    try {
+      return await primary(key, delta, windowSeconds);
+    } catch (error) {
+      if (!(error instanceof CounterUnavailableError)) throw error;
+      console.warn(`${FALLBACK_TAG} ${scope}: ${error.message}`);
+      if (fallbackCounters.size > FALLBACK_MAX_KEYS) {
+        const now = Date.now();
+        for (const [entryKey, entry] of fallbackCounters) {
+          if (entry.resetAt <= now) fallbackCounters.delete(entryKey);
+        }
+        if (fallbackCounters.size > FALLBACK_MAX_KEYS) fallbackCounters.clear();
+      }
+      return memoryIncrement(
+        (entryKey) => fallbackCounters.get(entryKey),
+        (entryKey, value) => fallbackCounters.set(entryKey, value as StoredCounter),
+      )(key, delta, windowSeconds);
+    }
+  };
+}
+
 /** Client IP as seen by Netlify's edge; x-nf-client-connection-ip cannot be set by the client. */
 export function getClientIp(headers: HeaderMap | undefined) {
   const read = (name: string) => {
