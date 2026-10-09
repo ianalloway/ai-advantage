@@ -341,6 +341,72 @@ describe("out-of-order Stripe webhook delivery", () => {
     expect(isActiveEntitlement(pending)).toBe(false);
   });
 
+  // A completed Checkout Session stays "complete / paid" forever. Replaying it
+  // (webhook redelivery or a reloaded success URL) must not reactivate a
+  // cancelled subscription or restart an event pass clock.
+  it("does not let a replayed paid session reactivate a cancelled subscription", async () => {
+    const store = memoryStore();
+    const paidSub = { id: "cs_sub", mode: "subscription", subscription: "sub_r", status: "complete", payment_status: "paid" };
+    expect((await upsertStripeCheckoutSessionEntitlement(store, paidSub)).status).toBe("active");
+    await upsertStripeSubscriptionEntitlement(store, { id: "sub_r", status: "canceled" });
+
+    const replayed = await upsertStripeCheckoutSessionEntitlement(store, paidSub);
+    expect(replayed.status).toBe("cancelled");
+    expect(isActiveEntitlement(replayed)).toBe(false);
+  });
+
+  it("does not let a replayed paid session promote a past-due subscription", async () => {
+    const store = memoryStore();
+    await upsertStripeSubscriptionEntitlement(store, { id: "sub_pd", status: "past_due" });
+    const replayed = await upsertStripeCheckoutSessionEntitlement(store, {
+      id: "cs_pd", mode: "subscription", subscription: "sub_pd", status: "complete", payment_status: "paid",
+    });
+    expect(replayed.status).toBe("pending");
+  });
+
+  it("keeps an event pass's original expiry when its session is replayed", async () => {
+    const store = memoryStore();
+    const first = await upsertStripeCheckoutSessionEntitlement(store, { ...base, status: "complete", payment_status: "paid" });
+    // Simulate the 72-hour pass having run out.
+    const lapsed = await upsertEntitlement(store, { ...first, expiresAt: past() });
+
+    const replayed = await upsertStripeCheckoutSessionEntitlement(store, { ...base, status: "complete", payment_status: "paid" });
+    expect(replayed.expiresAt).toBe(lapsed.expiresAt);
+    expect(isActiveEntitlement(replayed)).toBe(false);
+  });
+
+  it("promotes a pending session once its payment clears", async () => {
+    const store = memoryStore();
+    const pending = await upsertStripeCheckoutSessionEntitlement(store, {
+      ...base, id: "cs_async", payment_intent: "pi_async", status: "complete", payment_status: "unpaid",
+    });
+    expect(pending.status).toBe("pending");
+    const cleared = await upsertStripeCheckoutSessionEntitlement(store, {
+      ...base, id: "cs_async", payment_intent: "pi_async", status: "complete", payment_status: "paid",
+    });
+    expect(isActiveEntitlement(cleared)).toBe(true);
+  });
+
+  it("uses the subscription's current status over the historical session when given", async () => {
+    const store = memoryStore();
+    const paidSub = { id: "cs_live", mode: "subscription", subscription: "sub_live", status: "complete", payment_status: "paid" };
+    const cancelled = await upsertStripeCheckoutSessionEntitlement(store, paidSub, { subscriptionStatus: "canceled" });
+    expect(cancelled.status).toBe("cancelled");
+
+    const trialing = await upsertStripeCheckoutSessionEntitlement(
+      store, { ...paidSub, id: "cs_live2", subscription: "sub_live2" }, { subscriptionStatus: "trialing" },
+    );
+    expect(isActiveEntitlement(trialing)).toBe(true);
+
+    // An "incomplete" subscription webhook landed first; the live status on the
+    // success page has since moved to active, so the buyer gets access now.
+    await upsertStripeSubscriptionEntitlement(store, { id: "sub_live3", status: "incomplete" });
+    const live = await upsertStripeCheckoutSessionEntitlement(
+      store, { ...paidSub, id: "cs_live3", subscription: "sub_live3" }, { subscriptionStatus: "active" },
+    );
+    expect(isActiveEntitlement(live)).toBe(true);
+  });
+
   it("still lets an explicit cancellation revoke a subscription", async () => {
     const store = memoryStore();
     await upsertStripeSubscriptionEntitlement(store, { id: "sub_x", status: "active" });

@@ -5,6 +5,7 @@ import {
   createEntitlementSession,
   entitlementSessionCookie,
   getEntitlementStore,
+  isActiveEntitlement,
   upsertStripeCheckoutSessionEntitlement,
 } from "../netlify/functions/_lib/entitlements";
 
@@ -95,12 +96,23 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     if (paid) {
       const store = getEntitlementStore({ blobs: req.blobs, headers: req.headers });
       if (store) {
-        entitlement = await upsertStripeCheckoutSessionEntitlement(store, session);
-        const entitlementSession = await createEntitlementSession(store, entitlement);
-        res.setHeader(
-          "Set-Cookie",
-          entitlementSessionCookie(req.headers, entitlementSession.token, entitlementSession.maxAge),
-        );
+        // A completed session is a historical receipt. For a subscription, access
+        // follows the subscription's current status, so reloading an old success
+        // URL cannot resurrect a cancelled or unpaid subscription.
+        const subscriptionId =
+          typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
+        const options =
+          session.mode === "subscription" && subscriptionId
+            ? { subscriptionStatus: (await stripe.subscriptions.retrieve(subscriptionId))?.status ?? null }
+            : undefined;
+        entitlement = await upsertStripeCheckoutSessionEntitlement(store, session, options);
+        if (isActiveEntitlement(entitlement)) {
+          const entitlementSession = await createEntitlementSession(store, entitlement);
+          res.setHeader(
+            "Set-Cookie",
+            entitlementSessionCookie(req.headers, entitlementSession.token, entitlementSession.maxAge),
+          );
+        }
       }
     }
 

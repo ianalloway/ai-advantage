@@ -494,6 +494,29 @@ function stringId(value: unknown) {
   return undefined;
 }
 
+function subscriptionStatusToEntitlement(status: string | null | undefined): EntitlementStatus {
+  if (status === "active" || status === "trialing") return "active";
+  if (status === "canceled") return "cancelled";
+  return "pending";
+}
+
+/**
+ * Fulfil a Checkout Session into an entitlement, at most once.
+ *
+ * Both the webhook and the post-checkout receipt lookup call this, and both can
+ * be replayed (Stripe redelivers events; a buyer can reload the success URL).
+ * Fulfilment is keyed by the entitlement id the session maps to (subscription,
+ * then payment intent, then session id). Once that record has left "pending",
+ * a later call never touches its lifecycle: a cancelled subscription stays
+ * cancelled and an event pass keeps its original expiry. It only fills in
+ * identity fields the record is missing. A pending record may be promoted to
+ * active once payment clears, and the pass clock starts at that activation.
+ *
+ * For subscriptions, `options.subscriptionStatus` is the subscription's current
+ * Stripe status; when given it decides access instead of the historical
+ * session's payment flags. Without it (webhook replays), a status written by
+ * the subscription webhooks is never overridden by a checkout session.
+ */
 export async function upsertStripeCheckoutSessionEntitlement(
   store: EntitlementStore,
   session: {
@@ -509,6 +532,7 @@ export async function upsertStripeCheckoutSessionEntitlement(
     customer_details?: { email?: string | null } | null;
     metadata?: Record<string, string> | null;
   },
+  options?: { subscriptionStatus?: string | null },
 ) {
   const paid =
     session.status === "complete" &&
@@ -525,27 +549,51 @@ export async function upsertStripeCheckoutSessionEntitlement(
     : stripePaymentIntentId
       ? `stripe:payment:${stripePaymentIntentId}`
       : `stripe:checkout:${session.id}`;
-
-  return upsertEntitlement(store, {
-    id,
-    tier,
-    source: "stripe",
-    label,
-    status: paid ? "active" : "pending",
-    activatedAt: now,
-    expiresAt: tier === "event" ? eventAccessExpiry() : undefined,
+  const identity = {
     userId: session.client_reference_id ?? undefined,
     email: session.customer_details?.email ?? session.customer_email ?? undefined,
     stripeCustomerId,
     stripeSubscriptionId,
     stripeCheckoutSessionId: session.id,
     stripePaymentIntentId,
+  };
+
+  // Current Stripe truth for a subscription, when the caller fetched it. It is
+  // not a replay, so it may move status in either direction.
+  const liveStatus =
+    mode === "subscription" && options && "subscriptionStatus" in options
+      ? subscriptionStatusToEntitlement(options.subscriptionStatus)
+      : undefined;
+
+  const existing = await getRecord(store, id);
+  const ownedBySubscriptionLifecycle = mode === "subscription" && Boolean(existing?.metadata?.stripe_status);
+  if (existing && (existing.status !== "pending" || ownedBySubscriptionLifecycle)) {
+    const missing = Object.fromEntries(
+      Object.entries(identity).filter(([key, value]) => value && !existing[key as keyof EntitlementRecord]),
+    );
+    const statusChange = liveStatus && liveStatus !== existing.status ? { status: liveStatus } : {};
+    if (Object.keys(missing).length === 0 && !("status" in statusChange)) return existing;
+    const { updatedAt: _updatedAt, ...rest } = existing;
+    return upsertEntitlement(store, { ...rest, ...missing, ...statusChange });
+  }
+
+  const status: EntitlementStatus = liveStatus ?? (paid ? "active" : "pending");
+
+  return upsertEntitlement(store, {
+    id,
+    tier,
+    source: "stripe",
+    label,
+    status,
+    activatedAt: now,
+    expiresAt: tier === "event" ? eventAccessExpiry() : undefined,
+    ...identity,
     metadata: {
       checkout_mode: mode,
       unlock_type: session.metadata?.unlock_type ?? "",
       plan_label: session.metadata?.plan_label ?? label,
     },
-  }, { keepActive: true });
+  });
 }
 
 export async function upsertStripeSubscriptionEntitlement(

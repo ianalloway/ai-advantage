@@ -34,6 +34,7 @@ import { handler as netlifyFunnel } from "../../netlify/functions/funnel";
 import { handler as netlifyCreateCheckout } from "../../netlify/functions/create-checkout-session";
 import { handler as netlifyVerifyCheckout } from "../../netlify/functions/checkout-session";
 import createPortal from "../../api/create-portal-session";
+import { getEntitlementStore, upsertStripeSubscriptionEntitlement } from "../../netlify/functions/_lib/entitlements";
 
 const blobs = Buffer.from(JSON.stringify({ url: 'https://blob.invalid', url_uncached: 'https://blob.invalid' })).toString('base64');
 const credentials = { email: 'journey@example.test', username: 'journey', password: 'ephemeral-test-password' };
@@ -144,6 +145,7 @@ describe('provider-mocked account and checkout journeys', () => {
       metadata: (sandbox.create.mock.calls[0]?.[0] as { metadata: Record<string, string> }).metadata,
     };
     sandbox.retrieve.mockResolvedValue(session);
+    sandbox.subscription.mockResolvedValue({ id: 'sub_mock', status: 'trialing' });
     const verified = response();
     await verifyCheckout({ blobs, method: 'GET', headers: headers(), query: { session_id: session.id } }, verified);
     expect(verified.body).toMatchObject({ paid: true, entitlement: { status: 'active' } });
@@ -257,6 +259,36 @@ describe('provider-mocked account and checkout journeys', () => {
     // A fresh browser with only the account session keeps the purchase.
     cookie = cookie.split('; ').filter((part) => part.startsWith('ai_advantage_session=')).join('; ');
     expect(await access()).toBe('event');
+  });
+
+  it('does not let a reloaded success URL resurrect a cancelled subscription', async () => {
+    sandbox.create.mockResolvedValue({ id: 'cs_test_replay', url: 'https://checkout.stripe.com/mock', mode: 'subscription' });
+    const checkout = response();
+    await createCheckout({ blobs, method: 'POST', headers: headers(), body: { mode: 'premium' } }, checkout);
+    const created = sandbox.create.mock.calls[0]?.[0] as { metadata: Record<string, string> };
+    takeCookie(checkout.headers['Set-Cookie']);
+    sandbox.retrieve.mockResolvedValue({
+      id: 'cs_test_replay', mode: 'subscription', status: 'complete', payment_status: 'paid',
+      customer: 'cus_replay', subscription: 'sub_replay', metadata: created.metadata,
+    });
+    sandbox.subscription.mockResolvedValue({ id: 'sub_replay', status: 'active' });
+    const first = response();
+    await verifyCheckout({ blobs, method: 'GET', headers: headers(), query: { session_id: 'cs_test_replay' } }, first);
+    takeCookie(first.headers['Set-Cookie']);
+    expect(await access()).toBe('premium');
+
+    // The customer cancels; the subscription webhook records it.
+    const store = getEntitlementStore({ blobs, headers: headers() })!;
+    await upsertStripeSubscriptionEntitlement(store, { id: 'sub_replay', status: 'canceled', customer: 'cus_replay' });
+    expect(await access()).toBe('free');
+
+    // Replaying the paid receipt must not reactivate it or mint a new cookie.
+    sandbox.subscription.mockResolvedValue({ id: 'sub_replay', status: 'canceled' });
+    const replay = response();
+    await verifyCheckout({ blobs, method: 'GET', headers: headers(), query: { session_id: 'cs_test_replay' } }, replay);
+    expect(replay.headers['Set-Cookie']).toBeUndefined();
+    expect(replay.body).toMatchObject({ entitlement: { status: 'cancelled' } });
+    expect(await access()).toBe('free');
   });
 
   it('does not redeem a legacy guest checkout ID without an ownership claim', async () => {
