@@ -171,12 +171,20 @@ describe("purchase recovery by email ownership", () => {
     expect((await post({ email: BUYER }, { origin: "https://app.example.test", "sec-fetch-site": "same-origin" })).statusCode).toBe(200);
   });
 
-  it("rate-limits link requests per email", async () => {
-    for (let i = 0; i < 3; i += 1) {
+  it("limits requests per (email, IP) so others cannot use up the owner's requests", async () => {
+    const from = (ip: string) => requestLink(BUYER, { "x-nf-client-connection-ip": ip });
+    for (let i = 0; i < 3; i += 1) expect((await from("198.51.100.1")).statusCode).toBe(200);
+    expect((await from("198.51.100.1")).statusCode).toBe(429);
+    // The owner, elsewhere, can still ask.
+    expect((await from("203.0.113.7")).statusCode).toBe(200);
+  });
+
+  it("still caps the total mail one address can receive", async () => {
+    for (let i = 0; i < 10; i += 1) {
       expect((await requestLink(BUYER, { "x-nf-client-connection-ip": `198.51.100.${i}` })).statusCode).toBe(200);
     }
-    expect((await requestLink(BUYER, { "x-nf-client-connection-ip": "198.51.100.9" })).statusCode).toBe(429);
-    expect(sentEmails).toHaveLength(3);
+    expect((await requestLink(BUYER, { "x-nf-client-connection-ip": "198.51.100.99" })).statusCode).toBe(429);
+    expect(sentEmails).toHaveLength(10);
   });
 
   it("fails closed when no app origin is configured", async () => {

@@ -39,7 +39,11 @@ const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const NONCE_COOKIE = "ai_advantage_restore_nonce";
 const NONCE_COOKIE_PATH = "/api/recover-purchase";
 const REQUESTS_PER_IP = { limit: 5, windowSeconds: 15 * 60 };
-const REQUESTS_PER_EMAIL = { limit: 3, windowSeconds: 60 * 60 };
+// Per (email, IP) is the tight limit, so someone else hammering an address
+// cannot use up its owner's requests; the per-email cap is looser and only
+// bounds how much mail one address can be sent overall.
+const REQUESTS_PER_EMAIL_AND_IP = { limit: 3, windowSeconds: 60 * 60 };
+const REQUESTS_PER_EMAIL = { limit: 10, windowSeconds: 60 * 60 };
 const GENERIC_SENT = "If a purchase was made with that email, we just sent it a restore link. It expires in 30 minutes.";
 
 interface RecoveryToken {
@@ -114,24 +118,20 @@ async function readLiveToken(store: EntitlementStore, token: string) {
 }
 
 async function requestLink(req: RequestLike, res: ResponseLike, store: EntitlementStore, origin: string, email: string) {
-  const ipLimit = await consumeRateLimit(
-    store.increment,
-    `ai-advantage:ratelimit:recover-ip:${getClientIp(req.headers)}`,
-    REQUESTS_PER_IP.limit,
-    REQUESTS_PER_IP.windowSeconds,
-  );
-  const emailLimit = ipLimit.ok
-    ? await consumeRateLimit(
-        store.increment,
-        `ai-advantage:ratelimit:recover-email:${sha256(email)}`,
-        REQUESTS_PER_EMAIL.limit,
-        REQUESTS_PER_EMAIL.windowSeconds,
-      )
-    : ipLimit;
-  if (!emailLimit.ok) {
-    res.setHeader("Retry-After", String(emailLimit.retryAfterSeconds));
-    res.status(429).json({ success: false, message: "Too many restore requests. Try again later." });
-    return;
+  const ip = getClientIp(req.headers);
+  const emailHash = sha256(email);
+  const limits: Array<[string, { limit: number; windowSeconds: number }]> = [
+    [`ai-advantage:ratelimit:recover-ip:${ip}`, REQUESTS_PER_IP],
+    [`ai-advantage:ratelimit:recover-email-ip:${emailHash}:${sha256(ip)}`, REQUESTS_PER_EMAIL_AND_IP],
+    [`ai-advantage:ratelimit:recover-email:${emailHash}`, REQUESTS_PER_EMAIL],
+  ];
+  for (const [key, { limit, windowSeconds }] of limits) {
+    const result = await consumeRateLimit(store.increment, key, limit, windowSeconds);
+    if (!result.ok) {
+      res.setHeader("Retry-After", String(result.retryAfterSeconds));
+      res.status(429).json({ success: false, message: "Too many restore requests. Try again later." });
+      return;
+    }
   }
 
   const user = await getCurrentSiteUserFromEvent({ blobs: req.blobs, headers: req.headers });
