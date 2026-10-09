@@ -189,7 +189,7 @@ export default function Leaderboard() {
 
     const loadHistory = async () => {
       try {
-        const rows = await listExecutionLedgerArchive(250);
+        const rows = await listExecutionLedgerArchive(250, { full: hasFeatureAccess("historical_ledger", access) });
         if (!cancelled) {
           setHistoricalEntries(rows);
         }
@@ -204,7 +204,7 @@ export default function Leaderboard() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [access]);
 
   const entries = useMemo(() => {
     return games
@@ -242,7 +242,9 @@ export default function Leaderboard() {
       if (entries.length === 0) return;
       await upsertExecutionLedgerEntries(entries, access.tier);
       try {
-        const remoteRows = await syncExecutionLedgerEntries(entries, access.tier);
+        const remoteRows = await syncExecutionLedgerEntries(entries, access.tier, {
+          full: hasFeatureAccess("historical_ledger", access),
+        });
         if (!cancelled && remoteRows.length > 0) {
           setHistoricalEntries(remoteRows);
           return;
@@ -261,7 +263,7 @@ export default function Leaderboard() {
     return () => {
       cancelled = true;
     };
-  }, [access.tier, entries]);
+  }, [access, entries]);
 
   const filteredEntries = useMemo(() => {
     if (sportFilter === "ALL") return entries;
