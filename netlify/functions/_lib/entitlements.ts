@@ -48,6 +48,8 @@ export interface EntitlementStore {
   delete: (key: string) => Promise<void>;
   get: <T>(key: string) => Promise<T | null>;
   set: (key: string, value: unknown, options?: { ex?: number }) => Promise<void>;
+  /** Atomically create `key` only if it does not exist. Resolves true for the single winner. */
+  setIfAbsent: (key: string, value: unknown) => Promise<boolean>;
 }
 
 export class CryptoTransactionAlreadyClaimedError extends Error {
@@ -156,6 +158,14 @@ function getLocalStore(): EntitlementStore {
       data[key] = value;
       await writeLocalData();
     },
+    async setIfAbsent(key: string, value: unknown) {
+      const data = await readLocalData();
+      // Check and set run in one synchronous step, so this is atomic in-process.
+      if (key in data) return false;
+      data[key] = value;
+      await writeLocalData();
+      return true;
+    },
     async delete(key: string) {
       const data = await readLocalData();
       delete data[key];
@@ -180,6 +190,10 @@ export function getEntitlementStore(event?: EventLike): EntitlementStore | null 
         async set(key: string, value: unknown) {
           await store.setJSON(key, value);
         },
+        async setIfAbsent(key: string, value: unknown) {
+          const result = await store.setJSON(key, value, { onlyIfNew: true });
+          return result?.modified === true;
+        },
         async delete(key: string) {
           await store.delete(key);
         },
@@ -202,6 +216,9 @@ export function getEntitlementStore(event?: EventLike): EntitlementStore | null 
         } else {
           await redis.set(key, value);
         }
+      },
+      async setIfAbsent(key: string, value: unknown) {
+        return (await redis.set(key, value, { nx: true })) === "OK";
       },
       async delete(key: string) {
         await redis.del(key);
@@ -238,6 +255,10 @@ function stripeSubscriptionIndexKey(subscriptionId: string) {
 
 function cryptoTxIndexKey(txHash: string) {
   return `${ENTITLEMENT_PREFIX}:idx:crypto-tx:${normalizeHash(txHash)}`;
+}
+
+function cryptoTxClaimKey(txHash: string) {
+  return `${ENTITLEMENT_PREFIX}:claim:crypto-tx:${normalizeHash(txHash)}`;
 }
 
 function normalizeEmail(value: string) {
@@ -651,8 +672,19 @@ export async function upsertCryptoEntitlement(
 ) {
   const txHash = normalizeHash(input.txHash);
   const id = `crypto:${txHash}`;
+  // Records claimed before the atomic claim marker existed have no marker.
   const existing = await getRecord(store, id);
   if (existing) {
+    throw new CryptoTransactionAlreadyClaimedError(txHash);
+  }
+  // A read-then-write check let two concurrent first claims both pass and both
+  // receive sessions. Create-if-absent picks exactly one winner; only it goes
+  // on to write the record, indexes and session.
+  const won = await store.setIfAbsent(cryptoTxClaimKey(txHash), {
+    claimedAt: new Date().toISOString(),
+    walletAddress: normalizeWallet(input.walletAddress),
+  });
+  if (!won) {
     throw new CryptoTransactionAlreadyClaimedError(txHash);
   }
 

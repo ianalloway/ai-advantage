@@ -14,7 +14,11 @@ vi.mock("@netlify/blobs", () => ({
     const data = sandbox.stores.get(name)!;
     return {
       get: async (key: string) => structuredClone(data.get(key) ?? null),
-      setJSON: async (key: string, value: unknown) => { data.set(key, structuredClone(value)); },
+      setJSON: async (key: string, value: unknown, options?: { onlyIfNew?: boolean }) => {
+        if (options?.onlyIfNew && data.has(key)) return { modified: false };
+        data.set(key, structuredClone(value));
+        return { modified: true };
+      },
       delete: async (key: string) => { data.delete(key); },
     };
   },

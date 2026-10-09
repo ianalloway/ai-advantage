@@ -15,6 +15,7 @@ describe('logout during storage failure', () => {
     const store: EntitlementStore = {
       mode: 'blobs', get: async <T>(key: string) => data.get(key) as T ?? null,
       set: async (key, value) => { data.set(key, value); },
+      setIfAbsent: async (key, value) => { if (data.has(key)) return false; data.set(key, value); return true; },
       delete: vi.fn(async (key) => { data.delete(key); }),
     };
     boundary.getStore.mockReturnValue(store);

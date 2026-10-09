@@ -26,6 +26,12 @@ function memoryStore(): EntitlementStore {
     async set(key: string, value: unknown) {
       data.set(key, value);
     },
+    async setIfAbsent(key: string, value: unknown) {
+      await Promise.resolve();
+      if (data.has(key)) return false;
+      data.set(key, value);
+      return true;
+    },
   };
 }
 
@@ -61,6 +67,33 @@ describe("upsertCryptoEntitlement", () => {
       tier: "premium",
       cryptoTxHash: txHash,
     });
+  });
+});
+
+describe("concurrent first crypto claims", () => {
+  // Two requests racing on the same unclaimed tx used to both pass the
+  // read-then-write check and both receive a session.
+  it("lets exactly one concurrent claimant win", async () => {
+    const store = memoryStore();
+    const txHash = `0x${"e".repeat(64)}`;
+    const claim = (email: string) =>
+      upsertCryptoEntitlement(store, {
+        email,
+        walletAddress: `0x${"b".repeat(40)}`,
+        txHash,
+        tier: "event",
+        label: "Crypto Big Game Pass",
+      });
+
+    const results = await Promise.allSettled([claim("first@example.com"), claim("second@example.com")]);
+    const won = results.filter((result) => result.status === "fulfilled");
+    const lost = results.filter((result) => result.status === "rejected");
+    expect(won).toHaveLength(1);
+    expect(lost).toHaveLength(1);
+    expect((lost[0] as PromiseRejectedResult).reason).toBeInstanceOf(CryptoTransactionAlreadyClaimedError);
+
+    const winner = (won[0] as PromiseFulfilledResult<Awaited<ReturnType<typeof claim>>>).value;
+    expect(await store.get(`ai-advantage:entitlements:record:crypto:${txHash}`)).toMatchObject({ email: winner.email });
   });
 });
 
