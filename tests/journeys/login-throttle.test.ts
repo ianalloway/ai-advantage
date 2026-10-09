@@ -43,7 +43,7 @@ describe("login throttling", () => {
   it("locks an account after repeated failures, even for the right password, and survives a cold start", async () => {
     const { LOGIN_LIMITS } = await import("../../netlify/functions/auth");
     let handler = await loadAuth();
-    for (let attempt = 0; attempt < LOGIN_LIMITS.account.freeAttempts; attempt += 1) {
+    for (let attempt = 0; attempt < LOGIN_LIMITS.account.attempts; attempt += 1) {
       const failed = await login(handler, { login: owner.email, password: `wrong-${attempt}` }, `198.51.100.${attempt}`);
       expect(failed.statusCode).toBe(401);
     }
@@ -56,7 +56,7 @@ describe("login throttling", () => {
     expect(Number(locked.headers["Retry-After"])).toBeGreaterThan(0);
     expect(locked.headers["Set-Cookie"]).toBeUndefined();
 
-    vi.setSystemTime(new Date(Date.now() + LOGIN_LIMITS.maxLockSeconds * 1000 + 1000));
+    vi.setSystemTime(new Date(Date.now() + LOGIN_LIMITS.account.windowSeconds * 1000 + 1000));
     const recovered = await login(handler, { login: owner.email, password: owner.password });
     expect(recovered.statusCode).toBe(200);
     // Success clears the account counter: one more typo does not lock again.
@@ -64,17 +64,18 @@ describe("login throttling", () => {
     expect((await login(handler, { login: owner.email, password: owner.password })).statusCode).toBe(200);
   });
 
-  it("backs off exponentially once the free attempts are spent", async () => {
+  // The limit used to be checked before hashing and counted afterwards with a
+  // read-then-write, so a burst of parallel guesses all passed the check.
+  it("lets only the allowed number of a parallel burst reach password verification", async () => {
     const { LOGIN_LIMITS } = await import("../../netlify/functions/auth");
     const handler = await loadAuth();
-    for (let attempt = 0; attempt < LOGIN_LIMITS.account.freeAttempts; attempt += 1) {
-      await login(handler, { login: owner.email, password: "wrong" });
-    }
-    const first = Number((await login(handler, { login: owner.email, password: "wrong" })).headers["Retry-After"]);
-    vi.setSystemTime(new Date(Date.now() + first * 1000 + 1000));
-    expect((await login(handler, { login: owner.email, password: "wrong" })).statusCode).toBe(401);
-    const second = Number((await login(handler, { login: owner.email, password: "wrong" })).headers["Retry-After"]);
-    expect(second).toBeGreaterThan(first);
+    const burst = await Promise.all(
+      Array.from({ length: 15 }, (_, i) => login(handler, { login: owner.email, password: `guess-${i}` }, `198.51.100.${i}`)),
+    );
+    const verified = burst.filter((result) => result.statusCode === 401);
+    const throttledCount = burst.filter((result) => result.statusCode === 429);
+    expect(verified).toHaveLength(LOGIN_LIMITS.account.attempts);
+    expect(throttledCount).toHaveLength(15 - LOGIN_LIMITS.account.attempts);
   });
 
   it("gives unknown accounts and wrong passwords the same generic answer", async () => {
@@ -89,7 +90,7 @@ describe("login throttling", () => {
   it("limits one IP spraying many accounts without blocking other IPs", async () => {
     const { LOGIN_LIMITS } = await import("../../netlify/functions/auth");
     const handler = await loadAuth();
-    for (let attempt = 0; attempt < LOGIN_LIMITS.ip.freeAttempts; attempt += 1) {
+    for (let attempt = 0; attempt < LOGIN_LIMITS.ip.attempts; attempt += 1) {
       await login(handler, { login: `victim${attempt}@example.test`, password: "guess" }, "192.0.2.1");
     }
     const sprayer = await login(handler, { login: owner.email, password: owner.password }, "192.0.2.1");

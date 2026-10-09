@@ -4,6 +4,13 @@ import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { getStore, setEnvironmentContext } from "@netlify/blobs";
 import { Redis } from "@upstash/redis";
+import {
+  blobsIncrement,
+  getClientIp,
+  memoryIncrement,
+  redisIncrement,
+  type IncrementFn,
+} from "../lib/rate-limit";
 
 type NetlifyEvent = {
   blobs?: string;
@@ -35,6 +42,7 @@ interface AuthStore {
   delete: (key: string) => Promise<void>;
   get: <T>(key: string) => Promise<T | null>;
   set: (key: string, value: unknown, options?: { ex?: number }) => Promise<void>;
+  increment: IncrementFn;
   // True when reads are strongly consistent, so read-after-write retry loops can be skipped.
   consistentReads: boolean;
 }
@@ -50,16 +58,13 @@ const STORE_READ_ATTEMPTS = 8;
 const STORE_READ_RETRY_MS = 250;
 export const LOCAL_AUTH_SECRET = "ai-advantage-local-development-auth-secret";
 
-// Login throttling. Failures are counted per account (or per unknown login
-// string) and per client IP in the auth store, so limits survive cold starts
-// and are shared across function instances. Past the free attempts each further
-// failure doubles a lockout, capped, and a quiet window resets the count.
+// Login throttling. Every attempt atomically reserves a slot in windowed
+// counters kept in the auth store (shared across function instances, durable
+// across cold starts) before any password work happens, so parallel requests
+// cannot all see the same count. A successful login hands its slots back.
 export const LOGIN_LIMITS = {
-  account: { freeAttempts: 5 },
-  ip: { freeAttempts: 20 },
-  baseLockSeconds: 30,
-  maxLockSeconds: 15 * 60,
-  quietResetSeconds: 15 * 60,
+  account: { attempts: 5, windowSeconds: 15 * 60 },
+  ip: { attempts: 20, windowSeconds: 15 * 60 },
 } as const;
 const INVALID_LOGIN_MESSAGE = "That email/username and password combination is not valid.";
 const THROTTLED_LOGIN_MESSAGE = "Too many login attempts. Wait a few minutes and try again.";
@@ -157,6 +162,17 @@ function getLocalAuthStore(): AuthStore {
       delete data[key];
       await writeLocalAuthData();
     },
+    async increment(key: string, delta: number, windowSeconds: number) {
+      const data = await readLocalAuthData();
+      const result = await memoryIncrement(
+        (k) => data[k],
+        (k, v) => {
+          data[k] = v;
+        },
+      )(key, delta, windowSeconds);
+      await writeLocalAuthData();
+      return result;
+    },
   };
 }
 
@@ -196,6 +212,7 @@ function getAuthStore(event: NetlifyEvent): AuthStore | null {
         async delete(key: string) {
           await store.delete(key);
         },
+        increment: blobsIncrement(store),
       };
     } catch (error) {
       console.warn("Netlify Blobs auth store is unavailable; checking fallback store.", error);
@@ -228,6 +245,7 @@ function getAuthStore(event: NetlifyEvent): AuthStore | null {
     async delete(key: string) {
       await redis.del(key);
     },
+    increment: redisIncrement(redis),
   };
 }
 
@@ -470,47 +488,26 @@ async function getFirstEventually<T>(store: AuthStore, keys: string[]) {
   return null;
 }
 
-interface LoginAttempts {
-  failures: number;
-  lastFailureAt: string;
-  lockedUntil?: string;
-}
+type LoginScope = keyof typeof LOGIN_LIMITS;
 
-function loginAttemptsKey(scope: "account" | "ip", id: string) {
+function loginAttemptsKey(scope: LoginScope, id: string) {
   return `${ACCOUNT_PREFIX}:login-attempts:${scope}:${createHash("sha256").update(id).digest("hex")}`;
 }
 
-/** Client IP as seen by Netlify's edge; x-nf-client-connection-ip cannot be set by the client. */
-export function getClientIp(headers: NetlifyEvent["headers"]) {
-  const direct = getHeader(headers, "x-nf-client-connection-ip") ?? getHeader(headers, "client-ip");
-  if (direct) return direct.trim();
-  const forwarded = getHeader(headers, "x-forwarded-for");
-  return forwarded?.split(",")[0]?.trim() || "unknown";
-}
-
-async function lockSecondsRemaining(store: AuthStore, key: string) {
-  const attempts = await store.get<LoginAttempts>(key);
-  if (!attempts?.lockedUntil) return 0;
-  const remainingMs = new Date(attempts.lockedUntil).getTime() - Date.now();
-  return remainingMs > 0 ? Math.ceil(remainingMs / 1000) : 0;
-}
-
-async function recordLoginFailure(store: AuthStore, key: string, freeAttempts: number) {
-  const now = Date.now();
-  const previous = await store.get<LoginAttempts>(key);
-  const stale =
-    !previous ||
-    now - new Date(previous.lastFailureAt).getTime() > LOGIN_LIMITS.quietResetSeconds * 1000;
-  const failures = (stale ? 0 : previous.failures) + 1;
-  const excess = failures - freeAttempts;
-  const lockSeconds =
-    excess >= 0 ? Math.min(LOGIN_LIMITS.baseLockSeconds * 2 ** excess, LOGIN_LIMITS.maxLockSeconds) : 0;
-  const next: LoginAttempts = {
-    failures,
-    lastFailureAt: new Date(now).toISOString(),
-    ...(lockSeconds ? { lockedUntil: new Date(now + lockSeconds * 1000).toISOString() } : {}),
-  };
-  await store.set(key, next, { ex: LOGIN_LIMITS.quietResetSeconds + LOGIN_LIMITS.maxLockSeconds });
+/**
+ * Reserve one attempt in every scope, in order, before verifying a password.
+ * The increment is atomic, so of N parallel requests only the first `attempts`
+ * per window get through. Returns the retry delay of the first exhausted scope.
+ */
+async function reserveLoginAttempt(store: AuthStore, scopes: Array<[LoginScope, string]>) {
+  for (const [scope, key] of scopes) {
+    const { attempts, windowSeconds } = LOGIN_LIMITS[scope];
+    const { count, resetAt } = await store.increment(key, 1, windowSeconds);
+    if (count > attempts) {
+      return { ok: false as const, retryAfterSeconds: Math.max(1, Math.ceil((resetAt - Date.now()) / 1000)) };
+    }
+  }
+  return { ok: true as const };
 }
 
 function throttled(retryAfterSeconds: number) {
@@ -658,18 +655,19 @@ export const handler = async (event: NetlifyEvent) => {
       return response(400, { success: false, message: "Enter both your login and password." });
     }
 
-    const ipKey = loginAttemptsKey("ip", getClientIp(event.headers));
-    const ipLock = await lockSecondsRemaining(store, ipKey);
-    if (ipLock > 0) return throttled(ipLock);
-
     const normalizedEmail = normalizeEmail(login);
     const normalizedUsername = normalizeUsername(login);
     const userId = await getFirstEventually<string>(store, [emailKey(normalizedEmail), usernameKey(normalizedUsername)]);
     // Unknown logins are throttled under their own key, so a lockout does not
     // reveal whether an account exists.
-    const accountKey = loginAttemptsKey("account", userId ?? `unknown:${normalizedEmail}`);
-    const accountLock = await lockSecondsRemaining(store, accountKey);
-    if (accountLock > 0) return throttled(accountLock);
+    const accountId = userId ?? `unknown:${normalizedEmail}`;
+    const ipKey = loginAttemptsKey("ip", getClientIp(event.headers));
+    const accountKey = loginAttemptsKey("account", accountId);
+    const reservation = await reserveLoginAttempt(store, [
+      ["ip", ipKey],
+      ["account", accountKey],
+    ]);
+    if (!reservation.ok) return throttled(reservation.retryAfterSeconds);
 
     const user = userId ? await getEventually<StoredSiteUser>(store, userKey(userId)) : null;
     const verification = user
@@ -677,14 +675,12 @@ export const handler = async (event: NetlifyEvent) => {
       : // Spend the same hashing work for unknown accounts so timing does not enumerate them.
         await hashPassword(password, randomBytes(16).toString("hex")).then(() => ({ ok: false, needsRehash: false }));
     if (!user || !verification.ok) {
-      await Promise.all([
-        recordLoginFailure(store, accountKey, LOGIN_LIMITS.account.freeAttempts),
-        recordLoginFailure(store, ipKey, LOGIN_LIMITS.ip.freeAttempts),
-      ]);
+      // The reserved slots stay used: they are the failure count.
       return response(401, { success: false, message: INVALID_LOGIN_MESSAGE });
     }
 
-    await store.delete(accountKey);
+    // A correct password does not count against the limits.
+    await Promise.all([store.delete(accountKey), store.increment(ipKey, -1, LOGIN_LIMITS.ip.windowSeconds)]);
 
     if (verification.needsRehash) {
       try {
