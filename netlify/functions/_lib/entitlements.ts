@@ -448,7 +448,7 @@ export async function upsertEntitlement(
 }
 
 async function getSessionEntitlementId(store: EntitlementStore, token: string | null | undefined) {
-  if (!token) return null;
+  if (!token || (await isSessionRevoked(store, token))) return null;
   const session = await store.get<{ entitlementId?: string; expiresAt?: string }>(sessionKey(token));
   if (session?.entitlementId && (!session.expiresAt || new Date(session.expiresAt).getTime() > Date.now())) {
     return session.entitlementId;
@@ -609,12 +609,36 @@ export async function renewEntitlementSession(store: EntitlementStore, token: st
   if (nextExpiry - currentExpiry < SESSION_RENEW_AFTER_MS) return null;
 
   const maxAge = Math.max(60, Math.floor((nextExpiry - Date.now()) / 1000));
+  if (await isSessionRevoked(store, token)) return null;
   await store.set(key, { entitlementId: entitlement.id, expiresAt: new Date(nextExpiry).toISOString() }, { ex: maxAge });
+  // A logout that landed between the read above and this write would otherwise
+  // be undone by it: re-check and take the session back down.
+  if (await isSessionRevoked(store, token)) {
+    await store.delete(key);
+    return null;
+  }
   return { token, maxAge };
 }
 
+function revokedSessionKey(token: string) {
+  return `${sessionKey(token)}:revoked`;
+}
+
+async function isSessionRevoked(store: EntitlementStore, token: string) {
+  return Boolean(await store.get<string>(revokedSessionKey(token)));
+}
+
+/**
+ * Revoke first, then delete: the marker outlives any write that races the
+ * delete (a concurrent renewal), and every reader checks it.
+ */
 export async function revokeEntitlementSession(store: EntitlementStore, token: string) {
-  await store.delete(sessionKey(token));
+  // Once the marker is stored the session is revoked for every reader, so a
+  // failure to delete the session record afterwards is only cleanup.
+  await store.set(revokedSessionKey(token), new Date().toISOString(), { ex: SESSION_TTL_SECONDS });
+  await store.delete(sessionKey(token)).catch((error) => {
+    console.warn("Revoked entitlement session record could not be deleted; the revocation marker still applies.", error);
+  });
 }
 
 export function entitlementSessionCookie(headers: EventLike["headers"], token: string, maxAge: number) {

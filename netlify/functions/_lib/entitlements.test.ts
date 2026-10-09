@@ -4,6 +4,8 @@ import {
   accessStateFromEntitlement,
   bindSessionEntitlementToUser,
   createEntitlementSession,
+  renewEntitlementSession,
+  revokeEntitlementSession,
   findBestEntitlement,
   isActiveEntitlement,
   upsertCryptoEntitlement,
@@ -239,6 +241,47 @@ describe("findBestEntitlement", () => {
 
   it("returns null for an unknown lookup", async () => {
     expect(await findBestEntitlement(memoryStore(), { userId: "nobody" })).toBeNull();
+  });
+});
+
+describe("renewEntitlementSession vs logout", () => {
+  // A renewal that read the session just before logout used to write it back
+  // afterwards, resurrecting a session the user had just ended.
+  it("does not bring a session back when logout lands between its read and write", async () => {
+    const store = memoryStore();
+    const saved = await upsertEntitlement(store, record({ id: "pr" }) as never);
+    const { token } = await createEntitlementSession(store, saved);
+    // Report the session as nearly expired so it is due for renewal.
+    const realGet = store.get;
+    let shifted = false;
+    store.get = async <T,>(key: string) => {
+      const value = await realGet<T>(key);
+      if (!shifted && key.includes(":session:") && !key.endsWith(":revoked") && value) {
+        shifted = true;
+        return { ...(value as object), expiresAt: new Date(Date.now() + 2 * HOUR).toISOString() } as T;
+      }
+      return value;
+    };
+    const realSet = store.set;
+    store.set = async (key, value, options) => {
+      if (key.includes(":session:") && !key.endsWith(":revoked")) {
+        await revokeEntitlementSession(store, token); // logout races in here
+      }
+      return realSet(key, value, options);
+    };
+
+    expect(await renewEntitlementSession(store, token)).toBeNull();
+    store.set = realSet;
+    expect(await findBestEntitlement(store, { entitlementToken: token })).toBeNull();
+  });
+
+  it("refuses to renew a revoked session", async () => {
+    const store = memoryStore();
+    const saved = await upsertEntitlement(store, record({ id: "pr" }) as never);
+    const { token } = await createEntitlementSession(store, saved);
+    await revokeEntitlementSession(store, token);
+    expect(await renewEntitlementSession(store, token)).toBeNull();
+    expect(await findBestEntitlement(store, { entitlementToken: token })).toBeNull();
   });
 });
 
