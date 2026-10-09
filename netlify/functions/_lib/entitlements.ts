@@ -67,6 +67,7 @@ export type EventLike = {
 const ENTITLEMENT_PREFIX = "ai-advantage:entitlements";
 const SESSION_COOKIE = "ai_advantage_entitlement";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30;
+const CRYPTO_CLAIM_IN_FLIGHT_MS = 60 * 1000;
 const EVENT_ACCESS_HOURS = Number(process.env.ENTITLEMENT_EVENT_ACCESS_HOURS || "72");
 const LOCAL_ENTITLEMENT_PATH = join(process.cwd(), ".netlify", "state", "ai-advantage-entitlements.json");
 
@@ -680,26 +681,45 @@ export async function upsertCryptoEntitlement(
   // A read-then-write check let two concurrent first claims both pass and both
   // receive sessions. Create-if-absent picks exactly one winner; only it goes
   // on to write the record, indexes and session.
-  const won = await store.setIfAbsent(cryptoTxClaimKey(txHash), {
-    claimedAt: new Date().toISOString(),
-    walletAddress: normalizeWallet(input.walletAddress),
-  });
+  const walletAddress = normalizeWallet(input.walletAddress);
+  const markerKey = cryptoTxClaimKey(txHash);
+  const won = await store.setIfAbsent(markerKey, { claimedAt: new Date().toISOString(), walletAddress });
   if (!won) {
-    throw new CryptoTransactionAlreadyClaimedError(txHash);
+    // A marker that still has no record well after it was written means the
+    // winner died between the two writes. The same paying wallet (already
+    // proven by signature) may finish that claim; anyone else is refused, and a
+    // fresh marker is treated as a winner still in flight.
+    const marker = await store.get<{ walletAddress?: string; claimedAt?: string }>(markerKey);
+    const markerAgeMs = Date.now() - new Date(marker?.claimedAt ?? 0).getTime();
+    const orphaned =
+      marker?.walletAddress === walletAddress &&
+      markerAgeMs > CRYPTO_CLAIM_IN_FLIGHT_MS &&
+      !(await getRecord(store, id));
+    if (!orphaned) {
+      throw new CryptoTransactionAlreadyClaimedError(txHash);
+    }
   }
 
   const tier = input.tier === "premium" ? "premium" : "event";
-  return upsertEntitlement(store, {
-    id,
-    tier,
-    source: "crypto",
-    label: input.label,
-    status: "active",
-    activatedAt: new Date().toISOString(),
-    expiresAt: tier === "event" ? eventAccessExpiry() : undefined,
-    email: input.email,
-    userId: input.userId,
-    walletAddress: input.walletAddress,
-    cryptoTxHash: txHash,
-  });
+  try {
+    return await upsertEntitlement(store, {
+      id,
+      tier,
+      source: "crypto",
+      label: input.label,
+      status: "active",
+      activatedAt: new Date().toISOString(),
+      expiresAt: tier === "event" ? eventAccessExpiry() : undefined,
+      email: input.email,
+      userId: input.userId,
+      walletAddress,
+      cryptoTxHash: txHash,
+    });
+  } catch (error) {
+    // Do not leave the payment permanently unclaimable behind a bare marker.
+    if (!(await getRecord(store, id).catch(() => null))) {
+      await store.delete(markerKey).catch(() => undefined);
+    }
+    throw error;
+  }
 }

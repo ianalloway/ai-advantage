@@ -97,6 +97,40 @@ describe("concurrent first crypto claims", () => {
   });
 });
 
+describe("crypto claim marker recovery", () => {
+  const txHash = `0x${"f".repeat(64)}`;
+  const payer = `0x${"b".repeat(40)}`;
+  const claim = (store: EntitlementStore, walletAddress = payer) =>
+    upsertCryptoEntitlement(store, { email: "payer@example.com", walletAddress, txHash, tier: "event", label: "Pass" });
+
+  it("releases the claim marker when the record write fails, so the payer can retry", async () => {
+    const store = memoryStore();
+    const set = store.set;
+    let failNext = true;
+    store.set = async (key, value, options) => {
+      if (failNext && key.includes(":record:")) {
+        failNext = false;
+        throw new Error("blob write failed");
+      }
+      return set(key, value, options);
+    };
+    await expect(claim(store)).rejects.toThrow("blob write failed");
+    expect(await claim(store)).toMatchObject({ cryptoTxHash: txHash });
+  });
+
+  it("lets only the marker's own wallet finish an orphaned claim", async () => {
+    const store = memoryStore();
+    await store.setIfAbsent(`ai-advantage:entitlements:claim:crypto-tx:${txHash}`, {
+      walletAddress: payer,
+      claimedAt: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+    });
+    await expect(claim(store, `0x${"9".repeat(40)}`)).rejects.toBeInstanceOf(CryptoTransactionAlreadyClaimedError);
+    expect(await claim(store)).toMatchObject({ walletAddress: payer });
+    // Once the record exists, the claim is closed again.
+    await expect(claim(store)).rejects.toBeInstanceOf(CryptoTransactionAlreadyClaimedError);
+  });
+});
+
 const HOUR = 60 * 60 * 1000;
 const future = (ms = HOUR) => new Date(Date.now() + ms).toISOString();
 const past = (ms = HOUR) => new Date(Date.now() - ms).toISOString();
