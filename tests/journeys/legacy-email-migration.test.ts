@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@netlify/blobs", async () => (await import("../helpers/blobsMock")).blobsModule);
 
-import { resetBlobs } from "../helpers/blobsMock";
+import { blobStores, resetBlobs } from "../helpers/blobsMock";
 import { handler as auth } from "../../netlify/functions/auth";
 import { handler as entitlements } from "../../netlify/functions/entitlements";
 import { handler as admin } from "../../netlify/functions/admin-entitlements";
@@ -80,23 +80,63 @@ describe("legacy email binding migration", () => {
     // A dry run changes nothing.
     expect(await tier(legacy.cookie)).toBe("free");
 
-    const applied = await call({ action: "apply-legacy-email", cutoff });
+    const reviewed = plan.body.plan.map(({ entitlementId, userId }: { entitlementId: string; userId: string }) => ({
+      entitlementId,
+      userId,
+    }));
+    const applied = await call({ action: "apply-legacy-email", cutoff, bindings: reviewed });
     expect(applied.body.count).toBe(1);
     expect(await tier(legacy.cookie)).toBe("premium");
     expect(await tier(squatter.cookie)).toBe("free");
 
-    // Idempotent.
-    expect((await call({ action: "apply-legacy-email", cutoff })).body.count).toBe(0);
+    // Idempotent: the same reviewed pair no longer qualifies.
+    const again = await call({ action: "apply-legacy-email", cutoff, bindings: reviewed });
+    expect(again.body).toMatchObject({ count: 0, skipped: [expect.objectContaining({ reason: "no longer qualifies" })] });
   });
 
-  it("lets the operator exclude reviewed pairs and bind a purchase by id", async () => {
+  it("applies only reviewed pairs that still qualify, never a pair outside the plan", async () => {
+    const legacy = await signup("legacy@example.test", "legacy");
+    const other = await signup("other@example.test", "other");
+    await guestPurchase("legacy@example.test", 1);
+    vi.setSystemTime(new Date(Date.now() + HOUR));
+    const cutoff = new Date().toISOString();
+
+    // An operator typo (or tampered input) pairing the purchase with another account.
+    const forged = await call({
+      action: "apply-legacy-email", cutoff,
+      bindings: [{ entitlementId: "stripe:subscription:sub_1", userId: other.id }],
+    });
+    expect(forged.body).toMatchObject({ count: 0, skipped: [expect.objectContaining({ userId: other.id })] });
+    expect(await tier(other.cookie)).toBe("free");
+    expect(await tier(legacy.cookie)).toBe("free");
+    expect((await call({ action: "apply-legacy-email", cutoff })).status).toBe(400);
+  });
+
+  it("skips and reports an email shared by more than one account", async () => {
+    const first = await signup("shared@example.test", "first");
+    await guestPurchase("shared@example.test", 1);
+    // A duplicate account for the same email, e.g. from a signup race.
+    const authStore = blobStores.get("ai-advantage-auth")!;
+    const original = authStore.get(`ai-advantage:auth:user:${first.id}`)!;
+    authStore.set("ai-advantage:auth:user:duplicate", {
+      ...original, value: { ...(original.value as object), id: "duplicate", username: "dupe" },
+    });
+    vi.setSystemTime(new Date(Date.now() + HOUR));
+    const plan = await call({ action: "plan-legacy-email", cutoff: new Date().toISOString() });
+    expect(plan.body.plan).toEqual([]);
+    expect(plan.body.ambiguous).toEqual([
+      { email: "shared@example.test", userIds: expect.arrayContaining([first.id, "duplicate"]), entitlementIds: ["stripe:subscription:sub_1"] },
+    ]);
+  });
+
+  it("lets the operator bind a purchase by id", async () => {
     const account = await signup("legacy@example.test", "legacy");
     await guestPurchase("legacy@example.test", 1);
     vi.setSystemTime(new Date(Date.now() + HOUR));
     const cutoff = new Date().toISOString();
 
-    const skipped = await call({ action: "apply-legacy-email", cutoff, exclude: ["stripe:subscription:sub_1"] });
-    expect(skipped.body.count).toBe(0);
+    expect((await call({ action: "plan-legacy-email", cutoff })).body.count).toBe(1);
+    // Not approving the pair leaves it unbound.
     expect(await tier(account.cookie)).toBe("free");
 
     const bound = await call({ action: "bind", userId: account.id, entitlementId: "stripe:subscription:sub_1" });

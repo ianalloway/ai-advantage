@@ -93,7 +93,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   const body = (req.body && typeof req.body === "object" ? req.body : {}) as {
     action?: string;
     cutoff?: string;
-    exclude?: unknown;
+    bindings?: unknown;
     userId?: string;
     entitlementId?: string;
   };
@@ -114,14 +114,26 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
       res.status(400).json({ success: false, message: "cutoff must be an ISO timestamp that is not in the future." });
       return;
     }
-    const plan = await planLegacyEmailBindings(store, await listAccounts(req), cutoff);
+    const { plan, ambiguous } = await planLegacyEmailBindings(store, await listAccounts(req), cutoff);
     if (body.action === "plan-legacy-email") {
-      res.status(200).json({ success: true, dryRun: true, count: plan.length, plan });
+      res.status(200).json({ success: true, dryRun: true, count: plan.length, plan, ambiguous });
       return;
     }
-    const exclude = new Set(Array.isArray(body.exclude) ? body.exclude.filter((id): id is string => typeof id === "string") : []);
-    const applied = await applyLegacyEmailBindings(store, plan, exclude);
-    res.status(200).json({ success: true, dryRun: false, count: applied.length, applied });
+    // Apply only the pairs the operator reviewed in the dry run.
+    const approved = Array.isArray(body.bindings)
+      ? body.bindings.flatMap((pair: unknown) => {
+          const candidate = pair as { entitlementId?: unknown; userId?: unknown } | null;
+          return typeof candidate?.entitlementId === "string" && typeof candidate?.userId === "string"
+            ? [{ entitlementId: candidate.entitlementId, userId: candidate.userId }]
+            : [];
+        })
+      : [];
+    if (approved.length === 0) {
+      res.status(400).json({ success: false, message: "bindings must list the reviewed {entitlementId, userId} pairs." });
+      return;
+    }
+    const { applied, skipped } = await applyLegacyEmailBindings(store, plan, approved);
+    res.status(200).json({ success: true, dryRun: false, count: applied.length, applied, skipped, ambiguous });
     return;
   }
 
