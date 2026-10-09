@@ -50,6 +50,20 @@ const STORE_READ_ATTEMPTS = 8;
 const STORE_READ_RETRY_MS = 250;
 export const LOCAL_AUTH_SECRET = "ai-advantage-local-development-auth-secret";
 
+// Login throttling. Failures are counted per account (or per unknown login
+// string) and per client IP in the auth store, so limits survive cold starts
+// and are shared across function instances. Past the free attempts each further
+// failure doubles a lockout, capped, and a quiet window resets the count.
+export const LOGIN_LIMITS = {
+  account: { freeAttempts: 5 },
+  ip: { freeAttempts: 20 },
+  baseLockSeconds: 30,
+  maxLockSeconds: 15 * 60,
+  quietResetSeconds: 15 * 60,
+} as const;
+const INVALID_LOGIN_MESSAGE = "That email/username and password combination is not valid.";
+const THROTTLED_LOGIN_MESSAGE = "Too many login attempts. Wait a few minutes and try again.";
+
 let redisClient: Redis | null | undefined;
 let activeStoreMode = "none";
 let localAuthData: Record<string, unknown> | null = null;
@@ -456,6 +470,57 @@ async function getFirstEventually<T>(store: AuthStore, keys: string[]) {
   return null;
 }
 
+interface LoginAttempts {
+  failures: number;
+  lastFailureAt: string;
+  lockedUntil?: string;
+}
+
+function loginAttemptsKey(scope: "account" | "ip", id: string) {
+  return `${ACCOUNT_PREFIX}:login-attempts:${scope}:${createHash("sha256").update(id).digest("hex")}`;
+}
+
+/** Client IP as seen by Netlify's edge; x-nf-client-connection-ip cannot be set by the client. */
+export function getClientIp(headers: NetlifyEvent["headers"]) {
+  const direct = getHeader(headers, "x-nf-client-connection-ip") ?? getHeader(headers, "client-ip");
+  if (direct) return direct.trim();
+  const forwarded = getHeader(headers, "x-forwarded-for");
+  return forwarded?.split(",")[0]?.trim() || "unknown";
+}
+
+async function lockSecondsRemaining(store: AuthStore, key: string) {
+  const attempts = await store.get<LoginAttempts>(key);
+  if (!attempts?.lockedUntil) return 0;
+  const remainingMs = new Date(attempts.lockedUntil).getTime() - Date.now();
+  return remainingMs > 0 ? Math.ceil(remainingMs / 1000) : 0;
+}
+
+async function recordLoginFailure(store: AuthStore, key: string, freeAttempts: number) {
+  const now = Date.now();
+  const previous = await store.get<LoginAttempts>(key);
+  const stale =
+    !previous ||
+    now - new Date(previous.lastFailureAt).getTime() > LOGIN_LIMITS.quietResetSeconds * 1000;
+  const failures = (stale ? 0 : previous.failures) + 1;
+  const excess = failures - freeAttempts;
+  const lockSeconds =
+    excess >= 0 ? Math.min(LOGIN_LIMITS.baseLockSeconds * 2 ** excess, LOGIN_LIMITS.maxLockSeconds) : 0;
+  const next: LoginAttempts = {
+    failures,
+    lastFailureAt: new Date(now).toISOString(),
+    ...(lockSeconds ? { lockedUntil: new Date(now + lockSeconds * 1000).toISOString() } : {}),
+  };
+  await store.set(key, next, { ex: LOGIN_LIMITS.quietResetSeconds + LOGIN_LIMITS.maxLockSeconds });
+}
+
+function throttled(retryAfterSeconds: number) {
+  return response(
+    429,
+    { success: false, message: THROTTLED_LOGIN_MESSAGE },
+    { "Retry-After": String(retryAfterSeconds) },
+  );
+}
+
 async function getCurrentUser(store: AuthStore, event: NetlifyEvent) {
   const token = getCookie(event.headers, COOKIE_NAME);
   if (!token) return null;
@@ -593,23 +658,33 @@ export const handler = async (event: NetlifyEvent) => {
       return response(400, { success: false, message: "Enter both your login and password." });
     }
 
+    const ipKey = loginAttemptsKey("ip", getClientIp(event.headers));
+    const ipLock = await lockSecondsRemaining(store, ipKey);
+    if (ipLock > 0) return throttled(ipLock);
+
     const normalizedEmail = normalizeEmail(login);
     const normalizedUsername = normalizeUsername(login);
     const userId = await getFirstEventually<string>(store, [emailKey(normalizedEmail), usernameKey(normalizedUsername)]);
+    // Unknown logins are throttled under their own key, so a lockout does not
+    // reveal whether an account exists.
+    const accountKey = loginAttemptsKey("account", userId ?? `unknown:${normalizedEmail}`);
+    const accountLock = await lockSecondsRemaining(store, accountKey);
+    if (accountLock > 0) return throttled(accountLock);
 
-    if (!userId) {
-      return response(404, { success: false, message: "We could not find an account with that email or username." });
+    const user = userId ? await getEventually<StoredSiteUser>(store, userKey(userId)) : null;
+    const verification = user
+      ? await verifyPassword(password, user)
+      : // Spend the same hashing work for unknown accounts so timing does not enumerate them.
+        await hashPassword(password, randomBytes(16).toString("hex")).then(() => ({ ok: false, needsRehash: false }));
+    if (!user || !verification.ok) {
+      await Promise.all([
+        recordLoginFailure(store, accountKey, LOGIN_LIMITS.account.freeAttempts),
+        recordLoginFailure(store, ipKey, LOGIN_LIMITS.ip.freeAttempts),
+      ]);
+      return response(401, { success: false, message: INVALID_LOGIN_MESSAGE });
     }
 
-    const user = await getEventually<StoredSiteUser>(store, userKey(userId));
-    if (!user) {
-      return response(401, { success: false, message: "That password does not match this account." });
-    }
-
-    const verification = await verifyPassword(password, user);
-    if (!verification.ok) {
-      return response(401, { success: false, message: "That password does not match this account." });
-    }
+    await store.delete(accountKey);
 
     if (verification.needsRehash) {
       try {
