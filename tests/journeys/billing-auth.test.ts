@@ -90,6 +90,24 @@ describe('provider-mocked account and checkout journeys', () => {
     expect(netlify.body).not.toContain(sessionId);
   });
 
+  it('caps funnel meta size and rate-limits funnel posts per IP', async () => {
+    const post = async (body: Record<string, unknown>, ip = '203.0.113.9') => {
+      const res = response();
+      await funnel({ blobs, method: 'POST', headers: { ...headers(), 'x-nf-client-connection-ip': ip }, body }, res);
+      return res;
+    };
+    const huge = Object.fromEntries(Array.from({ length: 11 }, (_, i) => [`k${i}`, 'v']));
+    expect((await post({ name: 'cancel_reason', meta: huge }, '203.0.113.1')).statusCode).toBe(400);
+    expect((await post({ name: 'cancel_reason', meta: { note: 'x'.repeat(201) } }, '203.0.113.1')).statusCode).toBe(400);
+    expect((await post({ name: 'cancel_reason', meta: { nested: { deep: true } } }, '203.0.113.1')).statusCode).toBe(400);
+    expect((await post({ name: 'cancel_reason', meta: { plan: 'pro', months: 3 } }, '203.0.113.1')).statusCode).toBe(200);
+
+    for (let i = 0; i < 30; i += 1) expect((await post({ name: 'cancel_reason' })).statusCode).toBe(200);
+    const limited = await post({ name: 'cancel_reason' });
+    expect(limited.statusCode).toBe(429);
+    expect((await post({ name: 'cancel_reason' }, '203.0.113.10')).statusCode).toBe(200);
+  });
+
   it.each(['premium', 'one-time'])('signup → login → %s checkout → access → logout → denial', async (mode) => {
     expect(await access()).toBe('free');
     const signup = await auth(event('signup', credentials));

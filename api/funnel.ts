@@ -4,6 +4,7 @@ import {
   appendFunnelEvent,
   type FunnelEventName,
 } from "../netlify/lib/funnel";
+import { consumeRateLimit, getClientIp } from "../netlify/lib/rate-limit";
 
 type RequestLike = {
   blobs?: string;
@@ -27,6 +28,32 @@ const ALLOWED: FunnelEventName[] = [
   "trial_started",
 ];
 
+// Every event is appended to one shared list, so both the rate and the size of
+// what an anonymous caller can add are capped.
+const EVENTS_PER_IP = 30;
+const EVENT_WINDOW_SECONDS = 10 * 60;
+const MAX_META_KEYS = 10;
+const MAX_META_STRING = 200;
+
+type MetaValue = string | number | boolean | null;
+
+/** Validated meta, undefined when absent, or null when it is not acceptable. */
+export function parseMeta(meta: unknown): Record<string, MetaValue> | undefined | null {
+  if (meta === undefined || meta === null) return undefined;
+  if (typeof meta !== "object" || Array.isArray(meta)) return null;
+  const entries = Object.entries(meta as Record<string, unknown>);
+  if (entries.length > MAX_META_KEYS) return null;
+  const valid = entries.every(
+    ([key, value]) =>
+      /^[A-Za-z0-9_]{1,40}$/.test(key) &&
+      (value === null ||
+        typeof value === "boolean" ||
+        (typeof value === "number" && Number.isFinite(value)) ||
+        (typeof value === "string" && value.length <= MAX_META_STRING)),
+  );
+  return valid ? (Object.fromEntries(entries) as Record<string, MetaValue>) : null;
+}
+
 export default async function handler(req: RequestLike, res: ResponseLike) {
   res.setHeader("Content-Type", "application/json");
   if (req.method !== "POST") {
@@ -40,15 +67,37 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     return;
   }
 
-  const body = (typeof req.body === "string" ? JSON.parse(req.body) : req.body ?? {}) as {
-    name?: string;
-    mode?: unknown;
-    reason?: string;
-    meta?: Record<string, string | number | boolean | null | undefined>;
-  };
+  const limit = await consumeRateLimit(
+    store.increment,
+    `ai-advantage:ratelimit:funnel:${getClientIp(req.headers)}`,
+    EVENTS_PER_IP,
+    EVENT_WINDOW_SECONDS,
+  );
+  if (!limit.ok) {
+    res.setHeader("Retry-After", String(limit.retryAfterSeconds));
+    res.status(429).json({ success: false, message: "Too many funnel events." });
+    return;
+  }
+
+  let body: { name?: string; mode?: unknown; reason?: unknown; meta?: unknown };
+  try {
+    body = (typeof req.body === "string" ? JSON.parse(req.body) : req.body ?? {}) as typeof body;
+  } catch {
+    res.status(400).json({ success: false, message: "Invalid JSON body." });
+    return;
+  }
 
   if (!body.name || !ALLOWED.includes(body.name as FunnelEventName)) {
     res.status(400).json({ success: false, message: "Invalid funnel event name." });
+    return;
+  }
+
+  const meta = parseMeta(body.meta);
+  if (meta === null) {
+    res.status(400).json({
+      success: false,
+      message: `meta must be an object of at most ${MAX_META_KEYS} short scalar fields.`,
+    });
     return;
   }
 
@@ -62,7 +111,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     reason: typeof body.reason === "string" ? body.reason.slice(0, 200) : undefined,
     email: user?.email,
     userId: user?.id,
-    meta: body.meta,
+    meta,
   });
 
   res.status(200).json({ success: true });
