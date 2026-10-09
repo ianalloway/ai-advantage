@@ -18,7 +18,7 @@ import {
   type EntitlementStore,
 } from "../netlify/functions/_lib/entitlements";
 import { isEmailConfigured, sendEmail } from "../netlify/lib/email";
-import { consumeRateLimit, getClientIp } from "../netlify/lib/rate-limit";
+import { consumeRateLimit, getClientIp, withInProcessFallback } from "../netlify/lib/rate-limit";
 import { rejectCrossSiteJson } from "../netlify/lib/request-guard";
 
 type RequestLike = {
@@ -131,8 +131,10 @@ async function requestLink(req: RequestLike, res: ResponseLike, store: Entitleme
     [`ai-advantage:ratelimit:recover-email-ip:${emailHash}:${sha256(ip)}`, REQUESTS_PER_EMAIL_AND_IP],
     [`ai-advantage:ratelimit:recover-email:${emailHash}`, REQUESTS_PER_EMAIL],
   ];
+  // Degrades to the in-process limiter, so recovery keeps working on eventual-only Blobs.
+  const increment = withInProcessFallback(store.increment, "purchase-recovery");
   for (const [key, { limit, windowSeconds }] of limits) {
-    const result = await consumeRateLimit(store.increment, key, limit, windowSeconds);
+    const result = await consumeRateLimit(increment, key, limit, windowSeconds);
     if (!result.ok) {
       res.setHeader("Retry-After", String(result.retryAfterSeconds));
       res.status(429).json({ success: false, message: "Too many restore requests. Try again later." });

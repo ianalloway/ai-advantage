@@ -214,6 +214,27 @@ describe("purchase recovery by email ownership", () => {
     expect(sentEmails).toHaveLength(10);
   });
 
+  it("keeps sending restore links, limited in-process, when strong Blobs reads are unavailable", async () => {
+    const { resetInProcessFallback } = await import("../../netlify/lib/rate-limit");
+    resetInProcessFallback();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const eventual = Buffer.from(JSON.stringify({ url: "https://blob.invalid" })).toString("base64");
+    const ask = async () =>
+      (await recover({
+        blobs: eventual, httpMethod: "POST",
+        headers: headers({ "x-nf-client-connection-ip": "198.51.100.55" }),
+        body: JSON.stringify({ email: BUYER }),
+      })).statusCode;
+    try {
+      for (let i = 0; i < 3; i += 1) expect(await ask()).toBe(200);
+      expect(sentEmails).toHaveLength(3);
+      expect(await ask()).toBe(429);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("[rate-limit:in-process-fallback] purchase-recovery"));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("fails closed when no app origin is configured", async () => {
     vi.stubEnv("PUBLIC_APP_URL", "");
     vi.stubEnv("URL", "");
