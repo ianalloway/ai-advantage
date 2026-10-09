@@ -104,6 +104,17 @@ describe("login throttling", () => {
     expect(throttledCount).toHaveLength(15 - LOGIN_LIMITS.pair.attempts);
   });
 
+  it("fails closed with 429, not 500, when Blobs has no strongly consistent reads", async () => {
+    const handler = await loadAuth();
+    const eventual = Buffer.from(JSON.stringify({ url: "https://blob.invalid" })).toString("base64");
+    const result = await handler({
+      blobs: eventual, path: "/api/auth/login", httpMethod: "POST",
+      body: JSON.stringify({ login: owner.email, password: owner.password }),
+      headers: { host: "example.test", "x-forwarded-proto": "https", "content-type": "application/json" },
+    });
+    expect(result.statusCode).toBe(429);
+  });
+
   it("gives unknown accounts and wrong passwords the same generic answer", async () => {
     const handler = await loadAuth();
     const unknown = await login(handler, { login: "nobody@example.test", password: "whatever-password" });

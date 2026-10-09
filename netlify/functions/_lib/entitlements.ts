@@ -3,7 +3,13 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { connectLambda, getStore, setEnvironmentContext } from "@netlify/blobs";
 import { Redis } from "@upstash/redis";
-import { blobsIncrement, memoryIncrement, redisIncrement, type IncrementFn } from "../../lib/rate-limit";
+import {
+  blobsIncrement,
+  memoryIncrement,
+  redisIncrement,
+  unavailableIncrement,
+  type IncrementFn,
+} from "../../lib/rate-limit";
 
 export type AccessTier = "free" | "event" | "premium";
 export type AccessSource = "stripe" | "crypto" | "manual";
@@ -207,14 +213,14 @@ function getBlobsStore(event: EventLike & { blobs: string }, consistency: "event
         siteID: headers["x-nf-site-id"],
         token: payload.token,
       });
-      return getStore({ name: "ai-advantage-entitlements", consistency: "strong" });
+      return { store: getStore({ name: "ai-advantage-entitlements", consistency: "strong" }), strong: true };
     }
   }
   connectLambda({
     blobs: event.blobs,
     headers: normalizeLambdaHeaders(event.headers),
   });
-  return getStore("ai-advantage-entitlements");
+  return { store: getStore("ai-advantage-entitlements"), strong: false };
 }
 
 /**
@@ -228,7 +234,7 @@ export function getEntitlementStore(
 ): EntitlementStore | null {
   if (event?.blobs) {
     try {
-      const store = getBlobsStore(event as EventLike & { blobs: string }, options?.consistency ?? "eventual");
+      const { store, strong } = getBlobsStore(event as EventLike & { blobs: string }, options?.consistency ?? "eventual");
       return {
         mode: "blobs",
         async get<T>(key: string) {
@@ -241,7 +247,8 @@ export function getEntitlementStore(
           const result = await store.setJSON(key, value, { onlyIfNew: true });
           return result?.modified === true;
         },
-        increment: blobsIncrement(store),
+        // Counters only on strongly consistent reads; see unavailableIncrement.
+        increment: strong ? blobsIncrement(store) : unavailableIncrement,
         async delete(key: string) {
           await store.delete(key);
         },

@@ -15,6 +15,23 @@ export interface CounterResult {
 
 export type IncrementFn = (key: string, delta: number, windowSeconds: number) => Promise<CounterResult>;
 
+/** Thrown when a store cannot provide an atomic, strongly consistent counter. */
+export class CounterUnavailableError extends Error {
+  constructor(reason: string) {
+    super(`Rate-limit counter unavailable: ${reason}`);
+    this.name = "CounterUnavailableError";
+  }
+}
+
+/**
+ * For stores whose reads may be stale (Netlify Blobs without the uncached edge
+ * URL): a compare-and-swap loop there can spin on an old ETag forever, so these
+ * stores do not offer counters at all and callers apply their own policy.
+ */
+export const unavailableIncrement: IncrementFn = async () => {
+  throw new CounterUnavailableError("store is not strongly consistent");
+};
+
 interface StoredCounter {
   count: number;
   resetAt: number;
@@ -63,7 +80,7 @@ export function blobsIncrement(store: BlobsCasStore): IncrementFn {
       if (result && result.modified) return next;
       await new Promise((resolve) => setTimeout(resolve, 5 + Math.random() * 20 * (attempt + 1)));
     }
-    throw new Error(`Counter ${key} is too contended to update.`);
+    throw new CounterUnavailableError(`counter ${key} is too contended to update`);
   };
 }
 
@@ -101,17 +118,29 @@ export function getClientIp(headers: HeaderMap | undefined) {
   return read("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
 }
 
-/** Count one hit against `limit` per window. `ok` is false once the limit is exceeded. */
+/**
+ * Count one hit against `limit` per window. `ok` is false once the limit is
+ * exceeded. When the counter cannot be updated (no strongly consistent store,
+ * or unresolved contention) the caller's policy decides: "deny" for anything
+ * guarding credentials or paid access, "allow" for best-effort telemetry. It
+ * never throws.
+ */
 export async function consumeRateLimit(
   increment: IncrementFn,
   key: string,
   limit: number,
   windowSeconds: number,
+  onUnavailable: "deny" | "allow" = "deny",
 ) {
-  const { count, resetAt } = await increment(key, 1, windowSeconds);
-  return {
-    ok: count <= limit,
-    count,
-    retryAfterSeconds: Math.max(1, Math.ceil((resetAt - Date.now()) / 1000)),
-  };
+  try {
+    const { count, resetAt } = await increment(key, 1, windowSeconds);
+    return {
+      ok: count <= limit,
+      count,
+      retryAfterSeconds: Math.max(1, Math.ceil((resetAt - Date.now()) / 1000)),
+    };
+  } catch (error) {
+    console.warn("[rate-limit]", error instanceof Error ? error.message : error);
+    return { ok: onUnavailable === "allow", count: Number.NaN, retryAfterSeconds: 60 };
+  }
 }

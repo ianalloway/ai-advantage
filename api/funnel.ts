@@ -61,7 +61,8 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     return;
   }
 
-  const store = getEntitlementStore({ blobs: req.blobs, headers: req.headers });
+  // Strong reads so the per-IP counter works on Netlify Blobs.
+  const store = getEntitlementStore({ blobs: req.blobs, headers: req.headers }, { consistency: "strong" });
   if (!store) {
     res.status(503).json({ success: false, message: "Funnel store unavailable." });
     return;
@@ -72,6 +73,8 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     `ai-advantage:ratelimit:funnel:${getClientIp(req.headers)}`,
     EVENTS_PER_IP,
     EVENT_WINDOW_SECONDS,
+    // Telemetry must never block billing UX: allow when the counter is unavailable.
+    "allow",
   );
   if (!limit.ok) {
     res.setHeader("Retry-After", String(limit.retryAfterSeconds));

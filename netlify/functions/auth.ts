@@ -6,9 +6,11 @@ import { getStore, setEnvironmentContext } from "@netlify/blobs";
 import { Redis } from "@upstash/redis";
 import {
   blobsIncrement,
+  consumeRateLimit,
   getClientIp,
   memoryIncrement,
   redisIncrement,
+  unavailableIncrement,
   type IncrementFn,
 } from "../lib/rate-limit";
 
@@ -221,7 +223,8 @@ function getAuthStore(event: NetlifyEvent): AuthStore | null {
         async delete(key: string) {
           await store.delete(key);
         },
-        increment: blobsIncrement(store),
+        // Without strong reads there is no safe atomic counter: logins fail closed.
+        increment: strongReads ? blobsIncrement(store) : unavailableIncrement,
       };
     } catch (error) {
       console.warn("Netlify Blobs auth store is unavailable; checking fallback store.", error);
@@ -521,9 +524,10 @@ function loginAttemptsKey(scope: LoginScope, id: string) {
 async function reserveLoginAttempt(store: AuthStore, scopes: Array<[LoginScope, string]>) {
   for (const [scope, key] of scopes) {
     const { attempts, windowSeconds } = LOGIN_LIMITS[scope];
-    const { count, resetAt } = await store.increment(key, 1, windowSeconds);
-    if (count > attempts) {
-      return { ok: false as const, retryAfterSeconds: Math.max(1, Math.ceil((resetAt - Date.now()) / 1000)) };
+    // Fails closed: an unavailable or contended counter refuses the attempt.
+    const limit = await consumeRateLimit(store.increment, key, attempts, windowSeconds, "deny");
+    if (!limit.ok) {
+      return { ok: false as const, retryAfterSeconds: limit.retryAfterSeconds };
     }
   }
   return { ok: true as const };
@@ -704,10 +708,12 @@ export const handler = async (event: NetlifyEvent) => {
 
     // A correct password does not count against the limits, and this IP is
     // remembered as one the owner uses.
+    const refund = (key: string, windowSeconds: number) =>
+      store.increment(key, -1, windowSeconds).catch(() => undefined);
     await Promise.all([
       store.delete(pairKey),
-      store.increment(ipKey, -1, LOGIN_LIMITS.ip.windowSeconds),
-      knownIp ? Promise.resolve() : store.increment(accountKey, -1, LOGIN_LIMITS.account.windowSeconds),
+      refund(ipKey, LOGIN_LIMITS.ip.windowSeconds),
+      knownIp ? Promise.resolve() : refund(accountKey, LOGIN_LIMITS.account.windowSeconds),
       store.set(
         knownLoginIpKey(user.id, ip),
         { expiresAt: new Date(Date.now() + KNOWN_LOGIN_IP_DAYS * 86_400_000).toISOString() },

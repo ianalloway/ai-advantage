@@ -108,6 +108,15 @@ describe('provider-mocked account and checkout journeys', () => {
     expect((await post({ name: 'cancel_reason' }, '203.0.113.10')).statusCode).toBe(200);
   });
 
+  it('accepts funnel posts (fail open) when strong reads are unavailable for the counter', async () => {
+    const eventual = Buffer.from(JSON.stringify({ url: 'https://blob.invalid' })).toString('base64');
+    for (let i = 0; i < 35; i += 1) {
+      const res = response();
+      await funnel({ blobs: eventual, method: 'POST', headers: headers(), body: { name: 'cancel_reason' } }, res);
+      expect(res.statusCode).toBe(200);
+    }
+  });
+
   it.each(['premium', 'one-time'])('signup → login → %s checkout → access → logout → denial', async (mode) => {
     expect(await access()).toBe('free');
     const signup = await auth(event('signup', credentials));

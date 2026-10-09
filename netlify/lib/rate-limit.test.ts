@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { blobsModule, resetBlobs } from "../../tests/helpers/blobsMock";
-import { blobsIncrement, consumeRateLimit, getClientIp, memoryIncrement } from "./rate-limit";
+import {
+  CounterUnavailableError,
+  blobsIncrement,
+  consumeRateLimit,
+  getClientIp,
+  memoryIncrement,
+  unavailableIncrement,
+} from "./rate-limit";
 
 describe("blobsIncrement", () => {
   // A plain read-then-write counter lets parallel requests all read the same
@@ -42,5 +49,30 @@ describe("getClientIp", () => {
     expect(getClientIp({ "x-forwarded-for": "1.1.1.1", "x-nf-client-connection-ip": "2.2.2.2" })).toBe("2.2.2.2");
     expect(getClientIp({ "x-forwarded-for": "3.3.3.3, 4.4.4.4" })).toBe("3.3.3.3");
     expect(getClientIp({})).toBe("unknown");
+  });
+});
+
+describe("counter failure policy", () => {
+  const broken = async () => {
+    throw new Error("store down");
+  };
+
+  it("never throws, denying or allowing per the caller's policy", async () => {
+    await expect(consumeRateLimit(broken, "k", 5, 60, "deny")).resolves.toMatchObject({ ok: false });
+    await expect(consumeRateLimit(broken, "k", 5, 60, "allow")).resolves.toMatchObject({ ok: true });
+  });
+
+  it("turns endless compare-and-swap contention into an unavailable counter, not a crash", async () => {
+    const neverWins = {
+      getWithMetadata: async () => ({ data: { count: 1, resetAt: Date.now() + 60_000 }, etag: '"stale"' }),
+      setJSON: async () => ({ modified: false }),
+    };
+    const increment = blobsIncrement(neverWins);
+    await expect(increment("k", 1, 60)).rejects.toBeInstanceOf(CounterUnavailableError);
+    await expect(consumeRateLimit(increment, "k", 5, 60, "deny")).resolves.toMatchObject({ ok: false });
+  });
+
+  it("refuses to count on a store without strong reads", async () => {
+    await expect(unavailableIncrement("k", 1, 60)).rejects.toBeInstanceOf(CounterUnavailableError);
   });
 });
