@@ -195,7 +195,25 @@ function getLocalStore(): EntitlementStore {
   };
 }
 
-function getBlobsStore(event: EventLike & { blobs: string }, consistency: "eventual" | "strong") {
+/**
+ * Open a Netlify Blobs store from a function event. For "strong", the context
+ * is wired by hand: connectLambda() drops the uncached edge URL that strong
+ * reads need, and calling it after a strong store was set up breaks that store.
+ * `strong` reports whether strong reads are actually available.
+ */
+export function openBlobsStore(
+  event: EventLike & { blobs: string },
+  name: string,
+  consistency: "eventual" | "strong",
+) {
+  return getBlobsStore(event, consistency, name);
+}
+
+function getBlobsStore(
+  event: EventLike & { blobs: string },
+  consistency: "eventual" | "strong",
+  name = "ai-advantage-entitlements",
+) {
   if (consistency === "strong") {
     // connectLambda() drops the uncached edge URL that strong reads need, so wire
     // the context by hand (same approach as the auth function).
@@ -213,14 +231,14 @@ function getBlobsStore(event: EventLike & { blobs: string }, consistency: "event
         siteID: headers["x-nf-site-id"],
         token: payload.token,
       });
-      return { store: getStore({ name: "ai-advantage-entitlements", consistency: "strong" }), strong: true };
+      return { store: getStore({ name, consistency: "strong" }), strong: true };
     }
   }
   connectLambda({
     blobs: event.blobs,
     headers: normalizeLambdaHeaders(event.headers),
   });
-  return { store: getStore("ai-advantage-entitlements"), strong: false };
+  return { store: getStore(name), strong: false };
 }
 
 /**

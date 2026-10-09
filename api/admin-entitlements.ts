@@ -4,9 +4,13 @@
 // Requires ADMIN_API_TOKEN (at least 32 characters) as a bearer token and fails
 // closed without it. Never call this from the browser.
 import { timingSafeEqual, createHash } from "node:crypto";
-import { connectLambda, getStore } from "@netlify/blobs";
 import { Redis } from "@upstash/redis";
-import { bindEntitlementToUser, getEntitlementStore, getHeader } from "../netlify/functions/_lib/entitlements";
+import {
+  bindEntitlementToUser,
+  getEntitlementStore,
+  getHeader,
+  openBlobsStore,
+} from "../netlify/functions/_lib/entitlements";
 import {
   applyLegacyEmailBindings,
   planLegacyEmailBindings,
@@ -44,8 +48,9 @@ function isAccount(value: unknown): value is LegacyAccount {
 
 async function listAccounts(req: RequestLike): Promise<LegacyAccount[]> {
   if (req.blobs) {
-    connectLambda({ blobs: req.blobs, headers: Object.fromEntries(Object.entries(req.headers).flatMap(([k, v]) => (typeof v === "string" ? [[k.toLowerCase(), v]] : []))) });
-    const store = getStore({ name: "ai-advantage-auth", consistency: "strong" });
+    // Same wiring as the entitlement store: connectLambda() here would reset the
+    // Blobs context without the uncached edge URL and break strong reads.
+    const { store } = openBlobsStore({ blobs: req.blobs, headers: req.headers }, "ai-advantage-auth", "strong");
     const { blobs } = await store.list({ prefix: USER_PREFIX });
     const users = await Promise.all(blobs.map(({ key }) => store.get(key, { type: "json" }) as Promise<unknown>));
     return users.filter(isAccount);
