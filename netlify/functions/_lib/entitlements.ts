@@ -398,7 +398,7 @@ export function getCookie(headers: EventLike["headers"], name: string) {
   return target ? decodeURIComponent(target.slice(name.length + 1)) : null;
 }
 
-function shouldUseSecureCookie(headers: EventLike["headers"]) {
+export function shouldUseSecureCookie(headers: EventLike["headers"]) {
   const host = getHeader(headers, "host") ?? "";
   const forwardedProto = getHeader(headers, "x-forwarded-proto") ?? "";
   if (/^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[?::1\]?)(:|$)/.test(host)) {

@@ -1,4 +1,6 @@
 import Stripe from "stripe";
+import { getCurrentSiteUserFromEvent } from "../netlify/functions/_lib/auth-session";
+import { hasCheckoutClaim } from "../netlify/lib/checkout-claim";
 import {
   createEntitlementSession,
   entitlementSessionCookie,
@@ -74,6 +76,17 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   try {
     const stripe = getStripeClient();
     const session = await stripe.checkout.sessions.retrieve(sessionId);
+    const hasBrowserClaim = hasCheckoutClaim(req.headers, sessionId, session.metadata?.checkout_claim_hash);
+    const siteUser = hasBrowserClaim
+      ? null
+      : await getCurrentSiteUserFromEvent({ blobs: req.blobs, headers: req.headers });
+    const ownsCheckout = hasBrowserClaim
+      || Boolean(siteUser && session.client_reference_id && siteUser.id === session.client_reference_id);
+    if (!ownsCheckout) {
+      jsonError(res, 403, "checkout_not_owned", "Checkout session does not belong to this browser or account.");
+      return;
+    }
+
     const paid =
       session.status === "complete" &&
       (session.payment_status === "paid" || session.payment_status === "no_payment_required");
