@@ -619,6 +619,35 @@ export async function requestPurchaseRestoreLink(email: string): Promise<string>
   return result.message || "Check your email for a restore link.";
 }
 
+async function postRestore(body: Record<string, unknown>) {
+  const response = await fetch("/api/recover-purchase", {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const result = (await response.json().catch(() => ({}))) as {
+    valid?: boolean;
+    success?: boolean;
+    account?: string | null;
+    message?: string;
+  };
+  return { ok: response.ok, ...result };
+}
+
+/** What confirming a restore link will do: `account` is the masked account it joins, or null for this browser only. */
+export async function previewPurchaseRestore(token: string) {
+  const result = await postRestore({ action: "preview", token });
+  return { valid: Boolean(result.ok && result.valid), account: result.account ?? null };
+}
+
+export async function redeemPurchaseRestore(token: string) {
+  const result = await postRestore({ action: "redeem", token });
+  if (!result.ok || !result.success) throw new Error(result.message || "That restore link was already used or has expired.");
+  await syncEntitlementAccess().catch(() => undefined);
+  return { account: result.account ?? null };
+}
+
 export async function openBillingPortal(): Promise<void> {
   const response = await fetch("/api/create-portal-session", {
     method: "POST",

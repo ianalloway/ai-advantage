@@ -14,7 +14,7 @@ const HOUR = 60 * 60 * 1000;
 
 async function signup(email: string, username: string) {
   const result = await auth({
-    blobs, path: "/api/auth/signup", httpMethod: "POST", headers: { host: "example.test" },
+    blobs, path: "/api/auth/signup", httpMethod: "POST", headers: { host: "example.test", "content-type": "application/json" },
     body: JSON.stringify({ email, username, password: "legacy-test-password" }),
   });
   return { id: JSON.parse(result.body).user.id as string, cookie: (result.headers["Set-Cookie"] as string).split(";")[0] };

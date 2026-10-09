@@ -14,7 +14,7 @@ let cookie = "";
 let sentEmails: Array<{ to: string[]; html: string; text: string }> = [];
 
 const headers = (extra: Record<string, string> = {}) => ({
-  host: "example.test", "x-forwarded-proto": "https", cookie, ...extra,
+  host: "example.test", "x-forwarded-proto": "https", "content-type": "application/json", cookie, ...extra,
 });
 
 function takeCookie(value: string | undefined) {
@@ -24,23 +24,35 @@ function takeCookie(value: string | undefined) {
   cookie = [...cookie.split("; ").filter((part) => part && !part.startsWith(`${name}=`)), pair].join("; ");
 }
 
+async function post(body: Record<string, unknown>, extraHeaders: Record<string, string> = {}) {
+  const result = await recover({ blobs, httpMethod: "POST", headers: headers(extraHeaders), body: JSON.stringify(body) });
+  return { ...result, json: JSON.parse(result.body) as Record<string, unknown> };
+}
+
 async function requestLink(email: string, extraHeaders: Record<string, string> = {}) {
-  return recover({
-    blobs, httpMethod: "POST", headers: headers({ "content-type": "application/json", ...extraHeaders }),
-    body: JSON.stringify({ email }),
-  });
+  const result = await post({ email }, extraHeaders);
+  takeCookie(result.headers["Set-Cookie"]);
+  return result;
 }
 
 function lastToken() {
-  const match = sentEmails.at(-1)?.text.match(/token=([A-Za-z0-9_-]{43})/);
+  const match = sentEmails.at(-1)?.text.match(/#restore=([A-Za-z0-9_-]{43})/);
   return match?.[1] ?? "";
 }
 
 async function redeem(token: string) {
-  return recover({
-    blobs, httpMethod: "POST", headers: headers({ "content-type": "application/x-www-form-urlencoded" }),
-    body: new URLSearchParams({ token }).toString(),
+  const result = await post({ action: "redeem", token });
+  takeCookie(result.headers["Set-Cookie"]);
+  return result;
+}
+
+async function signup(email: string, username: string) {
+  const result = await auth({
+    blobs, path: "/api/auth/signup", httpMethod: "POST", headers: headers(),
+    body: JSON.stringify({ email, username, password: `${username}-test-password` }),
   });
+  takeCookie(result.headers["Set-Cookie"] as string);
+  return JSON.parse(result.body).user as { id: string };
 }
 
 async function tier() {
@@ -71,32 +83,24 @@ beforeEach(async () => {
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 
 describe("purchase recovery by email ownership", () => {
-  it("restores a guest purchase into the signed-in account after the emailed link is used", async () => {
+  it("binds the purchase to the account that asked for the link, after confirmation", async () => {
     // The buyer has an account under a different address; email alone grants nothing.
-    const signup = await auth({
-      blobs, path: "/api/auth/signup", httpMethod: "POST", headers: headers(),
-      body: JSON.stringify({ email: "work@example.test", username: "buyer", password: "buyer-test-password" }),
-    });
-    takeCookie(signup.headers["Set-Cookie"] as string);
+    await signup("work@example.test", "buyer");
     expect(await tier()).toBe("free");
 
-    const requested = await requestLink(BUYER);
-    expect(requested.statusCode).toBe(200);
+    expect((await requestLink(BUYER)).statusCode).toBe(200);
     expect(sentEmails).toHaveLength(1);
     expect(sentEmails[0].to).toEqual([BUYER]);
-    expect(sentEmails[0].text).toContain("https://app.example.test/api/recover-purchase?token=");
+    // The token travels in the fragment, never in a query string a server sees.
+    expect(sentEmails[0].text).toContain("https://app.example.test/profile#restore=");
+    expect(sentEmails[0].text).not.toContain("?token=");
 
-    // Opening the link (or a mail scanner prefetching it) does not consume it.
-    const opened = await recover({
-      blobs, httpMethod: "GET", headers: headers(), body: null, queryStringParameters: { token: lastToken() },
-    });
-    expect(opened.statusCode).toBe(200);
-    expect(opened.body).toContain('method="post"');
+    // Preview does not consume the link and names the account it will join.
+    const preview = await post({ action: "preview", token: lastToken() });
+    expect(preview.json).toEqual({ valid: true, account: "w***@example.test" });
 
     const redeemed = await redeem(lastToken());
-    expect(redeemed.statusCode).toBe(303);
-    expect(redeemed.headers.Location).toBe("https://app.example.test/profile?restore=restored");
-    takeCookie(redeemed.headers["Set-Cookie"]);
+    expect(redeemed.json).toMatchObject({ success: true, account: "w***@example.test" });
     expect(await tier()).toBe("premium");
 
     // Bound to the account: a fresh browser with only the login cookie keeps it.
@@ -104,18 +108,48 @@ describe("purchase recovery by email ownership", () => {
     expect(await tier()).toBe("premium");
   });
 
+  // Signing the victim's browser into an attacker's account before the victim
+  // confirms must not move the victim's purchase into the attacker's account.
+  it("does not bind to an account other than the one that requested the link", async () => {
+    await signup("victim@example.test", "victim");
+    await requestLink(BUYER);
+    const token = lastToken();
+
+    // The browser is now signed in to a different account (swapped session).
+    const attacker = await signup("attacker@example.test", "attacker");
+    const preview = await post({ action: "preview", token });
+    expect(preview.json).toEqual({ valid: true, account: null });
+    const redeemed = await redeem(token);
+    expect(redeemed.json).toMatchObject({ success: true, account: null });
+
+    const store = getEntitlementStore({ blobs, headers: {} })!;
+    const record = await store.get<{ userId?: string }>("ai-advantage:entitlements:record:stripe:subscription:sub_guest");
+    expect(record?.userId).toBeUndefined();
+    expect(record?.userId).not.toBe(attacker.id);
+    // The browser that confirmed still gets the purchase cookie.
+    expect(await tier()).toBe("premium");
+  });
+
+  it("does not bind when confirmed from a browser without the request's nonce", async () => {
+    await signup("work@example.test", "buyer");
+    await requestLink(BUYER);
+    const token = lastToken();
+    cookie = cookie.split("; ").filter((part) => !part.startsWith("ai_advantage_restore_nonce=")).join("; ");
+    expect((await redeem(token)).json).toMatchObject({ success: true, account: null });
+  });
+
   it("works once, and not after it expires", async () => {
     await requestLink(BUYER);
     const token = lastToken();
-    expect((await redeem(token)).headers.Location).toContain("restore=restored");
-    expect((await redeem(token)).headers.Location).toContain("restore=invalid");
+    expect((await redeem(token)).json).toMatchObject({ success: true });
+    expect((await redeem(token)).statusCode).toBe(410);
 
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       await requestLink(BUYER);
       vi.setSystemTime(new Date(Date.now() + 31 * 60 * 1000));
       const late = await redeem(lastToken());
-      expect(late.headers.Location).toContain("restore=invalid");
+      expect(late.statusCode).toBe(410);
       expect(late.headers["Set-Cookie"]).toBeUndefined();
     } finally {
       vi.useRealTimers();
@@ -125,9 +159,16 @@ describe("purchase recovery by email ownership", () => {
   it("answers the same for unknown emails and never builds links from the Host header", async () => {
     const unknown = await requestLink("nobody@example.test");
     const known = await requestLink(BUYER, { host: "evil.example", "x-forwarded-host": "evil.example" });
-    expect(JSON.parse(unknown.body)).toEqual(JSON.parse(known.body));
+    expect(unknown.json).toEqual(known.json);
     expect(sentEmails).toHaveLength(1);
     expect(sentEmails[0].text).not.toContain("evil.example");
+  });
+
+  it("refuses cross-site and non-JSON requests", async () => {
+    expect((await post({ email: BUYER }, { "sec-fetch-site": "cross-site" })).statusCode).toBe(403);
+    expect((await post({ email: BUYER }, { origin: "https://evil.example" })).statusCode).toBe(403);
+    expect((await post({ email: BUYER }, { "content-type": "application/x-www-form-urlencoded" })).statusCode).toBe(415);
+    expect((await post({ email: BUYER }, { origin: "https://app.example.test", "sec-fetch-site": "same-origin" })).statusCode).toBe(200);
   });
 
   it("rate-limits link requests per email", async () => {
@@ -143,5 +184,18 @@ describe("purchase recovery by email ownership", () => {
     vi.stubEnv("URL", "");
     expect((await requestLink(BUYER)).statusCode).toBe(503);
     expect(sentEmails).toHaveLength(0);
+  });
+});
+
+describe("login CSRF", () => {
+  it("refuses cross-site and form-encoded auth POSTs", async () => {
+    const attempt = (extra: Record<string, string>) =>
+      auth({
+        blobs, path: "/api/auth/login", httpMethod: "POST", headers: headers(extra),
+        body: JSON.stringify({ login: "attacker@example.test", password: "attacker-test-password" }),
+      });
+    expect((await attempt({ "sec-fetch-site": "cross-site" })).statusCode).toBe(403);
+    expect((await attempt({ origin: "https://evil.example" })).statusCode).toBe(403);
+    expect((await attempt({ "content-type": "text/plain" })).statusCode).toBe(415);
   });
 });

@@ -13,6 +13,7 @@ import {
   unavailableIncrement,
   type IncrementFn,
 } from "../lib/rate-limit";
+import { rejectCrossSiteJson } from "../lib/request-guard";
 
 type NetlifyEvent = {
   blobs?: string;
@@ -593,6 +594,13 @@ export const handler = async (event: NetlifyEvent) => {
 
   if (event.httpMethod !== "POST") {
     return response(405, { success: false, message: "Method not allowed." });
+  }
+
+  // Login CSRF would let another site sign a visitor into an attacker's
+  // account (and, for example, attach their restored purchase to it).
+  const crossSite = rejectCrossSiteJson(event.headers);
+  if (crossSite) {
+    return response(crossSite.status, { success: false, message: crossSite.message });
   }
 
   if (route === "logout") {

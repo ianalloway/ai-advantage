@@ -16,7 +16,7 @@ async function loadAuth() {
 function login(handler: Awaited<ReturnType<typeof loadAuth>>, body: { login: string; password: string }, ip = "203.0.113.7") {
   return handler({
     blobs, path: "/api/auth/login", httpMethod: "POST", body: JSON.stringify(body),
-    headers: { host: "example.test", "x-forwarded-proto": "https", "x-nf-client-connection-ip": ip },
+    headers: { host: "example.test", "x-forwarded-proto": "https", "x-nf-client-connection-ip": ip, "content-type": "application/json" },
   });
 }
 
@@ -29,7 +29,7 @@ beforeEach(async () => {
   const handler = await loadAuth();
   const signup = await handler({
     blobs, path: "/api/auth/signup", httpMethod: "POST", body: JSON.stringify(owner),
-    headers: { host: "example.test", "x-forwarded-proto": "https" },
+    headers: { host: "example.test", "x-forwarded-proto": "https", "content-type": "application/json" },
   });
   expect(signup.statusCode).toBe(200);
 });

@@ -30,7 +30,7 @@ let cookie = '';
 const headers = () => ({ host: 'example.test', 'x-forwarded-proto': 'https', cookie });
 const event = (route: string, body?: unknown) => ({
   blobs, path: `/api/auth/${route}`, httpMethod: body ? 'POST' : 'GET',
-  headers: headers(), body: body ? JSON.stringify(body) : null,
+  headers: { ...headers(), 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : null,
 });
 function response() {
   return {
