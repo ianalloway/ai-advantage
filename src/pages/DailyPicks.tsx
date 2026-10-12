@@ -68,6 +68,8 @@ import { fitCloseDrift, driftSamplesFromLedger, projectClose, formatCloseRecomme
 import { translateEdgeToPoints, formatLine } from "@/lib/spreadTranslation";
 import { liveWinProbability, liveEdgePts } from "@/lib/liveWinProbability";
 import { checkMarketConsistency, formatConsistencyVerdict } from "@/lib/marketConsistency";
+import { predictTotal } from "@/lib/totalsModel";
+import { valueOpenPosition, type PositionValue } from "@/lib/positionValue";
 import { buildCalibrationReport, calibrationSamplesFromLedger, type CalibrationReport } from "@/lib/calibration";
 import { sizeWithCalibration } from "@/lib/calibratedSizing";
 import type { ParlayLeg } from "@/lib/parlay";
@@ -457,6 +459,19 @@ function PickCard({
       ? liveEdgePts(liveSideProb, pathOdds.current)
       : undefined;
 
+  // The board has carried a posted total on every game and never had a view on it.
+  const totals =
+    game.odds?.overUnder !== undefined
+      ? predictTotal({
+          sport: game.sport,
+          homeTeam: game.homeTeam,
+          awayTeam: game.awayTeam,
+          postedTotal: game.odds.overUnder,
+          bankroll,
+          kellyFraction,
+        })
+      : null;
+
   // The moneyline and the spread are two statements of the same probability —
   // but only before kickoff. The feed's spread is the pregame PickCenter number,
   // so checking it against a live moneyline compares two different games.
@@ -827,6 +842,53 @@ function PickCard({
                   </div>
                 </div>
                 <p className="mt-2 text-xs leading-5 text-zinc-500">{inPoints.note}</p>
+              </div>
+            ) : null}
+
+            {totals?.applicable ? (
+              <div className="mt-4 rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Total</div>
+                  <span
+                    className={`rounded-full border px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] ${
+                      totals.side === "pass"
+                        ? "border-zinc-500/30 bg-zinc-500/10 text-zinc-300"
+                        : "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                    }`}
+                  >
+                    {totals.side === "pass" ? "No play" : `${totals.side} ${totals.postedTotal.toFixed(1)}`}
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-xl border border-white/8 bg-black/25 p-2">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Posted</div>
+                    <div className="mt-1 font-mono text-sm font-semibold text-sky-300">
+                      {totals.postedTotal.toFixed(1)}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-white/8 bg-black/25 p-2">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Model</div>
+                    <div className="mt-1 font-mono text-sm font-semibold text-white">
+                      {totals.projectedTotal.toFixed(1)}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-white/8 bg-black/25 p-2">
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Edge</div>
+                    <div
+                      className={`mt-1 font-mono text-sm font-semibold ${
+                        totals.side === "pass" ? "text-zinc-400" : "text-emerald-300"
+                      }`}
+                    >
+                      {formatEdge(totals.edgePts)}
+                    </div>
+                  </div>
+                </div>
+                {totals.side !== "pass" ? (
+                  <div className="mt-2 font-mono text-[11px] text-brand-300">
+                    ${totals.suggestedStake.toFixed(0)} suggested · {(totals.kellyPct * 100).toFixed(1)}% Kelly
+                  </div>
+                ) : null}
+                <p className="mt-2 text-xs leading-5 text-zinc-500">{totals.note}</p>
               </div>
             ) : null}
 
@@ -1429,6 +1491,43 @@ export default function DailyPicks() {
     void putBetLogEntries(graded).catch(() => undefined);
   }, [betLog, games]);
 
+  // Open tickets on games now in progress are worth marking to the live model
+  // rather than to the price they were struck at.
+  const livePositionValues = useMemo<Record<string, PositionValue>>(() => {
+    const valued: Record<string, PositionValue> = {};
+
+    for (const entry of betLog) {
+      if (entry.outcome !== "pending") continue;
+      const game = games.find((candidate) => candidate.id === entry.gameId);
+      if (!game || game.status.state !== "in" || !game.odds) continue;
+      if (game.homeScore === undefined || game.awayScore === undefined) continue;
+      if (entry.sideLocation !== "Home" && entry.sideLocation !== "Away") continue;
+
+      const live = liveWinProbability(
+        {
+          sport: game.sport,
+          homeScore: game.homeScore,
+          awayScore: game.awayScore,
+          period: game.status.period,
+          clock: game.status.clock,
+          state: game.status.state,
+        },
+        { pregameHomeProb: undefined },
+      );
+      if (!live.applicable) continue;
+
+      valued[entry.id] = valueOpenPosition({
+        stake: entry.stake,
+        americanOdds: entry.americanOdds,
+        liveProb: entry.sideLocation === "Home" ? live.homeWinProb : live.awayWinProb,
+        oppositeOdds:
+          entry.sideLocation === "Home" ? game.odds.awayMoneyline : game.odds.homeMoneyline,
+      });
+    }
+
+    return valued;
+  }, [betLog, games]);
+
   const exportDesk = () => {
     const csv = toCsv(deskRowsFromPicks(filteredGames));
     if (!csv) {
@@ -1746,6 +1845,7 @@ export default function DailyPicks() {
               />
               <BetLogPanel
                 entries={betLog}
+                liveValues={livePositionValues}
                 onSettle={(id, outcome) => void settleBet(id, outcome)}
                 onRemove={(id) => void removeBet(id)}
                 onUpdate={(id, changes) => void updateBet(id, changes)}
