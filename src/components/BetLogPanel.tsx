@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { betLogRows, betProfit, summarizeBetLog, type BetLogEntry, type BetLogOutcome } from "@/lib/betLog";
 import { downloadCsv, toCsv } from "@/lib/exportDesk";
+import { summarizeOpenPositions, type PositionValue } from "@/lib/positionValue";
 import { formatOdds } from "@/lib/predictions";
 
 function outcomeClasses(outcome: BetLogOutcome) {
@@ -25,6 +26,8 @@ export interface BetLogPanelProps {
   onRemove: (id: string) => void;
   /** Correct a ticket to the price and stake actually taken. */
   onUpdate: (id: string, changes: { americanOdds?: number; stake?: number }) => void;
+  /** Live valuations for open tickets, keyed by bet id. */
+  liveValues?: Record<string, PositionValue>;
   /** Shown when the log is empty, to explain where entries come from. */
   emptyHint?: string;
 }
@@ -34,8 +37,19 @@ export interface BetLogPanelProps {
  * P&L, execution against the board's quote, and close-line value on the real
  * tickets.
  */
-export default function BetLogPanel({ entries, onSettle, onRemove, onUpdate, emptyHint }: BetLogPanelProps) {
+export default function BetLogPanel({
+  entries,
+  onSettle,
+  onRemove,
+  onUpdate,
+  liveValues,
+  emptyHint,
+}: BetLogPanelProps) {
   const summary = useMemo(() => summarizeBetLog(entries), [entries]);
+  const openBook = useMemo(
+    () => summarizeOpenPositions(Object.values(liveValues ?? {})),
+    [liveValues],
+  );
 
   const exportLog = () => {
     const csv = toCsv(betLogRows(entries));
@@ -102,6 +116,27 @@ export default function BetLogPanel({ entries, onSettle, onRemove, onUpdate, emp
             </div>
           </div>
 
+          {openBook.positions > 0 ? (
+            <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.07] px-3 py-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[10px] uppercase tracking-[0.16em] text-emerald-200/80">
+                  {openBook.positions} live {openBook.positions === 1 ? "ticket" : "tickets"}
+                </span>
+                <span
+                  className={`font-mono text-xs font-semibold ${
+                    openBook.unrealisedPnl >= 0 ? "text-emerald-300" : "text-red-300"
+                  }`}
+                >
+                  {money(openBook.unrealisedPnl)} unrealised
+                </span>
+              </div>
+              <div className="mt-1 font-mono text-[11px] text-zinc-400">
+                ${openBook.stakeAtRisk.toFixed(2)} at risk · worth ${openBook.fairValue.toFixed(2)} now
+                {openBook.underwater > 0 ? ` · ${openBook.underwater} under water` : ""}
+              </div>
+            </div>
+          ) : null}
+
           {summary.avgExecutionPts !== undefined && Math.abs(summary.avgExecutionPts) >= 0.01 ? (
             <div className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 text-[11px] leading-5 text-zinc-400">
               Your prices have averaged{" "}
@@ -160,6 +195,31 @@ export default function BetLogPanel({ entries, onSettle, onRemove, onUpdate, emp
                       ) : null}
                     </div>
                   </div>
+
+                  {liveValues?.[entry.id]?.applicable ? (
+                    <div className="mt-2 rounded-lg border border-emerald-400/15 bg-emerald-400/[0.05] px-2.5 py-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-[11px]">
+                        <span className="text-emerald-200">
+                          worth ${liveValues[entry.id].fairValue.toFixed(2)}
+                        </span>
+                        <span
+                          className={
+                            liveValues[entry.id].unrealisedPnl >= 0 ? "text-emerald-300" : "text-red-300"
+                          }
+                        >
+                          {money(liveValues[entry.id].unrealisedPnl)}
+                        </span>
+                      </div>
+                      {liveValues[entry.id].lockedValue !== undefined ? (
+                        <div className="mt-1 text-[11px] leading-5 text-zinc-400">
+                          {/* Values and stakes, not P&L — rendered unsigned. */}
+                          {liveValues[entry.id].recommendation === "lock" ? "Lock" : "Hold"} · $
+                          {(liveValues[entry.id].lockedValue as number).toFixed(2)} guaranteed by laying $
+                          {(liveValues[entry.id].hedgeStake as number).toFixed(2)}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
 
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
                     {entry.outcome === "pending" ? (

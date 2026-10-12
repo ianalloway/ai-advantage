@@ -5,6 +5,7 @@ import StakingPlanPanel from "@/components/StakingPlanPanel";
 import SegmentBreakdown from "@/components/SegmentBreakdown";
 import SignificancePanel from "@/components/SignificancePanel";
 import MarketBlendPanel from "@/components/MarketBlendPanel";
+import EdgeDecayPanel from "@/components/EdgeDecayPanel";
 import { useDocumentMeta } from "@/lib/useDocumentMeta";
 import { routeMeta } from "@/lib/routeSeo";
 import { Link } from "react-router-dom";
@@ -493,6 +494,10 @@ export default function Leaderboard() {
 
         <div className="mt-8">
           <SignificancePanel entries={analyticsRows} />
+        </div>
+
+        <div className="mt-8">
+          <EdgeDecayPanel entries={analyticsRows} />
         </div>
 
         <div className="mt-8">

@@ -51,6 +51,9 @@ It's the product layer of a larger sports-analytics stack — the modeling lives
 | Live win probability | In-game pricing from the lead and the clock, with live edge against the live number |
 | Market self-check | Moneyline against posted spread — when they disagree, one of them is stale |
 | Model vs the price | The blend of model and market that forecast best, judged on rows it never saw |
+| Totals | Projects the combined score from team scoring and prices the posted over/under against it |
+| Edge decay | Cuts the ledger by time and tests recent form against earlier — is the edge still there? |
+| Open positions | Marks live tickets to the in-game model: what they are worth now, and what a lock pays |
 | Portfolio risk | Correlated exposure by team, game, sport, and narrative, with a stake haircut |
 | Multi-sport | NBA, NFL, MLB workflows |
 | Premium | Stripe subscription + one-time checkout |
