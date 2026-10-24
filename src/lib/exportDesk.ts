@@ -14,12 +14,15 @@ export function toCsv(rows: Array<Record<string, string | number | boolean | und
 
   const escape = (value: string | number | boolean | undefined | null) => {
     if (value === undefined || value === null) return "";
-    const text = String(value);
+    // Keep numeric odds/stakes numeric, but never let feed or user-provided
+    // text become a formula when the export is opened in a spreadsheet.
+    const raw = String(value);
+    const text = typeof value === "string" && /^[\s\uFEFF]*[=+\-@]/.test(raw) ? `'${raw}` : raw;
     if (/[",\n\r]/.test(text)) return `"${text.replaceAll('"', '""')}"`;
     return text;
   };
 
-  return [headers.join(","), ...rows.map((row) => headers.map((h) => escape(row[h])).join(","))].join("\n");
+  return [headers.map(escape).join(","), ...rows.map((row) => headers.map((h) => escape(row[h])).join(","))].join("\n");
 }
 
 export function downloadCsv(filename: string, csv: string) {

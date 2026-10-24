@@ -8,6 +8,23 @@ describe("toCsv", () => {
     expect(csv).toContain('"A, ""B"""');
     expect(csv.split("\n")[0]).toBe("event,edge");
   });
+
+  it("exports formula-like text as literal cells while preserving numeric odds", () => {
+    const csv = toCsv([{ event: '=HYPERLINK("https://example.com")', note: "  +SUM(A1:A2)", odds: -110 }]);
+    expect(csv).toBe('event,note,odds\n"\'=HYPERLINK(""https://example.com"")",\'  +SUM(A1:A2),-110');
+  });
+
+  it("protects every spreadsheet formula prefix, including after whitespace", () => {
+    for (const value of ["=1+1", "+1", "-1+2", "@SUM(A1:A2)", "\t=1", "\r=1", "\n=1"]) {
+      const csv = toCsv([{ text: value }]);
+      expect(csv).toContain(`'${value}`);
+    }
+    expect(toCsv([{ odds: -110, stake: 25, won: true, note: null }])).toBe("odds,stake,won,note\n-110,25,true,");
+  });
+
+  it("escapes header cells as well as row values", () => {
+    expect(toCsv([{ 'event,side': "Home", '=total': 3 }])).toBe('"event,side",\'=total\nHome,3');
+  });
 });
 
 describe("deskRowsFromPicks", () => {
