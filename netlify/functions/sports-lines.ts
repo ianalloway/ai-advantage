@@ -535,9 +535,11 @@ async function requestHasPaidAccess(event: NetlifyEvent): Promise<boolean> {
     const store = getEntitlementStore(event);
     if (!store) return false;
     const user = await getCurrentSiteUserFromEvent(event);
+    // No email here on purpose: signup never verifies email ownership, so the
+    // email index is not an authorizer (see findBestEntitlement). Account id
+    // and the entitlement session cookie are the only two proofs.
     const entitlement = await findBestEntitlement(store, {
       userId: user?.id,
-      email: user?.email,
       entitlementToken: getEntitlementSessionToken(event.headers),
     });
     const access = accessStateFromEntitlement(entitlement);
