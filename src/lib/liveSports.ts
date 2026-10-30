@@ -405,6 +405,7 @@ export async function fetchLiveGamesForSports(sports: Sport[], date = new Date()
 
   try {
     const response = await fetch(`/api/sports-lines?${params.toString()}`, {
+      credentials: "include",
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(9000),
     });

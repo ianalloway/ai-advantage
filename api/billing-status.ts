@@ -27,6 +27,7 @@ export default function handler(req: RequestLike, res: ResponseLike) {
   const stripeSecretConfigured = isConfigured(process.env.STRIPE_SECRET_KEY, "sk_");
   const stripeWebhookConfigured = isConfigured(process.env.STRIPE_WEBHOOK_SECRET, "whsec_");
   const premiumPriceConfigured = isConfigured(process.env.STRIPE_PREMIUM_PRICE_ID, "price_");
+  const annualPriceConfigured = isConfigured(process.env.STRIPE_ANNUAL_PRICE_ID, "price_");
   const oneTimePriceConfigured = isConfigured(process.env.STRIPE_ONE_TIME_PRICE_ID, "price_");
   const entitlementStoreConfigured = Boolean(getEntitlementStore({ blobs: req.blobs, headers: req.headers }));
 
@@ -35,8 +36,10 @@ export default function handler(req: RequestLike, res: ResponseLike) {
     stripeWebhookConfigured,
     entitlementStoreConfigured,
     premiumPriceConfigured,
+    annualPriceConfigured,
     oneTimePriceConfigured,
     premiumCheckoutReady: stripeSecretConfigured && premiumPriceConfigured,
+    annualCheckoutReady: stripeSecretConfigured && annualPriceConfigured,
     oneTimeCheckoutReady: stripeSecretConfigured && oneTimePriceConfigured,
     automaticTaxEnabled: process.env.STRIPE_AUTOMATIC_TAX === "true",
   });

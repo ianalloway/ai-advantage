@@ -4,7 +4,7 @@ import { getEntitlementStore } from "../netlify/functions/_lib/entitlements";
 import { appendFunnelEvents } from "../netlify/lib/funnel";
 import { checkoutClaimCookie, createCheckoutClaim } from "../netlify/lib/checkout-claim";
 
-type CheckoutMode = "premium" | "one-time";
+type CheckoutMode = "premium" | "annual" | "one-time";
 
 type RequestLike = {
   blobs?: string;
@@ -26,6 +26,11 @@ const MODE_CONFIG: Record<CheckoutMode, { envKey: string; stripeMode: "payment" 
     envKey: "STRIPE_PREMIUM_PRICE_ID",
     stripeMode: "subscription",
     label: "Pro Monthly",
+  },
+  annual: {
+    envKey: "STRIPE_ANNUAL_PRICE_ID",
+    stripeMode: "subscription",
+    label: "Pro Annual",
   },
   "one-time": {
     envKey: "STRIPE_ONE_TIME_PRICE_ID",
@@ -88,7 +93,7 @@ function getMode(body: unknown): CheckoutMode | null {
   }
 
   const mode = (body as { mode?: string }).mode;
-  return mode === "premium" || mode === "one-time" ? mode : null;
+  return mode === "premium" || mode === "annual" || mode === "one-time" ? mode : null;
 }
 
 function getOptionalString(body: unknown, key: string) {
@@ -117,7 +122,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   try {
     const checkoutMode = getMode(req.body);
     if (!checkoutMode) {
-      jsonError(res, 400, "invalid_checkout_mode", "Choose either premium or one-time checkout.");
+      jsonError(res, 400, "invalid_checkout_mode", "Choose premium, annual, or one-time checkout.");
       return;
     }
 
@@ -154,16 +159,22 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     // email is only a Stripe prefill and never authorizes anything.
     const customerEmail = siteUser?.email ?? getCustomerEmail(req.body);
     const clientReferenceId = siteUser?.id;
+    const referral = getOptionalString(req.body, "referral");
+    const safeReferral =
+      referral && /^[a-zA-Z0-9_-]{2,64}$/.test(referral) ? referral.slice(0, 64) : undefined;
+
     const metadata = {
       product_surface: "ai-advantage",
       unlock_type: checkoutMode,
       plan_label: modeConfig.label,
       ...(customerEmail ? { customer_email: customerEmail } : {}),
       ...(clientReferenceId ? { client_reference_id: clientReferenceId } : {}),
+      ...(safeReferral ? { referral: safeReferral } : {}),
     };
 
     const trialDays = Number(process.env.STRIPE_TRIAL_DAYS || "7");
     const bodyObj = req.body && typeof req.body === "object" ? (req.body as { trial?: boolean }) : {};
+    // Trial is monthly-only — annual is already discounted.
     const wantsTrial = checkoutMode === "premium" && bodyObj.trial !== false && trialDays > 0;
 
     const session = await stripe.checkout.sessions.create({
@@ -210,7 +221,11 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
           sessionId: session.id,
           email: customerEmail,
           userId: clientReferenceId,
-          meta: { trial: wantsTrial, trialDays: wantsTrial ? trialDays : 0 },
+          meta: {
+            trial: wantsTrial,
+            trialDays: wantsTrial ? trialDays : 0,
+            ...(safeReferral ? { referral: safeReferral } : {}),
+          },
         },
         ...(wantsTrial
           ? [
@@ -220,7 +235,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
                 sessionId: session.id,
                 email: customerEmail,
                 userId: clientReferenceId,
-                meta: { trialDays },
+                meta: { trialDays, ...(safeReferral ? { referral: safeReferral } : {}) },
               },
             ]
           : []),

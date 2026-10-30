@@ -19,6 +19,14 @@
       "seoBlurb": "Deeper boards, historical ledgers, and workflow tools."
     },
     {
+      "id": "annual",
+      "name": "Pro Annual",
+      "price": 150,
+      "cadence": "per year · two months free vs monthly",
+      "badge": "Best value",
+      "seoBlurb": "Same Pro desk billed yearly — save versus month-to-month."
+    },
+    {
       "id": "one-time",
       "name": "Event Pass",
       "price": 10,

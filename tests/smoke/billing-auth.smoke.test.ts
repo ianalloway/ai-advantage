@@ -45,8 +45,10 @@ describe("production billing + auth smoke", () => {
       "stripeWebhookConfigured",
       "entitlementStoreConfigured",
       "premiumPriceConfigured",
+      "annualPriceConfigured",
       "oneTimePriceConfigured",
       "premiumCheckoutReady",
+      "annualCheckoutReady",
       "oneTimeCheckoutReady",
     ]) {
       expect(typeof status[key]).toBe("boolean");
