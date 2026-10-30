@@ -1,4 +1,11 @@
 import { getStore, setEnvironmentContext } from "@netlify/blobs";
+import { getCurrentSiteUserFromEvent } from "./_lib/auth-session";
+import {
+  accessStateFromEntitlement,
+  findBestEntitlement,
+  getEntitlementSessionToken,
+  getEntitlementStore,
+} from "./_lib/entitlements";
 
 type Sport = "nba" | "nfl" | "mlb" | "wc";
 
@@ -517,12 +524,36 @@ function toMarkets(events: OddsApiEvent[]) {
   return markets;
 }
 
-async function fetchOddsApiMarkets(sport: Sport, blobsReady: boolean) {
+function envFlag(name: string, fallback = false) {
+  const raw = String(process.env[name] ?? "").trim().toLowerCase();
+  if (!raw) return fallback;
+  return ["1", "true", "yes", "on"].includes(raw);
+}
+
+async function requestHasPaidAccess(event: NetlifyEvent): Promise<boolean> {
+  try {
+    const store = getEntitlementStore(event);
+    if (!store) return false;
+    const user = await getCurrentSiteUserFromEvent(event);
+    const entitlement = await findBestEntitlement(store, {
+      userId: user?.id,
+      email: user?.email,
+      entitlementToken: getEntitlementSessionToken(event.headers),
+    });
+    const access = accessStateFromEntitlement(entitlement);
+    return access.tier === "premium" || access.tier === "event";
+  } catch {
+    return false;
+  }
+}
+
+async function fetchOddsApiMarkets(sport: Sport, blobsReady: boolean, allowPremiumEnrich: boolean) {
   // Free-by-default: ESPN PickCenter is the primary market source.
-  // The Odds API is opt-in only (paid quota) via USE_ODDS_API=true.
-  const oddsApiEnabled = ["1", "true", "yes", "on"].includes(
-    String(process.env.USE_ODDS_API || "").trim().toLowerCase(),
-  );
+  // USE_ODDS_API=true forces Odds API for everyone (burns quota).
+  // Otherwise paid sessions can enrich when a key is present (USE_ODDS_API_FOR_PREMIUM, default on).
+  const forceAll = envFlag("USE_ODDS_API", false);
+  const premiumEnrich = envFlag("USE_ODDS_API_FOR_PREMIUM", true) && allowPremiumEnrich;
+  const oddsApiEnabled = forceAll || premiumEnrich;
   const apiKey = process.env.THE_ODDS_API_KEY || process.env.ODDS_API_KEY;
   if (!oddsApiEnabled || !apiKey) {
     return {
@@ -673,10 +704,10 @@ async function toLiveMarketGame(
   };
 }
 
-async function fetchSportSlate(sport: Sport, dateKey: string, blobsReady: boolean) {
+async function fetchSportSlate(sport: Sport, dateKey: string, blobsReady: boolean, allowPremiumEnrich: boolean) {
   const [events, oddsProvider] = await Promise.all([
     fetchEspnScoreboardWithLookahead(sport, dateKey),
-    fetchOddsApiMarkets(sport, blobsReady),
+    fetchOddsApiMarkets(sport, blobsReady, allowPremiumEnrich),
   ]);
   const summaries = await Promise.allSettled(events.map((event) => fetchEspnSummary(sport, event.id)));
 
@@ -721,7 +752,10 @@ export const handler = async (event: NetlifyEvent) => {
   const sports = getSports(event.queryStringParameters);
   const dateKey = getDateKey(event.queryStringParameters);
   const blobsReady = initBlobsContext(event);
-  const slates = await Promise.allSettled(sports.map((sport) => fetchSportSlate(sport, dateKey, blobsReady)));
+  const allowPremiumEnrich = await requestHasPaidAccess(event);
+  const slates = await Promise.allSettled(
+    sports.map((sport) => fetchSportSlate(sport, dateKey, blobsReady, allowPremiumEnrich)),
+  );
   const fulfilled = slates.flatMap((slate) => (slate.status === "fulfilled" ? [slate.value] : []));
   const games = fulfilled.flatMap((slate) => slate.games);
 
@@ -730,5 +764,6 @@ export const handler = async (event: NetlifyEvent) => {
     updatedAt: new Date().toISOString(),
     games,
     providerStatus: fulfilled.map((slate) => slate.provider),
+    premiumOddsEnrich: allowPremiumEnrich,
   });
 };

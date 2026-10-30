@@ -83,6 +83,7 @@ const NAV_LINKS = [
 
 const freePlan = getPlan("free");
 const premiumPlan = getPlan("premium");
+const annualPlan = getPlan("annual");
 const eventPlan = getPlan("one-time");
 
 const productProof = [
@@ -471,9 +472,9 @@ function Index() {
     }, 450);
   };
 
-  const handleUpgrade = async (type: "premium" | "one-time" = "premium") => {
+  const handleUpgrade = async (type: "premium" | "annual" | "one-time" = "premium") => {
     try {
-      await redirectToCheckout(type);
+      await redirectToCheckout(type, type === "premium" ? { trial: true } : undefined);
     } catch (error) {
       toast({
         title: "Checkout unavailable",
@@ -1634,10 +1635,20 @@ The report will show:
                     </li>
                   ))}
                 </ul>
-                <Button className="mt-8 w-full bg-cyan-300 text-slate-950 hover:bg-cyan-200" onClick={() => void handleUpgrade("premium")}>
-                  <Crown className="mr-2 h-4 w-4" />
-                  Start {TRIAL_DAYS}-day trial
-                </Button>
+                <div className="mt-8 grid gap-3">
+                  <Button className="w-full bg-cyan-300 text-slate-950 hover:bg-cyan-200" onClick={() => void handleUpgrade("premium")}>
+                    <Crown className="mr-2 h-4 w-4" />
+                    Start {TRIAL_DAYS}-day trial
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="w-full border-cyan-300/25 text-cyan-100 hover:bg-cyan-300/10"
+                    onClick={() => void handleUpgrade("annual")}
+                    disabled={billingStatus ? !billingStatus.annualCheckoutReady : false}
+                  >
+                    {annualPlan.name} · {formatPlanPrice(annualPlan)}/yr
+                  </Button>
+                </div>
               </div>
 
               <div className="rounded-xl border border-amber-300/20 bg-amber-300/[0.055] p-6 transition-all duration-300 hover:-translate-y-1 hover:border-amber-300/45 hover:bg-amber-300/[0.075]">

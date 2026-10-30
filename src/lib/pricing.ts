@@ -7,7 +7,7 @@
 // and pricing.test.ts fails the build if a copy falls out of sync again.
 import pricingData from "@/data/pricing.json";
 
-export type PlanId = "free" | "premium" | "one-time";
+export type PlanId = "free" | "premium" | "annual" | "one-time";
 
 export interface Plan {
   id: PlanId;

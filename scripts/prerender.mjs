@@ -66,7 +66,7 @@ const valueProps = [
   ["Kelly sizing", "Quarter-Kelly stake guidance keeps conviction from turning reckless."],
 ];
 
-const pricingRows = ["free", "one-time", "premium"]
+const pricingRows = ["free", "premium", "annual", "one-time"]
   .map(planById)
   .filter(Boolean)
   .map((plan) => [plan.name, `$${plan.price}`, plan.seoBlurb]);

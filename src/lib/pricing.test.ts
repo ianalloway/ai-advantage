@@ -7,8 +7,8 @@ import { getPlan, PLANS, TRIAL_DAYS } from "./pricing";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 describe("pricing source of truth", () => {
-  it("exposes the three advertised plans", () => {
-    expect(PLANS.map((plan) => plan.id)).toEqual(["free", "premium", "one-time"]);
+  it("exposes the advertised plans", () => {
+    expect(PLANS.map((plan) => plan.id)).toEqual(["free", "premium", "annual", "one-time"]);
   });
 
   it("keeps the free tier free", () => {

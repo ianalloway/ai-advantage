@@ -534,20 +534,37 @@ export default function Profile() {
                   </div>
                 ) : null}
                 {!hasPaidAccess ? (
-                  <Button
-                    className="w-full bg-cyan-300 font-semibold text-slate-950 hover:bg-cyan-200"
-                    onClick={() => {
-                      void redirectToCheckout("premium", { trial: true }).catch((error) => {
-                        toast({
-                          title: "Checkout unavailable",
-                          description: error instanceof Error ? error.message : "Try again shortly.",
-                          variant: "destructive",
+                  <>
+                    <Button
+                      className="w-full bg-cyan-300 font-semibold text-slate-950 hover:bg-cyan-200"
+                      onClick={() => {
+                        void redirectToCheckout("premium", { trial: true }).catch((error) => {
+                          toast({
+                            title: "Checkout unavailable",
+                            description: error instanceof Error ? error.message : "Try again shortly.",
+                            variant: "destructive",
+                          });
                         });
-                      });
-                    }}
-                  >
-                    Start 7-day Pro trial
-                  </Button>
+                      }}
+                    >
+                      Start 7-day Pro trial
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="w-full border-cyan-300/25 text-cyan-100 hover:bg-cyan-300/10"
+                      onClick={() => {
+                        void redirectToCheckout("annual").catch((error) => {
+                          toast({
+                            title: "Checkout unavailable",
+                            description: error instanceof Error ? error.message : "Try again shortly.",
+                            variant: "destructive",
+                          });
+                        });
+                      }}
+                    >
+                      Or Pro Annual · $150/yr
+                    </Button>
+                  </>
                 ) : null}
                 {!hasPaidAccess ? (
                   <form

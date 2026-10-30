@@ -6,6 +6,7 @@ import Index from "./pages/Index";
 import CancelReasonDialog from "./components/CancelReasonDialog";
 import { syncAccessFromUrl, syncEntitlementAccess } from "./lib/stripe";
 import { syncSiteUserSession } from "./lib/auth";
+import { captureReferralFromUrl } from "./lib/referral";
 
 const DailyPicks = lazy(() => import("./pages/DailyPicks"));
 const Leaderboard = lazy(() => import("./pages/Leaderboard"));
@@ -39,6 +40,8 @@ function App() {
   const [showCancelReason, setShowCancelReason] = useState(false);
 
   useEffect(() => {
+    captureReferralFromUrl();
+
     const syncAll = async () => {
       try {
         await syncAccessFromUrl();

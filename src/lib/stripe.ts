@@ -1,5 +1,6 @@
 import { getCurrentSiteUser } from "@/lib/auth";
 import { claimCryptoPayment } from "@/lib/cryptoClaim";
+import { getReferralCode } from "@/lib/referral";
 
 export type AccessTier = "free" | "event" | "premium";
 export type AccessSource = "stripe" | "crypto" | "legacy" | "manual";
@@ -29,7 +30,7 @@ export interface CryptoAccessAccount {
   expiresAt?: string;
 }
 
-type CheckoutMode = "premium" | "one-time";
+type CheckoutMode = "premium" | "annual" | "one-time";
 
 interface CheckoutSessionResponse {
   url?: string;
@@ -58,8 +59,10 @@ export interface BillingStatus {
   stripeWebhookConfigured: boolean;
   entitlementStoreConfigured: boolean;
   premiumPriceConfigured: boolean;
+  annualPriceConfigured: boolean;
   oneTimePriceConfigured: boolean;
   premiumCheckoutReady: boolean;
+  annualCheckoutReady: boolean;
   oneTimeCheckoutReady: boolean;
   automaticTaxEnabled: boolean;
 }
@@ -701,6 +704,7 @@ export const redirectToCheckout = async (
         trial: options.trial !== false && type === "premium",
         customerEmail: siteUser?.email,
         clientReferenceId: siteUser?.id,
+        ...(getReferralCode() ? { referral: getReferralCode() } : {}),
       }),
     });
     if (!response.ok) {
