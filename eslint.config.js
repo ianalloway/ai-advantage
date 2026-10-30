@@ -57,7 +57,13 @@ export default [
         "warn",
         { allowConstantExport: true },
       ],
-      "no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrors: "none" }],
+      // Off for TS on purpose, alongside the misfiring core rules above. This
+      // config parses with @babel/eslint-parser, which strips types before the
+      // rule runs, so every type-only import reads as unused — 366 false
+      // positives and no true ones, which buried any real finding. TypeScript
+      // itself does this check type-aware via noUnusedLocals/noUnusedParameters
+      // in tsconfig.app.json, and `tsc -b --force` already gates CI.
+      "no-unused-vars": "off",
     },
   },
 ];

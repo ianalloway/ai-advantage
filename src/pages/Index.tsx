@@ -69,6 +69,7 @@ import AccessSessionDialog from "@/components/AccessSessionDialog";
 import SubstackEmbed from "@/components/SubstackEmbed";
 import MobileNav from "@/components/MobileNav";
 import { createExecutionBoardEntry } from "@/lib/executionBoard";
+import { isWorldCupWindow } from "@/lib/worldCupWindow";
 const BacktestChart = lazy(() => import("@/components/BacktestChart"));
 
 const ETH_DONATION_ADDRESS = "0x6f278ce76ba5ed31fd9be646d074863e126836e9";
@@ -114,16 +115,12 @@ function sportShortLabel(sport: Sport): string {
 
 function getDefaultSport(): Sport {
   const now = new Date();
-  // Lead with the World Cup while a tournament is active. Window is computed per
-  // edition so it never goes stale after the 2026 tournament ends.
-  const wcStart = (() => {
-    // Men's World Cup window (Jun 11 - Jul 19) of the relevant edition year.
-    const year = now.getUTCFullYear();
-    const inWindowThisYear =
-      now >= new Date(`${year}-06-11T00:00:00Z`) && now <= new Date(`${year}-07-19T00:00:00Z`);
-    return inWindowThisYear ? year : year;
-  })();
-  if (now >= new Date(`${wcStart}-06-11T00:00:00Z`) && now <= new Date(`${wcStart}-07-19T00:00:00Z`)) {
+  // Lead with the World Cup only while a tournament is actually on. The previous
+  // version meant to do this but its ternary returned the same year on both
+  // branches, so the edition check was computed and discarded — leaving a plain
+  // Jun 11 - Jul 19 date test that would have opened on the World Cup every
+  // summer forever, including 2027/2028/2029 when there is no tournament.
+  if (isWorldCupWindow(now)) {
     return "wc";
   }
   const month = now.getMonth();
