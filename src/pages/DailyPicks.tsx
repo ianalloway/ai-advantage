@@ -1727,10 +1727,17 @@ export default function DailyPicks() {
             The live feed is temporarily unavailable. Reload in a minute and it should come back.
           </div>
         ) : filteredGames.length === 0 ? (
-          <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-8 text-center text-zinc-400">
-            {analyzedGames.length === 0
-              ? "There are no current games with posted lines right now. The site is intentionally showing an empty board instead of inventing one."
-              : `No spots clear ${minExecEdge}% execution edge. Lower the filter to see leans.`}
+          <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-8 text-center text-zinc-400" role="status">
+            {analyzedGames.length === 0 ? (
+              <>
+                <div className="text-lg font-semibold text-white">No lines right now</div>
+                <p className="mt-2">
+                  The feed is up, but no games have posted lines yet. Daily Picks refreshes every minute and fills in as soon as books price the next slate. We show an empty board instead of inventing one.
+                </p>
+              </>
+            ) : (
+              `No spots clear ${minExecEdge}% execution edge. Lower the filter to see leans.`
+            )}
           </div>
         ) : (
           <div className="grid gap-8 lg:grid-cols-[1.3fr_0.7fr] items-start">
