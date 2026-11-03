@@ -1474,7 +1474,7 @@ export default function DailyPicks() {
       if (!game || game.status.state !== "post") return [];
       if (game.homeScore === undefined || game.awayScore === undefined) return [];
 
-      const outcome = gradeOutcome(game.sport, game.homeScore, game.awayScore, entry.side, entry.sideLocation);
+      const outcome = gradeOutcome(game.sport, game.homeScore, game.awayScore, entry.sideLocation);
       const closeOdds =
         entry.sideLocation === "Home"
           ? game.odds?.homeMoneylineClose

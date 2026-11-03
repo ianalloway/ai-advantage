@@ -85,7 +85,6 @@ export function gradeOutcome(
   sport: LiveMarketGame["sport"],
   homeScore: number,
   awayScore: number,
-  recommendedSide: string,
   sideLocation: "Home" | "Away" | "Draw",
 ): Exclude<ExecutionLedgerOutcome, "pending"> {
   const level = homeScore === awayScore;
@@ -101,14 +100,13 @@ export function gradeOutcome(
 
 function getLedgerOutcome(
   game: LiveMarketGame,
-  recommendedSide: string,
   sideLocation: "Home" | "Away" | "Draw",
 ): ExecutionLedgerOutcome {
   if (game.status.state !== "post" || game.homeScore === undefined || game.awayScore === undefined) {
     return "pending";
   }
 
-  return gradeOutcome(game.sport, game.homeScore, game.awayScore, recommendedSide, sideLocation);
+  return gradeOutcome(game.sport, game.homeScore, game.awayScore, sideLocation);
 }
 
 export function scoreExecutionBoardEntry({
@@ -187,7 +185,7 @@ export function createExecutionBoardEntry(game: LiveMarketGame, prediction: Game
     opposingSide: recommendedSide === game.homeTeam ? game.awayTeam : game.homeTeam,
     sideLocation,
     status: "tracked",
-    ledgerOutcome: getLedgerOutcome(game, recommendedSide, sideLocation),
+    ledgerOutcome: getLedgerOutcome(game, sideLocation),
     marketState: game.status.state,
     displayTime: game.displayTime,
     commenceTime: game.date,

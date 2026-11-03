@@ -76,3 +76,35 @@ describe("mergeIngest", () => {
     expect(merged.map((r) => r.id)).toEqual(["401:NYY"]);
   });
 });
+
+describe("gradeOutcome parity with the client board", () => {
+  // The settled ledger and the board that produced the pick must never disagree
+  // about won/lost/push. These are two separate implementations kept in step by
+  // hand, so assert they agree across the whole matrix rather than trusting the
+  // "mirrors ..." comment. A split here settles the public proof ledger wrong.
+  it("agrees with src/lib/executionBoard for every sport, score and side", async () => {
+    const { gradeOutcome: boardGrade } = await import("../../src/lib/executionBoard");
+    const sports = ["nba", "nfl", "mlb", "wc"] as const;
+    const sides = ["Home", "Away", "Draw"] as const;
+    const scores: Array<[number, number]> = [
+      [0, 0],
+      [1, 1],
+      [2, 1],
+      [1, 2],
+      [100, 100],
+      [110, 98],
+      [98, 110],
+    ];
+
+    for (const sport of sports) {
+      for (const [home, away] of scores) {
+        for (const side of sides) {
+          expect(
+            gradeOutcome(sport, home, away, side),
+            `${sport} ${home}-${away} ${side}`,
+          ).toBe(boardGrade(sport, home, away, side));
+        }
+      }
+    }
+  });
+});

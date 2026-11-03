@@ -4,7 +4,7 @@
 // pending rows, then grade any whose games are final against ESPN box scores
 // (won / lost / push). Pure and dependency-light so it can be unit-tested
 // offline and reused by the Netlify scheduled function.
-import { analyzeGame, type Sport } from "../../src/lib/predictions";
+import { analyzeGame, isThreeWaySport, type Sport } from "../../src/lib/predictions";
 
 export type LedgerOutcome = "pending" | "won" | "lost" | "push";
 export type SideLocation = "Home" | "Away" | "Draw";
@@ -64,7 +64,14 @@ const PROBE_ID = /^probe-|^test-/i;
 const PROBE_LABEL = /backend probe|test row/i;
 
 // 3-way aware grading: a draw makes a moneyline LOSE (not push); a Draw bet wins
-// on level scores. Mirrors gradeOutcome in src/lib/executionBoard.ts.
+// on level scores. Deliberately mirrors gradeOutcome in src/lib/executionBoard.ts
+// — ledgerSettlement.test.ts asserts the two stay in agreement, because a split
+// between them means the settled ledger disagrees with the board that produced it.
+//
+// The "is this a 3-way market" predicate is shared rather than restated: this
+// used to hardcode `sport === "wc"`, which matched only because wc is currently
+// the sole 3-way sport. Adding any soccer league would have graded a draw "lost"
+// here and "push" on the client, silently settling the ledger wrong.
 export function gradeOutcome(
   sport: Sport,
   homeScore: number,
@@ -73,7 +80,7 @@ export function gradeOutcome(
 ): Exclude<LedgerOutcome, "pending"> {
   const level = homeScore === awayScore;
   if (sideLocation === "Draw") return level ? "won" : "lost";
-  if (level) return sport === "wc" ? "lost" : "push";
+  if (level) return isThreeWaySport(sport) ? "lost" : "push";
   const winner = homeScore > awayScore ? "Home" : "Away";
   return winner === sideLocation ? "won" : "lost";
 }

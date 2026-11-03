@@ -71,9 +71,9 @@ function stubGame(overrides: Partial<LiveMarketGame> = {}): LiveMarketGame {
 
 describe("executionBoard", () => {
   it("grades two-way ties as push and soccer draws as win/loss", () => {
-    expect(gradeOutcome("nba", 100, 100, "Boston", "Home")).toBe("push");
-    expect(gradeOutcome("wc", 1, 1, "Draw", "Draw")).toBe("won");
-    expect(gradeOutcome("wc", 1, 1, "France", "Home")).toBe("lost");
+    expect(gradeOutcome("nba", 100, 100, "Home")).toBe("push");
+    expect(gradeOutcome("wc", 1, 1, "Draw")).toBe("won");
+    expect(gradeOutcome("wc", 1, 1, "Home")).toBe("lost");
   });
 
   it("scores CLV positively when close shortens past the entry", () => {
