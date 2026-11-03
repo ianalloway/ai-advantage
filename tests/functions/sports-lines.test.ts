@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@netlify/blobs", async () => (await import("../../tests/helpers/blobsMock")).blobsModule);
+vi.mock("@netlify/blobs", async () => (await import("../helpers/blobsMock")).blobsModule);
 
-import { fetchEspnScoreboardWithLookahead, handler, selectUpcomingEvents } from "./sports-lines";
+import { fetchEspnScoreboardWithLookahead, handler, selectUpcomingEvents } from "../../netlify/functions/sports-lines";
 
 function event(id: string, date: string, state: "pre" | "in" | "post" = "pre") {
   return {
