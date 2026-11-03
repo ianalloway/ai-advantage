@@ -13,7 +13,8 @@ describe("isWorldCupWindow", () => {
   it("opens during a tournament year", () => {
     expect(isWorldCupWindow(at("2026-06-11T00:00:00Z"))).toBe(true);
     expect(isWorldCupWindow(at("2026-07-01T12:00:00Z"))).toBe(true);
-    expect(isWorldCupWindow(at("2026-07-19T00:00:00Z"))).toBe(true);
+    expect(isWorldCupWindow(at("2026-07-19T23:59:59Z"))).toBe(true);
+    expect(isWorldCupWindow(at("2026-07-20T00:00:00Z"))).toBe(false);
   });
 
   it("stays shut outside the window in a tournament year", () => {
@@ -29,9 +30,9 @@ describe("isWorldCupWindow", () => {
     }
   });
 
-  it("opens again on the next edition, and not off-cycle", () => {
-    expect(isWorldCupWindow(at("2030-07-01T12:00:00Z"))).toBe(true);
-    expect(isWorldCupWindow(at("2034-07-01T12:00:00Z"))).toBe(true);
+  it("does not invent dates for future editions", () => {
+    expect(isWorldCupWindow(at("2030-07-01T12:00:00Z"))).toBe(false);
+    expect(isWorldCupWindow(at("2034-07-01T12:00:00Z"))).toBe(false);
     expect(isWorldCupWindow(at("2031-07-01T12:00:00Z"))).toBe(false);
   });
 
