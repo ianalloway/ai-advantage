@@ -443,6 +443,8 @@ function Index() {
       executionBoardEntries.length
     : 0;
   const featuredEntry = topExecutionEntries[0];
+  // Sources answered but nothing is priced: a quiet slate, not a pass and not an outage.
+  const hasNoLines = !isSlateLoading && !liveSlateError && !analyzedGames.some((entry) => entry.game.odds);
 
   const chartData = useMemo(() => {
     const source = performanceData?.weeklyData?.slice(-8);
@@ -696,7 +698,7 @@ Bet responsibly. This is model output, not a guarantee.`);
                         }`}
                       >
                         <span className={`h-1.5 w-1.5 rounded-full ${featuredEntry ? "bg-[#b9ff55]" : "bg-amber-300"}`} />
-                        {featuredEntry ? "Qualified" : liveSlateError ? "No feed" : "Pass"}
+                        {featuredEntry ? "Qualified" : liveSlateError ? "No feed" : hasNoLines ? "No lines" : "Pass"}
                       </span>
                     </div>
 
@@ -704,21 +706,27 @@ Bet responsibly. This is model output, not a guarantee.`);
                       {featuredEntry?.eventLabel ??
                         (liveSlateError
                           ? "The market feed is unavailable"
-                          : "The desk is passing the current slate")}
+                          : hasNoLines
+                            ? "No lines right now"
+                            : "The desk is passing the current slate")}
                     </h1>
                     <div className="mt-2 font-mono text-xs font-semibold uppercase tracking-[0.08em] text-cyan-200 sm:text-sm">
                       {featuredEntry
                         ? `${featuredEntry.recommendedSide} ${featuredEntry.summary.line} · ${featuredEntry.bookmaker ?? "Public consensus"}`
                         : liveSlateError
                           ? "No verified market data to price against"
-                          : `No edge clears ${minEdge}% after execution filters`}
+                          : hasNoLines
+                            ? `No ${sportShortLabel(selectedSport)} games with posted lines yet`
+                            : `No edge clears ${minEdge}% after execution filters`}
                     </div>
                     <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-400">
                       {featuredEntry
                         ? `The model remains ${formatEdge(featuredEntry.executionAdjustedEdge)} above the implied market after timing, volatility, and liquidity discounts.`
                         : liveSlateError
                           ? "This is an outage, not a pass. The desk will not call a slate it cannot see."
-                          : "No fabricated signal. Adjust the controls or wait for the next verified market update."}
+                          : hasNoLines
+                            ? "The feed is up; books just haven't posted prices for this slate. The board refreshes every minute and fills in when lines appear."
+                            : "No fabricated signal. Adjust the controls or wait for the next verified market update."}
                     </p>
                   </div>
 
@@ -1086,8 +1094,11 @@ Bet responsibly. This is model output, not a guarantee.`);
                 ) : liveSlateError ? (
                   <div className="p-10 text-center text-red-200">{liveSlateError}</div>
                 ) : analyzedGames.length === 0 ? (
-                  <div className="p-10 text-center text-slate-400">
-                    No current {sportShortLabel(selectedSport)} games are on the board right now. The app stays quiet instead of inventing a pick.
+                  <div className="p-10 text-center text-slate-400" role="status">
+                    <div className="text-base font-semibold text-white">No lines right now</div>
+                    <p className="mt-2">
+                      No {sportShortLabel(selectedSport)} games have posted lines yet. The board refreshes every minute and the next slate appears as soon as books price it.
+                    </p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto">

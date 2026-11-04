@@ -93,6 +93,45 @@ async function fetchSportsLines(): Promise<{ status: number; payload: SmokePaylo
   };
 }
 
+const SMOKE_SPORTS = ["nba", "mlb", "nfl", "wc"] as const;
+const ESPN_SMOKE_PATHS: Record<(typeof SMOKE_SPORTS)[number], string> = {
+  nba: "basketball/nba",
+  mlb: "baseball/mlb",
+  nfl: "football/nfl",
+  wc: "soccer/fifa.world",
+};
+const LOOKAHEAD_DAYS = 7;
+
+function addDays(dateKey: string, days: number) {
+  const date = new Date(Date.UTC(Number(dateKey.slice(0, 4)), Number(dateKey.slice(4, 6)) - 1, Number(dateKey.slice(6, 8)) + days));
+  return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, "0")}${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+/**
+ * Ask ESPN directly whether anything is scheduled from today through the
+ * board's lookahead window. Returns true when ESPN lists at least one game,
+ * false only when every single-date scoreboard answered with zero events.
+ * Any ESPN failure counts as "games may exist" so the strict assertions still
+ * run: we only relax them when the slate is provably empty.
+ */
+async function espnHasScheduledGames(dateKey: string): Promise<boolean> {
+  const checks = SMOKE_SPORTS.flatMap((sport) =>
+    Array.from({ length: LOOKAHEAD_DAYS + 1 }, (_, offset) =>
+      `https://site.api.espn.com/apis/site/v2/sports/${ESPN_SMOKE_PATHS[sport]}/scoreboard?dates=${addDays(dateKey, offset)}`,
+    ),
+  );
+  const results = await Promise.allSettled(
+    checks.map(async (url) => {
+      const response = await fetchWithRetry(url);
+      if (!response.ok) throw new Error(`${response.status} ${url}`);
+      const body = (await response.json()) as { events?: unknown[] };
+      if (!Array.isArray(body.events)) throw new Error(`no events array: ${url}`);
+      return body.events.length;
+    }),
+  );
+  return results.some((result) => result.status === "rejected" || result.value > 0);
+}
+
 describe("production sports-lines smoke", () => {
   it("returns a fresh ESPN-default board with valid moneylines", async () => {
     const { status, payload, cacheControl } = await fetchSportsLines();
@@ -157,13 +196,25 @@ describe("production sports-lines smoke", () => {
 
     const espnMatched = payload.providerStatus.reduce((sum, p) => sum + (p.espnFallbackMatched || 0), 0);
     expect(espnMatched).toBe(withOdds);
+
+    if (withOdds === 0 && payload.games.length === 0 && !(await espnHasScheduledGames(payload.dateKey))) {
+      // Genuinely empty slate: ESPN itself lists no games today or in the
+      // lookahead window, so an empty board is correct. Anything else (ESPN
+      // has games but the board is empty or unpriced) still fails below.
+      console.warn(`sports-lines smoke: ESPN lists no games ${payload.dateKey} +${LOOKAHEAD_DAYS}d; empty board accepted.`);
+      return;
+    }
     expect(withOdds).toBeGreaterThan(0);
-  }, 30000);
+  }, 60000);
 
   it("feeds Daily Picks analysis without throwing on live lines", async () => {
     const { payload } = await fetchSportsLines();
     const priced = payload.games.filter((game) => game.odds);
 
+    if (priced.length === 0 && payload.games.length === 0 && !(await espnHasScheduledGames(payload.dateKey))) {
+      console.warn(`sports-lines smoke: no scheduled games ${payload.dateKey} +${LOOKAHEAD_DAYS}d; Daily Picks has nothing to analyze.`);
+      return;
+    }
     expect(priced.length).toBeGreaterThan(0);
 
     for (const game of priced.slice(0, 8)) {
@@ -187,7 +238,7 @@ describe("production sports-lines smoke", () => {
         expect(isValidMoneyline(prediction.valueBet.odds)).toBe(true);
       }
     }
-  }, 30000);
+  }, 60000);
 
   it("serves Daily Picks HTML shell", async () => {
     const response = await fetchWithRetry(`${BASE_URL}/daily-picks`);

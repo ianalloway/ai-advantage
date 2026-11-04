@@ -71,7 +71,7 @@ interface MarketOdds {
   awaySpreadOdds?: number;
 }
 
-interface EspnScoreboardEvent {
+export interface EspnScoreboardEvent {
   id: string;
   date: string;
   competitions?: Array<{
@@ -306,22 +306,48 @@ function addDaysToDateKey(dateKey: string, days: number) {
 const UPCOMING_LOOKAHEAD_DAYS = 7;
 const UPCOMING_GAME_LIMIT = 8;
 
-// Off-days (NBA Finals rest days, NFL offseason weeks) should surface the next slate
-// instead of an empty board.
-async function fetchEspnScoreboardWithLookahead(sport: Sport, dateKey: string) {
+// Off-days (NBA Finals rest days, NFL offseason weeks, Election Day) should surface
+// the next slate instead of an empty board.
+//
+// ESPN's site API used to accept a `dates=YYYYMMDD-YYYYMMDD` range here. As of
+// Nov 2026 every range (and comma list) returns `400 Failed to get events
+// endpoint.` while single dates still work, and the old catch-all turned that
+// 400 into an empty board on every off-day. We still try the range first in
+// case ESPN restores it, then fall back to one request per day.
+async function fetchEspnUpcomingRange(sport: Sport, dateKey: string) {
+  const rangeKey = `${addDaysToDateKey(dateKey, 1)}-${addDaysToDateKey(dateKey, UPCOMING_LOOKAHEAD_DAYS)}`;
+  return fetchEspnScoreboard(sport, rangeKey);
+}
+
+async function fetchEspnUpcomingByDay(sport: Sport, dateKey: string) {
+  const dayKeys = Array.from({ length: UPCOMING_LOOKAHEAD_DAYS }, (_, index) => addDaysToDateKey(dateKey, index + 1));
+  const days = await Promise.allSettled(dayKeys.map((dayKey) => fetchEspnScoreboard(sport, dayKey)));
+  return days.flatMap((day) => (day.status === "fulfilled" ? day.value : []));
+}
+
+export function selectUpcomingEvents(events: EspnScoreboardEvent[]) {
+  const seen = new Set<string>();
+  return events
+    .filter((event) => {
+      if (event.competitions?.[0]?.status?.type?.state !== "pre") return false;
+      if (seen.has(event.id)) return false;
+      seen.add(event.id);
+      return true;
+    })
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .slice(0, UPCOMING_GAME_LIMIT);
+}
+
+export async function fetchEspnScoreboardWithLookahead(sport: Sport, dateKey: string) {
   const todayEvents = await fetchEspnScoreboard(sport, dateKey);
   if (todayEvents.length > 0) return todayEvents;
 
-  const rangeKey = `${addDaysToDateKey(dateKey, 1)}-${addDaysToDateKey(dateKey, UPCOMING_LOOKAHEAD_DAYS)}`;
-  try {
-    const upcoming = await fetchEspnScoreboard(sport, rangeKey);
-    return upcoming
-      .filter((event) => event.competitions?.[0]?.status?.type?.state === "pre")
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-      .slice(0, UPCOMING_GAME_LIMIT);
-  } catch {
-    return [];
+  let upcoming = await fetchEspnUpcomingRange(sport, dateKey).catch((): EspnScoreboardEvent[] => []);
+  if (upcoming.length === 0) {
+    upcoming = await fetchEspnUpcomingByDay(sport, dateKey);
   }
+
+  return selectUpcomingEvents(upcoming);
 }
 
 async function fetchEspnSummary(sport: Sport, eventId: string): Promise<SummaryResponse | null> {

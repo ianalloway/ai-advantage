@@ -123,8 +123,8 @@ export default function LiveOddsTicker({ speed = 40, pauseOnHover = true }: Live
           Live odds temporarily unavailable
         </div>
       ) : games.length === 0 ? (
-        <div className="px-4 text-[10px] uppercase tracking-[0.12em] text-slate-400">
-          Syncing the current market board
+        <div className="px-4 text-[10px] uppercase tracking-[0.12em] text-slate-400" role="status">
+          {updatedAt ? "No lines right now · next slate syncs automatically" : "Syncing the current market board"}
         </div>
       ) : (
         <div className="min-w-0 flex-1 overflow-hidden">
