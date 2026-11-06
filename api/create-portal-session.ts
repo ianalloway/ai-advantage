@@ -21,7 +21,7 @@ type ResponseLike = {
   setHeader: (name: string, value: string) => void;
 };
 
-const API_VERSION = "2026-08-26.dahlia";
+const API_VERSION = "2026-10-28.endive";
 
 function isConfigured(value: string | undefined, prefix: string) {
   return Boolean(value && value.startsWith(prefix) && !/your_|placeholder/i.test(value));
