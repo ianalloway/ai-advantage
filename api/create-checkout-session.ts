@@ -20,7 +20,7 @@ type ResponseLike = {
   setHeader: (name: string, value: string) => void;
 };
 
-const API_VERSION = "2026-08-26.dahlia";
+const API_VERSION = "2026-10-28.endive";
 const MODE_CONFIG: Record<CheckoutMode, { envKey: string; stripeMode: "payment" | "subscription"; label: string }> = {
   premium: {
     envKey: "STRIPE_PREMIUM_PRICE_ID",

@@ -30,12 +30,13 @@ jobs:
         run: npx tsc -b --force
 
       - name: Lint
+        id: lint
         run: |
           set -o pipefail
           npm run lint 2>&1 | tee lint-output.txt
 
       - name: Comment lint output on failure
-        if: failure() && github.event_name == 'pull_request'
+        if: failure() && steps.lint.outcome == 'failure' && github.event_name == 'pull_request'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
