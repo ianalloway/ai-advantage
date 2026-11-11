@@ -27,6 +27,18 @@ export interface DocumentMeta {
   canonicalPath?: string;
   /** e.g. "noindex,follow" for pages that should stay out of the index. */
   robots?: string;
+  /**
+   * Drop `<link rel="canonical">` entirely for this route.
+   *
+   * A `noindex` page that still points a canonical at a *different* URL is
+   * self-contradictory, and the contradiction resolves the wrong way: if a
+   * crawler honours the canonical it consolidates the two, and the `noindex`
+   * can travel to the target. The 404 route inherits index.html's canonical,
+   * which is the homepage — so every mistyped URL was telling crawlers "I am
+   * the homepage, and do not index me". An error page is not a duplicate of
+   * anything and should claim no canonical at all.
+   */
+  noCanonical?: boolean;
 }
 
 function upsertMeta(attr: "name" | "property", key: string, content: string): void {
@@ -47,6 +59,10 @@ function upsertCanonical(href: string): void {
     document.head.appendChild(link);
   }
   link.href = href;
+}
+
+function removeCanonical(): void {
+  document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.remove();
 }
 
 function readMeta(attr: "name" | "property", key: string): string {
@@ -72,7 +88,7 @@ const defaults = {
   twitterDescription: typeof document === "undefined" ? "" : readMeta("name", "twitter:description"),
 };
 
-export function useDocumentMeta({ title, description, canonicalPath, robots }: DocumentMeta): void {
+export function useDocumentMeta({ title, description, canonicalPath, robots, noCanonical }: DocumentMeta): void {
   useEffect(() => {
     document.title = title;
     upsertMeta("property", "og:title", title);
@@ -83,7 +99,9 @@ export function useDocumentMeta({ title, description, canonicalPath, robots }: D
       upsertMeta("property", "og:description", description);
       upsertMeta("name", "twitter:description", description);
     }
-    if (canonicalPath) {
+    if (noCanonical) {
+      removeCanonical();
+    } else if (canonicalPath) {
       const url = `${SITE_ORIGIN}${canonicalPath}`;
       upsertCanonical(url);
       upsertMeta("property", "og:url", url);
@@ -99,11 +117,11 @@ export function useDocumentMeta({ title, description, canonicalPath, robots }: D
         upsertMeta("property", "og:description", defaults.ogDescription);
         upsertMeta("name", "twitter:description", defaults.twitterDescription);
       }
-      if (canonicalPath) {
+      if (noCanonical || canonicalPath) {
         upsertCanonical(defaults.canonical);
         upsertMeta("property", "og:url", defaults.ogUrl);
       }
       if (robots) upsertMeta("name", "robots", defaults.robots);
     };
-  }, [title, description, canonicalPath, robots]);
+  }, [title, description, canonicalPath, robots, noCanonical]);
 }

@@ -78,6 +78,71 @@ describe("devigMarket", () => {
     expect(power.outcomes[0].fairProb).not.toBeCloseTo(multiplicative.outcomes[0].fairProb, 4);
   });
 
+  /**
+   * The two assertions above both pass while the exponent solver is broken:
+   * fairProb is normalised by dividing through the sum whatever k comes out, so
+   * it always totals 1, and a collapse to a uniform 1/n "shades differently"
+   * from multiplicative too. The property that actually pins k down is the one
+   * the solver is defined by — sum(impliedProb ^ k) === 1 — so assert that
+   * directly, plus the ordering it has to preserve.
+   */
+  it.each([
+    { name: "2-way with a heavy favourite", prices: [
+      { label: "Home", americanOdds: -300 },
+      { label: "Away", americanOdds: 250 },
+    ] },
+    { name: "2-way near pick'em", prices: [
+      { label: "Home", americanOdds: -110 },
+      { label: "Away", americanOdds: -110 },
+    ] },
+    { name: "3-way soccer", prices: [
+      { label: "Home", americanOdds: -125 },
+      { label: "Draw", americanOdds: 240 },
+      { label: "Away", americanOdds: 260 },
+    ] },
+    { name: "long-odds longshot", prices: [
+      { label: "Home", americanOdds: -2000 },
+      { label: "Away", americanOdds: 1200 },
+    ] },
+  ])("power de-vigging solves sum(p^k) = 1 for a $name", ({ prices }) => {
+    const result = devigMarket(prices, "power");
+    expect(result.outcomes).toHaveLength(prices.length);
+
+    // Recover k from any one outcome: fairProb = p^k / sum(p^k) and sum(p^k) = 1,
+    // so k = ln(fairProb) / ln(impliedProb).
+    const first = result.outcomes[0];
+    const k = Math.log(first.fairProb) / Math.log(first.impliedProb);
+    expect(k).toBeGreaterThanOrEqual(1);
+
+    const sumAtK = result.outcomes.reduce((sum, o) => sum + Math.pow(o.impliedProb, k), 0);
+    expect(sumAtK).toBeCloseTo(1, 6);
+
+    // A de-vig strips margin; it must not reorder the book or invent probability.
+    const impliedOrder = [...result.outcomes].sort((a, b) => b.impliedProb - a.impliedProb).map((o) => o.label);
+    const fairOrder = [...result.outcomes].sort((a, b) => b.fairProb - a.fairProb).map((o) => o.label);
+    expect(fairOrder).toEqual(impliedOrder);
+    for (const outcome of result.outcomes) {
+      expect(outcome.fairProb).toBeGreaterThan(0);
+      expect(outcome.fairProb).toBeLessThan(1);
+    }
+  });
+
+  it("does not flatten a lopsided market toward a uniform guess", () => {
+    // The broken solver returned k ~ 0.0001, which drives every p^k to 1 and
+    // hands back 1/n per outcome: a -300 favourite priced at 50%.
+    const power = devigMarket(
+      [
+        { label: "Home", americanOdds: -300 },
+        { label: "Away", americanOdds: 250 },
+      ],
+      "power",
+    );
+    const favourite = findFairOutcome(power, "Home");
+
+    expect(favourite?.fairProb).toBeGreaterThan(0.7);
+    expect(favourite?.fairProb).not.toBeCloseTo(0.5, 2);
+  });
+
   it("returns an empty result when the market is incomplete or junk", () => {
     expect(devigMarket([{ label: "Home", americanOdds: -110 }]).outcomes).toHaveLength(0);
     expect(

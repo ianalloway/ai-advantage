@@ -39,5 +39,9 @@ export function routeMeta(path: string): DocumentMeta {
 /** Metadata for the catch-all 404 route (kept out of the index). */
 export const notFoundMeta: DocumentMeta = {
   title: seo.notFound.title,
+  description: seo.notFound.description,
   robots: seo.notFound.robots,
+  // No canonical: see DocumentMeta.noCanonical. Without this the 404 inherits
+  // index.html's canonical, which points at the homepage.
+  noCanonical: true,
 };
