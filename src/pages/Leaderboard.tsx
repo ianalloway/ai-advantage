@@ -504,7 +504,18 @@ export default function Leaderboard() {
           <MarketBlendPanel entries={analyticsRows} />
         </div>
 
-        <div className="mt-8 grid gap-6 xl:grid-cols-2">
+        {/*
+          grid-cols-1 is load-bearing, not decoration. Without an explicit base
+          track this is a single `auto` column, and an auto track floors at its
+          item's min-content width. StakingPlanPanel's table wrapper scrolls
+          itself, but the automatic-minimum-size rule applies to the grid item
+          (this card, overflow:visible), not to the wrapper inside it — so the
+          table's 441px min-content inflated the track to 491px inside a 358px
+          container and the whole page scrolled sideways on a phone. Tailwind's
+          grid-cols-1 is repeat(1, minmax(0, 1fr)), whose 0 floor lets the card
+          shrink and hands the overflow back to the wrapper that handles it.
+        */}
+        <div className="mt-8 grid grid-cols-1 gap-6 xl:grid-cols-2">
           <StakingPlanPanel entries={analyticsRows} bankroll={BANKROLL} />
           <SegmentBreakdown entries={analyticsRows} />
         </div>

@@ -42,6 +42,8 @@ export interface DevigResult {
   outcomes: FairOutcome[];
 }
 
+const MAX_POWER_EXPONENT = 512;
+
 const EMPTY_RESULT = (method: DevigMethod): DevigResult => ({
   method,
   overround: 0,
@@ -61,19 +63,30 @@ export function probToAmericanOdds(prob: number): number {
  * Solve for the exponent k where `sum(impliedProb_i ^ k) === 1`.
  * Power de-vigging spreads the margin toward favourites rather than evenly,
  * which matches how books actually shade long prices.
+ *
+ * Every implied probability is in (0, 1), so `p ^ k` *shrinks* as k grows and
+ * `sum(p_i ^ k)` is decreasing in k. At k = 1 the sum is the overround, which is
+ * >= 1 for any real market, so the root is at k >= 1 — never below it. Bracket
+ * upward from 1 until the sum drops under 1, then bisect inside that bracket.
  */
 function solvePowerExponent(implied: number[]): number {
   const sumAt = (k: number) => implied.reduce((sum, p) => sum + Math.pow(p, k), 0);
 
-  let low = 0.0001;
-  let high = 1;
-  // sum at k=1 is the overround (>1); sum falls as k falls, so bisection is safe.
-  for (let i = 0; i < 60; i++) {
+  let low = 1;
+  let high = 2;
+  // sum -> 0 as k -> infinity, so this terminates; the cap is belt-and-braces.
+  while (sumAt(high) > 1 && high < MAX_POWER_EXPONENT) {
+    low = high;
+    high *= 2;
+  }
+  if (sumAt(high) > 1) return high;
+
+  for (let i = 0; i < 80; i++) {
     const mid = (low + high) / 2;
     if (sumAt(mid) > 1) {
-      high = mid;
-    } else {
       low = mid;
+    } else {
+      high = mid;
     }
   }
   return (low + high) / 2;

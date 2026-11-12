@@ -109,7 +109,12 @@ test('cancelled, unpaid and failed checkout stay free; forged storage does not u
   await page.getByRole('button', { name: 'Start 7-day Pro trial' }).click();
   await expect(page.getByText('Mock checkout unavailable', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Start 7-day Pro trial' })).toBeEnabled();
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 1);
+  // clientWidth, not innerWidth: under mobile emulation innerWidth expands to
+  // the content width when the page overflows, so an innerWidth comparison can
+  // never fail on the mobile project. See tests/browser/layout-overflow.spec.ts.
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+  );
   expect(overflow).toBe(false);
 });
 
