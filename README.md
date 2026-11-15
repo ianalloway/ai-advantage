@@ -156,6 +156,10 @@ NOTIFY_EMAIL=ian@allowayllc.com
 SUBSTACK_PUBLICATION_URL=https://allowayai.substack.com
 ```
 
+## Responsible use
+
+AI Advantage is an analytics and decision-support tool, not betting advice, and it does not guarantee outcomes. Past model performance does not predict future results, and sports betting carries a real risk of financial loss. Bet only what you can afford to lose, and only where it is legal for you. If gambling is a problem for you or someone you know, call the National Problem Gambling Helpline at 1-800-GAMBLER (1-800-426-2537). Training and demo data in the adjacent repos (for example `sports-betting-ml`) is synthetic and is not a record of live performance.
+
 ## Where the modeling lives
 
 | Repo | Role |
