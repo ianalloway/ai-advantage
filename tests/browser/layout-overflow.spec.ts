@@ -88,3 +88,29 @@ for (const route of ROUTES) {
     ).toBeLessThanOrEqual(report.viewport + 1);
   });
 }
+
+test('a populated daily picks board keeps game details inside the viewport', async ({ page }) => {
+  const date = new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString();
+  const games = Array.from({ length: 4 }, (_, index) => ({
+    id: String(index + 1),
+    sport: 'nba', sportLabel: 'NBA', date, displayTime: '10:00 PM EST',
+    status: { state: 'pre', shortDetail: '11/20 - 10:00 PM EST', detail: 'Scheduled', completed: false },
+    homeTeam: 'Boston Celtics', awayTeam: 'New York Knicks', homeAbbr: 'BOS', awayAbbr: 'NYK',
+    bookmaker: 'DraftKings',
+    marketAudit: { source: 'espn-fallback', stale: false, matchConfidence: 1 },
+    odds: { homeMoneyline: -120, awayMoneyline: 100 },
+  }));
+  await page.route('**/api/sports-lines?**', (route) => route.fulfill({ json: { games } }));
+  await page.goto('/daily-picks');
+  await expect(page.getByRole('heading', { name: 'Premium board' })).toBeVisible();
+
+  const sourceLabel = page.getByText('vs ESPN PickCenter', { exact: true }).first();
+  await expect(sourceLabel).toBeVisible();
+  const metrics = await sourceLabel.evaluate((element) => ({
+    labelRight: element.getBoundingClientRect().right,
+    cardRight: element.closest('.overflow-hidden')!.getBoundingClientRect().right,
+  }));
+  expect(metrics.labelRight).toBeLessThanOrEqual(metrics.cardRight + 1);
+  const report = await overflowReport(page);
+  expect(report.scrollWidth).toBeLessThanOrEqual(report.viewport + 1);
+});

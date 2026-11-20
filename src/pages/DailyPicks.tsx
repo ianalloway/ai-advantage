@@ -509,7 +509,7 @@ function PickCard({
   return (
     <div className="relative overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_42%),linear-gradient(180deg,rgba(9,13,24,0.98),rgba(5,8,18,0.98))] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.35)] transition-all duration-300 hover:-translate-y-1 hover:border-brand-500/35 hover:shadow-[0_32px_96px_rgba(34,197,94,0.06)]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 pb-4">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ${edgeBadge.className}`}>
             {edgeBadge.shortLabel}
           </span>
@@ -667,7 +667,7 @@ function PickCard({
           ) : null}
 
           <div className={locked ? "blur-[6px]" : ""}>
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="text-[11px] uppercase tracking-[0.24em] text-zinc-500">Recommended side</div>
                 <div className="mt-1 text-2xl font-bold text-emerald-300">{prediction.predictedWinner}</div>
@@ -1781,7 +1781,7 @@ export default function DailyPicks() {
 
               {premiumPicks.length > 0 ? (
                 <section>
-                  <div className="mb-4 flex items-center justify-between gap-4">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
                     <div className="flex items-center gap-2">
                       <Crown className="h-4 w-4 text-yellow-300" />
                       <h2 className="text-xl font-bold">Premium board</h2>
