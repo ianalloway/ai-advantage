@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Download, NotebookPen, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,8 @@ import { betLogRows, betProfit, summarizeBetLog, type BetLogEntry, type BetLogOu
 import { downloadCsv, toCsv } from "@/lib/exportDesk";
 import { summarizeOpenPositions, type PositionValue } from "@/lib/positionValue";
 import { formatOdds } from "@/lib/predictions";
+
+const TICKETS_PER_PAGE = 8;
 
 function outcomeClasses(outcome: BetLogOutcome) {
   if (outcome === "won") return "border-emerald-400/30 bg-emerald-400/10 text-emerald-300";
@@ -45,6 +47,17 @@ export default function BetLogPanel({
   liveValues,
   emptyHint,
 }: BetLogPanelProps) {
+  const [search, setSearch] = useState("");
+  const [visibleCount, setVisibleCount] = useState(TICKETS_PER_PAGE);
+  const matches = useMemo(() => {
+    const terms = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    if (!terms.length) return entries;
+    return entries.filter((entry) => {
+      const text = [entry.side, entry.eventLabel, entry.sportLabel, entry.bookmaker, entry.outcome]
+        .join(" ").toLowerCase();
+      return terms.every((term) => text.includes(term));
+    });
+  }, [entries, search]);
   const summary = useMemo(() => summarizeBetLog(entries), [entries]);
   const openBook = useMemo(
     () => summarizeOpenPositions(Object.values(liveValues ?? {})),
@@ -149,7 +162,20 @@ export default function BetLogPanel({
           ) : null}
 
           <div className="space-y-2">
-            {entries.slice(0, 8).map((entry) => {
+            <label className="block text-xs font-medium text-zinc-300" htmlFor="ticket-search">
+              Search bet history
+            </label>
+            <Input
+              id="ticket-search"
+              type="search"
+              placeholder="Team, event, sport, book, or outcome"
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setVisibleCount(TICKETS_PER_PAGE);
+              }}
+            />
+            {matches.slice(0, visibleCount).map((entry) => {
               const profit = betProfit(entry);
               return (
                 <div key={entry.id} className="rounded-xl border border-white/8 bg-black/25 p-3">
@@ -258,10 +284,16 @@ export default function BetLogPanel({
             })}
           </div>
 
-          {entries.length > 8 ? (
-            <div className="text-[11px] text-zinc-500">
-              Showing the 8 most recent of {entries.length}. Export for the full log.
-            </div>
+          <p role="status" className="text-xs text-zinc-400">
+            {matches.length
+              ? `Showing ${Math.min(visibleCount, matches.length)} of ${matches.length} ${matches.length === 1 ? "ticket" : "tickets"}`
+              : "No matching tickets"}
+          </p>
+          {matches.length > visibleCount ? (
+            <Button type="button" size="sm" variant="outline"
+              onClick={() => setVisibleCount((count) => count + TICKETS_PER_PAGE)}>
+              Show older tickets
+            </Button>
           ) : null}
 
           <Button
@@ -271,7 +303,7 @@ export default function BetLogPanel({
             onClick={exportLog}
           >
             <Download className="mr-1.5 h-3.5 w-3.5" />
-            Export bet log CSV
+            Export full bet log CSV
           </Button>
         </div>
       )}

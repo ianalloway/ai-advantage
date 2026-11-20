@@ -15,7 +15,7 @@ function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
   });
 }
 
-export async function listBetLogEntries(limit = 200): Promise<BetLogEntry[]> {
+export async function listBetLogEntries(limit?: number): Promise<BetLogEntry[]> {
   if (typeof window === "undefined") return [];
 
   return withObjectStore(BET_LOG_STORE, "readonly", async (store) => {
