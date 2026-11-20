@@ -133,7 +133,7 @@ export default function KellySimulator() {
   }, [simulationData, bankroll]);
 
   return (
-    <div className="rounded-[24px] border border-white/10 bg-white/[0.02] p-5 text-white shadow-xl backdrop-blur-md">
+    <div className="@container rounded-[24px] border border-white/10 bg-white/[0.02] p-5 text-white shadow-xl backdrop-blur-md">
       <div
         className={`flex items-center justify-between cursor-pointer select-none transition-all ${
           isOpen ? "border-b border-white/10 pb-4" : ""
@@ -156,7 +156,7 @@ export default function KellySimulator() {
 
       {isOpen && (
         <>
-          <div className="mt-5 grid gap-6 md:grid-cols-2">
+          <div className="mt-5 grid gap-6 @xl:grid-cols-2">
             {/* Left Hand: Controls */}
             <div className="space-y-4">
               <div>
