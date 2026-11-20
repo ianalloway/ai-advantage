@@ -39,6 +39,7 @@ It's the product layer of a larger sports-analytics stack — the modeling lives
 | Fair price | De-vigs the market, shows the no-vig line, book hold, and the edge that survives it |
 | Hedge desk | Prices a live ticket against the other side: lock stake, guaranteed profit, lock-vs-ride verdict |
 | Model calibration | Brier score and reliability bands over the graded ledger — are the probabilities honest? |
+| Personal bet history | Search saved tickets by team, event, sport, bookmaker, or outcome on the Daily Picks page. Browse older tickets and export the full log, even when the live board is empty. |
 | Calibrated sizing | Corrects the model's probability by its measured bias before Kelly sizes the stake |
 | Parlay desk | Prices a multi-leg ticket: compounded hold, leg correlation, and whether the legs are better bet straight |
 | Bet log | Your actual tickets — realised P&L, price taken vs the board's quote, and CLV |

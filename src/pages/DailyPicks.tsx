@@ -1154,22 +1154,21 @@ export default function DailyPicks() {
 
     const loadSupportingData = async () => {
       try {
-        const [archive, log] = await Promise.all([
-          listExecutionLedgerArchive(250).catch(() => []),
-          listBetLogEntries().catch(() => []),
-        ]);
+        const archive = await listExecutionLedgerArchive(250).catch(() => []);
         if (cancelled) return;
         setCalibration(buildCalibrationReport(calibrationSamplesFromLedger(archive), { buckets: 5 }));
         // The same archive answers a second question: how much of a line move
         // has historically carried on into the close.
         setDriftFit(fitCloseDrift(driftSamplesFromLedger(archive)));
-        setBetLog(log);
       } catch {
         // The desk still works without history; sizing just falls back to raw model numbers.
       }
     };
 
     void loadSupportingData();
+    void listBetLogEntries().then((log) => {
+      if (!cancelled) setBetLog(log);
+    }).catch(() => { /* Browser storage may be unavailable. */ });
     return () => {
       cancelled = true;
     };
@@ -1539,6 +1538,16 @@ export default function DailyPicks() {
     toast({ title: "Desk exported", description: `${filteredGames.length} rows vs ESPN PickCenter reference.` });
   };
 
+  const betHistory = (
+    <BetLogPanel
+      entries={betLog}
+      liveValues={livePositionValues}
+      onSettle={(id, outcome) => void settleBet(id, outcome)}
+      onRemove={(id) => void removeBet(id)}
+      onUpdate={(id, changes) => void updateBet(id, changes)}
+    />
+  );
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_30%),linear-gradient(180deg,#030611,#070d1a_45%,#030611)] text-white">
       <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6">
@@ -1850,13 +1859,7 @@ export default function DailyPicks() {
                 onRemoveLeg={(id) => setParlayLegIds((current) => current.filter((legId) => legId !== id))}
                 onClear={() => setParlayLegIds([])}
               />
-              <BetLogPanel
-                entries={betLog}
-                liveValues={livePositionValues}
-                onSettle={(id, outcome) => void settleBet(id, outcome)}
-                onRemove={(id) => void removeBet(id)}
-                onUpdate={(id, changes) => void updateBet(id, changes)}
-              />
+              {betHistory}
               <KellySimulator />
               <HedgeCalculator
                 defaultEntryOdds={hedgeContext?.entryOdds}
@@ -1867,6 +1870,9 @@ export default function DailyPicks() {
               />
             </div>
           </div>
+        )}
+        {(isLoading || hasError || filteredGames.length === 0) && betLog.length > 0 && (
+          <div className="mt-6">{betHistory}</div>
         )}
       </div>
 
