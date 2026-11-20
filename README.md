@@ -176,3 +176,22 @@ AI Advantage is an analytics and decision-support tool, not betting advice, and 
 ## License
 
 MIT — see [LICENSE](LICENSE). This commercial product is open-sourced for portfolio transparency.
+
+### Concurrent execution-ledger writes
+
+Concurrent ledger POSTs merge observations by row ID and preserve the existing 500-row retention limit. The handler merges the incoming entries with the current snapshot and conditionally replaces it using a Netlify Blobs ETag or the exact Redis value. After five conflicting writes, it returns HTTP 503 with a one-second retry delay.
+
+```mermaid
+sequenceDiagram
+    participant W as Ledger writer
+    participant A as Netlify execution-ledger handler
+    participant S as Netlify Blobs or Redis
+    W->>A: POST authenticated observations
+    loop Up to five attempts
+        A->>S: Read rows and revision
+        S-->>A: Current snapshot
+        A->>S: Replace if revision still matches
+        S-->>A: Committed or conflict
+    end
+    A-->>W: 200 with merged rows or 503 on contention
+```
