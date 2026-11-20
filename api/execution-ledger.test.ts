@@ -1,8 +1,9 @@
+import * as netlifyBlobs from "@netlify/blobs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@netlify/blobs", async () => (await import("../tests/helpers/blobsMock")).blobsModule);
 
-import { resetBlobs } from "../tests/helpers/blobsMock";
+import { blobValues, resetBlobs } from "../tests/helpers/blobsMock";
 import handler, { LEDGER_PREVIEW_ROWS } from "./execution-ledger";
 import {
   createEntitlementSession,
@@ -88,5 +89,50 @@ describe("execution ledger archive access", () => {
       const res = await get({ limit: "250" }, cookie);
       expect(res.headers["Cache-Control"]).toBe("private, no-store");
     }
+  });
+});
+
+describe("execution ledger concurrent writers", () => {
+  it("reports a retryable failure if every attempted update conflicts", async () => {
+    const getStore = netlifyBlobs.getStore;
+    const replace = vi.fn().mockResolvedValue({ modified: false });
+    const spy = vi.spyOn(netlifyBlobs, "getStore").mockImplementation((options) => {
+      const store = getStore(options);
+      return Object.assign(store, { setJSON: replace });
+    });
+    try {
+      const res = response();
+      await handler({
+        blobs, method: "POST", headers: { authorization: `Bearer ${WRITE_TOKEN}` },
+        body: { entries: [{
+          id: "row-1", eventLabel: "Game 1", sportLabel: "NBA", recommendedSide: "Home",
+          executionWindow: "pregame", entryOdds: -110, executionAdjustedEdge: 0.03, ledgerOutcome: "won",
+        }] },
+      }, res);
+      expect(res.statusCode).toBe(503);
+      expect(res.headers["Retry-After"]).toBe("1");
+      expect(replace).toHaveBeenCalledTimes(5);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("keeps simultaneous updates to distinct rows and counts both observations of a shared row", async () => {
+    const sendEntries = async (ids: string[]) => {
+      const res = response();
+      const entries = ids.map((id) => ({
+        id, eventLabel: "Regular game", sportLabel: "NBA", recommendedSide: "Home",
+        executionWindow: "pregame", entryOdds: -110, executionAdjustedEdge: 0.03, ledgerOutcome: "pending",
+      }));
+      await handler({
+        blobs, method: "POST", headers: { authorization: `Bearer ${WRITE_TOKEN}` }, body: { entries },
+      }, res);
+      return res.statusCode;
+    };
+    expect(await Promise.all([sendEntries(["first", "row-0"]), sendEntries(["second", "row-0"])]))
+      .toEqual([200, 200]);
+    const rows = Array.from(blobValues("ai-advantage-ledger").values())[0] as Array<{ id: string; snapshotCount: number }>;
+    expect(rows.map((r) => r.id)).toEqual(expect.arrayContaining(["first", "second"]));
+    expect(rows.find((r) => r.id === "row-0")?.snapshotCount).toBe(3);
   });
 });

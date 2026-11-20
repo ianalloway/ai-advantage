@@ -1,4 +1,3 @@
-import { connectLambda, getStore } from "@netlify/blobs";
 import { Redis } from "@upstash/redis";
 import { timingSafeEqual } from "node:crypto";
 import { getCurrentSiteUserFromEvent } from "../netlify/functions/_lib/auth-session";
@@ -7,6 +6,7 @@ import {
   getEntitlementSessionToken,
   getEntitlementStore,
   isActiveEntitlement,
+  openBlobsStore,
 } from "../netlify/functions/_lib/entitlements";
 
 type RequestLike = {
@@ -46,9 +46,14 @@ interface HistoricalExecutionLedgerEntry extends ExecutionLedgerEntryInput {
   accessTier: AccessTier;
 }
 
+interface LedgerSnapshot {
+  rows: HistoricalExecutionLedgerEntry[];
+  version: string | null;
+}
+
 interface LedgerStore {
-  get: () => Promise<HistoricalExecutionLedgerEntry[]>;
-  set: (rows: HistoricalExecutionLedgerEntry[]) => Promise<void>;
+  get: () => Promise<LedgerSnapshot>;
+  replace: (version: string | null, rows: HistoricalExecutionLedgerEntry[]) => Promise<boolean>;
 }
 
 const LEDGER_KEY = process.env.EXECUTION_LEDGER_KEY || "ai-advantage:execution-ledger";
@@ -95,17 +100,9 @@ function getRedis() {
     return redisClient;
   }
 
-  redisClient = Redis.fromEnv();
+  // Preserve the exact stored bytes for compare-and-set, including older JSON encodings.
+  redisClient = Redis.fromEnv({ automaticDeserialization: false });
   return redisClient;
-}
-
-function normalizeLambdaHeaders(headers: RequestLike["headers"]) {
-  return Object.fromEntries(
-    Object.entries(headers ?? {}).flatMap(([key, value]) => {
-      const flat = Array.isArray(value) ? value[0] : value;
-      return typeof flat === "string" ? [[key.toLowerCase(), flat]] : [];
-    }),
-  );
 }
 
 function isLedgerRows(value: unknown): value is HistoricalExecutionLedgerEntry[] {
@@ -115,19 +112,22 @@ function isLedgerRows(value: unknown): value is HistoricalExecutionLedgerEntry[]
 function getLedgerStore(req: RequestLike): LedgerStore | null {
   if (req.blobs) {
     try {
-      connectLambda({
-        blobs: req.blobs,
-        headers: normalizeLambdaHeaders(req.headers),
-      });
-
-      const store = getStore("ai-advantage-ledger");
+      const { store } = openBlobsStore(
+        { blobs: req.blobs, headers: req.headers },
+        "ai-advantage-ledger",
+        req.method === "POST" ? "strong" : "eventual",
+      );
       return {
         async get() {
-          const value = (await store.get(LEDGER_KEY, { type: "json" })) as unknown;
-          return isLedgerRows(value) ? value : [];
+          const record = await store.getWithMetadata(LEDGER_KEY, { type: "json" });
+          if (record && !record.etag) throw new Error("Ledger revision is unavailable.");
+          return { rows: isLedgerRows(record?.data) ? record.data : [], version: record?.etag ?? null };
         },
-        async set(rows) {
-          await store.setJSON(LEDGER_KEY, rows);
+        async replace(version, rows) {
+          const result = version === null
+            ? await store.setJSON(LEDGER_KEY, rows, { onlyIfNew: true })
+            : await store.setJSON(LEDGER_KEY, rows, { onlyIfMatch: version });
+          return result.modified;
         },
       };
     } catch (error) {
@@ -140,11 +140,19 @@ function getLedgerStore(req: RequestLike): LedgerStore | null {
 
   return {
     async get() {
-      const value = await redis.get<HistoricalExecutionLedgerEntry[]>(LEDGER_KEY);
-      return isLedgerRows(value) ? value : [];
+      const raw = await redis.get<string>(LEDGER_KEY);
+      const value: unknown = raw === null ? null : JSON.parse(raw);
+      return { rows: isLedgerRows(value) ? value : [], version: raw };
     },
-    async set(rows) {
-      await redis.set(LEDGER_KEY, rows);
+    async replace(version, rows) {
+      // A ledger value is always a nonempty JSON array encoding, including "[]".
+      const saved = await redis.eval(
+        `if (redis.call("GET", KEYS[1]) or "") ~= ARGV[1] then return 0 end
+         redis.call("SET", KEYS[1], ARGV[2])
+         return 1`,
+        [LEDGER_KEY], [version ?? "", JSON.stringify(rows)],
+      );
+      return Number(saved) === 1;
     },
   };
 }
@@ -256,7 +264,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     try {
       const full = await hasHistoricalLedgerAccess(req);
       const limit = full ? parseLimit(req.query) : Math.min(parseLimit(req.query), LEDGER_PREVIEW_ROWS);
-      const rows = normalizeRows(await store.get()).slice(0, limit);
+      const rows = normalizeRows((await store.get()).rows).slice(0, limit);
       res.status(200).json({ configured: true, full, rows });
     } catch (error) {
       const message =
@@ -285,15 +293,20 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
         return;
       }
 
-      const existingRows = await store.get();
-      const mergedRows = mergeRows(existingRows, rows, accessTier);
-      await store.set(mergedRows);
-
-      res.status(200).json({
-        configured: true,
-        rows: mergedRows.slice(0, parseLimit(req.query)),
-        total: mergedRows.length,
-      });
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const snapshot = await store.get();
+        const mergedRows = mergeRows(snapshot.rows, rows, accessTier);
+        if (await store.replace(snapshot.version, mergedRows)) {
+          res.status(200).json({
+            configured: true,
+            rows: mergedRows.slice(0, parseLimit(req.query)),
+            total: mergedRows.length,
+          });
+          return;
+        }
+      }
+      res.setHeader("Retry-After", "1");
+      res.status(503).send("Another writer updated the ledger. Retry this request.");
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to update the shared execution ledger.";
