@@ -54,6 +54,13 @@ const KELLY_FRACTION = 0.25;
 
 type SportFilter = "ALL" | "NBA" | "NFL" | "MLB";
 
+const monthLabel = new Intl.DateTimeFormat(undefined, { year: "numeric", month: "long", timeZone: "UTC" });
+
+function gameMonth(entry: HistoricalExecutionLedgerEntry): string {
+  const start = Date.parse(entry.commenceTime);
+  return Number.isFinite(start) ? new Date(start).toISOString().slice(0, 7) : "";
+}
+
 function getOutcomeClasses(outcome: ExecutionBoardEntry["ledgerOutcome"]) {
   switch (outcome) {
     case "won":
@@ -145,6 +152,7 @@ export default function Leaderboard() {
   const [hasError, setHasError] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [sportFilter, setSportFilter] = useState<SportFilter>("ALL");
+  const [monthFilter, setMonthFilter] = useState("");
   const [historicalEntries, setHistoricalEntries] = useState<HistoricalExecutionLedgerEntry[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const { toast } = useToast();
@@ -271,28 +279,28 @@ export default function Leaderboard() {
     return entries.filter((entry) => entry.sportLabel === sportFilter);
   }, [entries, sportFilter]);
 
-  const historicalPreview = useMemo(() => {
-    const rows = sportFilter === "ALL" ? historicalEntries : historicalEntries.filter((entry) => entry.sportLabel === sportFilter);
-    return hasFeatureAccess("historical_ledger", access) ? rows.slice(0, 40) : rows.slice(0, 5);
-  }, [access, historicalEntries, sportFilter]);
-
-  // Calibration reads the persisted archive rather than the live board: only
-  // graded rows carry information about whether a probability was honest.
-  const calibrationEntries = useMemo(() => {
-    const rows =
-      sportFilter === "ALL"
-        ? historicalEntries
-        : historicalEntries.filter((entry) => entry.sportLabel === sportFilter);
-    return rows.map((entry) => ({ modelProb: entry.modelProb, ledgerOutcome: entry.ledgerOutcome }));
-  }, [historicalEntries, sportFilter]);
-
-  // The replay and the attribution cut both run over the persisted archive
-  // rather than the live board, for the same reason calibration does.
-  const analyticsRows = useMemo(() => {
+  const months = useMemo(
+    () => [...new Set(historicalEntries.map(gameMonth).filter(Boolean))].sort().reverse(),
+    [historicalEntries],
+  );
+  const activeMonth = months.includes(monthFilter) ? monthFilter : "";
+  const sportHistory = useMemo(() => {
     return sportFilter === "ALL"
       ? historicalEntries
       : historicalEntries.filter((entry) => entry.sportLabel === sportFilter);
   }, [historicalEntries, sportFilter]);
+  const analyticsRows = useMemo(
+    () => activeMonth ? sportHistory.filter((entry) => gameMonth(entry) === activeMonth) : sportHistory,
+    [sportHistory, activeMonth],
+  );
+
+  const hasHistoricalLedger = hasFeatureAccess("historical_ledger", access);
+  const historicalPreview = useMemo(() => {
+    if (hasHistoricalLedger) return analyticsRows.slice(0, 40);
+    // Narrow the existing five-row preview without revealing additional tickets.
+    const preview = sportHistory.slice(0, 5);
+    return activeMonth ? preview.filter((entry) => gameMonth(entry) === activeMonth) : preview;
+  }, [hasHistoricalLedger, analyticsRows, sportHistory, activeMonth]);
 
   const stats = useMemo(() => {
     const settled = filteredEntries.filter((entry) => entry.ledgerOutcome !== "pending");
@@ -325,23 +333,18 @@ export default function Leaderboard() {
   }, [filteredEntries]);
 
   const historicalStats = useMemo(() => {
-    const settled = historicalEntries.filter((entry) => entry.ledgerOutcome !== "pending");
+    const settled = analyticsRows.filter((entry) => entry.ledgerOutcome !== "pending");
     const wins = settled.filter((entry) => entry.ledgerOutcome === "won").length;
     return {
-      rows: historicalEntries.length,
+      rows: analyticsRows.length,
       settled: settled.length,
       wins,
     };
-  }, [historicalEntries]);
+  }, [analyticsRows]);
 
   const chartData = useMemo(() => {
-    const filtered = sportFilter === "ALL"
-      ? historicalEntries
-      : historicalEntries.filter((entry) => entry.sportLabel === sportFilter);
-
     // Sort oldest first to compute cumulative profit timeline correctly
-    const sorted = [...filtered]
-      .filter((entry) => entry.ledgerOutcome !== "pending")
+    const sorted = analyticsRows.filter((entry) => entry.ledgerOutcome !== "pending")
       .sort((a, b) => new Date(a.lastSeenAt).getTime() - new Date(b.lastSeenAt).getTime());
 
     const result = [];
@@ -368,9 +371,7 @@ export default function Leaderboard() {
     }
 
     return result;
-  }, [historicalEntries, sportFilter]);
-
-  const hasHistoricalLedger = hasFeatureAccess("historical_ledger", access);
+  }, [analyticsRows]);
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_30%),linear-gradient(180deg,#030611,#070d1a_45%,#030611)] text-white">
@@ -489,7 +490,22 @@ export default function Leaderboard() {
         </div>
 
         <div className="mt-8">
-          <CalibrationPanel entries={calibrationEntries} />
+          {months.length > 0 && (
+            <label className="mb-4 flex flex-wrap items-center gap-3 text-sm font-semibold text-zinc-300">
+              Archive game month (UTC)
+              <select
+                className="rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-white"
+                value={activeMonth}
+                onChange={(event) => setMonthFilter(event.target.value)}
+              >
+                <option value="">All months</option>
+                {months.map((month) => (
+                  <option key={month} value={month}>{monthLabel.format(new Date(`${month}-01T00:00:00Z`))}</option>
+                ))}
+              </select>
+            </label>
+          )}
+          <CalibrationPanel entries={analyticsRows} />
         </div>
 
         <div className="mt-8">
@@ -694,7 +710,7 @@ export default function Leaderboard() {
               </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-400">
-              {historicalStats.rows} stored rows · {historicalStats.settled} settled · {historicalStats.wins} wins
+              {historicalStats.rows} stored {historicalStats.rows === 1 ? "row" : "rows"} · {historicalStats.settled} settled · {historicalStats.wins} {historicalStats.wins === 1 ? "win" : "wins"}
             </div>
           </div>
 
@@ -703,6 +719,8 @@ export default function Leaderboard() {
               <div className="rounded-2xl border border-white/8 bg-black/20 p-6 text-sm text-zinc-400">Loading historical archive...</div>
             ) : historicalEntries.length === 0 ? (
               <div className="rounded-2xl border border-white/8 bg-black/20 p-6 text-sm text-zinc-400">No archived rows yet. Once the live board tracks entries, they will start accumulating here.</div>
+            ) : analyticsRows.length === 0 ? (
+              <p className="rounded-2xl border border-white/8 bg-black/20 p-6 text-sm text-zinc-400">No archived games match these filters.</p>
             ) : hasHistoricalLedger ? (
               <HistoryTable rows={historicalPreview} />
             ) : (
